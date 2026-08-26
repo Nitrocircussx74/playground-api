@@ -1,17 +1,20 @@
-# Node.js + Express REST API Starter (JWT, Google OAuth 2.0 & PostgreSQL)
+# Node.js + Express REST API Starter (Production-Ready Architecture)
 
-โปรเจกต์เริ่มต้น REST API พัฒนาด้วย **Node.js** และ **Express** ที่ออกแบบในสถาปัตยกรรมแบบ Clean & Scalable Architecture แบ่งแยกเลเยอร์การทำงานอย่างเป็นระเบียบ พร้อมระบบยืนยันตัวตนที่รองรับทั้ง **JSON Web Token (JWT)**, **Google OAuth 2.0**, ระบบ **PostgreSQL Database + Migration Runner** รวมถึงชุดทดสอบ **Unit & Integration Test (Jest & Supertest)**
+โปรเจกต์เริ่มต้น REST API พัฒนาด้วย **Node.js** และ **Express** ที่ออกแบบในสถาปัตยกรรมแบบ **Clean & Scalable Architecture** ระดับ Production-Ready ครอบคลุมทั้ง **Security (Helmet, Rate Limiting)**, **Data Validation (Zod)**, **JSON Web Token (JWT)**, **Google OAuth 2.0**, **PostgreSQL Database + SQL Migration Runner** รวมถึงชุดทดสอบ **Unit & Integration Test (Jest & Supertest)**
 
 ---
 
 ## 📌 คุณสมบัติหลัก (Features)
 
-- 🏗️ **Clean & Scalable Architecture**: แบ่งแยกเลเยอร์ชัดเจน (`Config`, `Routes`, `Controllers`, `Services`, `Middlewares`, `Migrations`)
+- 🏗️ **Clean & Scalable Architecture**: แบ่งแยกเลเยอร์ชัดเจน (`Config`, `Routes`, `Controllers`, `Services`, `Middlewares`, `Validators`, `Migrations`)
+- 🛡️ **Security Layer**: 
+  - `helmet`: ป้องกันการโจมตีผ่าน HTTP Headers
+  - `express-rate-limit`: จำกัดจำนวน Request ป้องกัน Brute-force & DoS (100 Request / 15 นาที)
+- ✅ **Data Validation (Zod)**: ตรวจสอบความถูกต้องของ Request Body ล่วงหน้าก่อนเข้า Controller หากไม่ถูกต้องตอบกลับ `400 Bad Request` พร้อมรายละเอียด
 - 🐘 **PostgreSQL Integration**: เชื่อมต่อผ่าน `pg` Connection Pool ประสิทธิภาพสูง
 - 🔄 **SQL Migration Runner**: ระบบจัดการและบันทึกประวัติ Database Schema Migrations อัตโนมัติ (`npm run migrate`)
 - 🔐 **JWT Authentication**: ระบบออกและตรวจสอบ Token สำหรับป้องกัน Route (Protected Routes)
 - 🔑 **Google OAuth 2.0 Integration**: ยืนยันตัวตนผ่าน Google ด้วย Passport.js พร้อมบันทึกผู้ใช้ลง PostgreSQL
-- 🛡️ **Protected Route Middlewares**: Middleware กั้นทางเข้าถึง `/api` เพื่อบังคับแนบ `Authorization: Bearer <TOKEN>`
 - 🚨 **Centralized Error Handling**: ระบบจัดการ Error และ 404 Not Found แบบรวมศูนย์
 - 🧪 **Unit & Integration Tests**: ชุดทดสอบพร้อมใช้งานด้วย Jest และ Supertest
 - 🤖 **Multi-Agent Support**: ระบบไฟล์คอนฟิกสำหรับให้ Gemini และ Claude ทำงานร่วมกันได้อย่างราบรื่น
@@ -21,7 +24,7 @@
 ## 📁 โครงสร้างโฟลเดอร์ (Directory Structure)
 
 ```text
-playground/
+playground-api/
 ├── .env.example              # ตัวแปรสภาพแวดล้อมจำลอง
 ├── .gitignore                # ป้องกันการติดตามไฟล์ที่ไม่จำเป็น
 ├── jest.config.js            # การตั้งค่า Jest Testing Framework
@@ -40,13 +43,15 @@ playground/
 ├── src/
 │   ├── config/               # ตั้งค่า App, DB (PostgreSQL Pool), Passport
 │   ├── controllers/          # HTTP Controllers
-│   ├── middlewares/          # JWT Verification & Error Handlers
+│   ├── middlewares/          # Security, JWT Verification, Zod Validator & Error Handlers
 │   ├── migrations/           # 📁 ระบบ Database Migration Runner
 │   │   ├── migrate.js        # สคริปต์ประมวลผล Migration
 │   │   └── files/            # 📁 โฟลเดอร์เก็บไฟล์ .sql สำหรับ Migrations
 │   │       └── 001_create_users_table.sql
 │   ├── routes/               # API Routes (Auth, Protected /api)
 │   ├── services/             # Business Logic & DB Queries (Auth, User, Main)
+│   ├── validators/           # 📁 Zod Data Validation Schemas
+│   │   └── mainValidator.js  # Zod Schema สำหรับ POST /api
 │   ├── app.js
 │   └── server.js
 └── tests/                    # 📁 ชุดทดสอบ Unit & Integration Tests
@@ -118,40 +123,59 @@ npm run test:coverage
 
 ---
 
-## 🐘 การสร้างไฟล์ Migration ใหม่ (Adding New Migrations)
+## ✅ การทดสอบ Zod Data Validation (`POST /api`)
 
-เมื่อต้องการสร้างตารางหรืออัปเดตโครงสร้าง Database ให้สร้างไฟล์ SQL ใหม่ใน `src/migrations/files/` โดยตั้งชื่อเรียงตามลำดับ เช่น:
+ตัวอย่างการยิงคำสั่ง cURL เพื่อทดสอบ Zod Validation ใน `POST /api`:
 
-```text
-src/migrations/files/
-├── 001_create_users_table.sql
-├── 002_create_products_table.sql
-└── 003_add_index_to_products.sql
-```
+### กรณี 1: ข้อมูลไม่ถูกต้อง (Validation Failed -> HTTP 400)
 
-จากนั้นสั่งรันด้วยคำสั่ง:
 ```bash
-npm run migrate
+curl -X POST http://localhost:3000/api \
+  -H "Authorization: Bearer <YOUR_JWT_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"title": "ab", "description": "short"}'
 ```
-ระบบจะทำการตรวจเช็คตาราง `schema_migrations` และรันเฉพาะไฟล์ Migration ใหม่โดยอัตโนมัติภายใต้ Transaction เพื่อความปลอดภัยของข้อมูล
+
+**Response (HTTP 400 Bad Request)**:
+```json
+{
+  "success": false,
+  "message": "ข้อมูลที่ส่งมาไม่ถูกต้องตามข้อกำหนด (Validation Failed)",
+  "errors": [
+    {
+      "field": "title",
+      "message": "หัวข้อ (title) ต้องมีความยาวอย่างน้อย 3 ตัวอักษร"
+    }
+  ]
+}
+```
+
+### กรณี 2: ข้อมูลถูกต้องตาม Zod Schema (Success -> HTTP 201)
+
+```bash
+curl -X POST http://localhost:3000/api \
+  -H "Authorization: Bearer <YOUR_JWT_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"title": "New Product Title", "description": "Valid detailed description text", "category": "technology"}'
+```
 
 ---
 
 ## 🔌 ตารางสรุป API Endpoints
 
-| Method | Endpoint | Description | Authentication Required |
-| :--- | :--- | :--- | :---: |
-| `GET` | `/` | ตรวจสอบสถานะการทำงานของ API (Health Check) | ❌ ไม่ต้องมี |
-| `GET` | `/auth/google` | เริ่มต้นยืนยันตัวตนด้วย Google OAuth 2.0 | ❌ ไม่ต้องมี |
-| `GET` | `/auth/google/callback` | Google Callback ส่งคืน JWT Token | ❌ ไม่ต้องมี |
-| `POST` | `/auth/login` | Mock Login สำหรับรับ JWT Token | ❌ ไม่ต้องมี |
-| `GET` | `/auth/me` | เรียกดูข้อมูล Profile จาก JWT Token | ✅ ต้องมี JWT |
-| `GET` | `/api` | ดึงข้อมูลภาพรวมหน้าหลัก API | ✅ ต้องมี JWT |
-| `POST` | `/api` | ส่งและประมวลผลข้อมูลใหม่ | ✅ ต้องมี JWT |
+| Method | Endpoint | Description | Authentication Required | Validation Required |
+| :--- | :--- | :--- | :---: | :---: |
+| `GET` | `/` | ตรวจสอบสถานะการทำงานของ API (Health Check) | ❌ ไม่ต้องมี | ❌ |
+| `GET` | `/auth/google` | เริ่มต้นยืนยันตัวตนด้วย Google OAuth 2.0 | ❌ ไม่ต้องมี | ❌ |
+| `GET` | `/auth/google/callback` | Google Callback ส่งคืน JWT Token | ❌ ไม่ต้องมี | ❌ |
+| `POST` | `/auth/login` | Mock Login สำหรับรับ JWT Token | ❌ ไม่ต้องมี | ❌ |
+| `GET` | `/auth/me` | เรียกดูข้อมูล Profile จาก JWT Token | ✅ ต้องมี JWT | ❌ |
+| `GET` | `/api` | ดึงข้อมูลภาพรวมหน้าหลัก API | ✅ ต้องมี JWT | ❌ |
+| `POST` | `/api` | ส่งและประมวลผลข้อมูลใหม่ | ✅ ต้องมี JWT | ✅ Zod Validation |
 
 ---
 
 ## 📚 เอกสารเพิ่มเติมในโฟลเดอร์ `docs/`
 
-- 📋 **[docs/ACTIVITY_LOG.md](file:///Users/user/Desktop/playgroud/playground/docs/ACTIVITY_LOG.md)**: ประวัติบันทึกกิจกรรมและรายการไฟล์ทั้งหมดในระบบ
-- 🔄 **[docs/MULTI_AGENT_WORKFLOW.md](file:///Users/user/Desktop/playgroud/playground/docs/MULTI_AGENT_WORKFLOW.md)**: คู่มือและกรอบการทำงานร่วมกันระหว่าง Gemini และ Claude
+- 📋 **[docs/ACTIVITY_LOG.md](file:///Users/user/Desktop/playgroud/playground/playground-api/docs/ACTIVITY_LOG.md)**: ประวัติบันทึกกิจกรรมและรายการไฟล์ทั้งหมดในระบบ
+- 🔄 **[docs/MULTI_AGENT_WORKFLOW.md](file:///Users/user/Desktop/playgroud/playground/playground-api/docs/MULTI_AGENT_WORKFLOW.md)**: คู่มือและกรอบการทำงานร่วมกันระหว่าง Gemini และ Claude

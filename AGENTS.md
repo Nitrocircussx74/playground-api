@@ -14,10 +14,12 @@
 
 - **Repository**: `https://github.com/Nitrocircussx74/playground-api` (GitHub Account: `Nitrocircussx74`)
 - **Technology Stack**: Node.js, Express.js, JavaScript (CommonJS)
+- **Security Layer**: Helmet (HTTP Header Protection) + Express Rate Limit (DoS/Brute-force Protection)
+- **Data Validation Layer**: Zod (`src/validators/`, `src/middlewares/validateMiddleware.js`)
 - **Database & Migrations**: PostgreSQL (`pg` Connection Pool) + Custom SQL Migration Runner (`npm run migrate`)
 - **Authentication**: JWT (JsonWebToken) + Google OAuth 2.0 (Passport.js)
 - **Testing**: Jest + Supertest
-- **Architecture**: Layered Clean Architecture (`src/config`, `src/routes`, `src/controllers`, `src/services`, `src/middlewares`, `src/migrations`)
+- **Architecture**: Layered Clean Architecture (`src/config`, `src/routes`, `src/controllers`, `src/services`, `src/middlewares`, `src/validators`, `src/migrations`)
 
 ---
 
@@ -64,8 +66,9 @@ npm run test:coverage
    - `routes`: กำหนด Endpoint URL และผูก Middleware (ห้ามใส่ Business Logic ใน Route)
    - `controllers`: รับ HTTP Request, เรียกใช้ Services และส่งคืน HTTP Response
    - `services`: ประมวลผล Business Logic และการติดต่อกับ Database (`src/services/userService.js`)
+   - `validators`: กำหนด Zod Validation Schemas (`src/validators/mainValidator.js`)
    - `migrations`: จัดการสร้างและอัปเดตโครงสร้าง Database Schema แบบอัตโนมัติ (`src/migrations/files/*.sql`)
-   - `middlewares`: ตรวจสอบสิทธิ์ (Auth), Validation และ Error Handling
+   - `middlewares`: Security, Auth, Zod Validation และ Error Handling
    - `config`: จัดการการอ่านค่า Environment Variables และการตั้งค่า Third-party libraries (`src/config/db.js`)
 3. **Error Handling**: ส่งผ่าน Error ด้วย `next(error)` เสมอเพื่อให้ `errorMiddleware` จัดการ
 4. **Language Policy**: ความคิดเห็นในโค้ด (Comments) และเอกสารคำอธิบาย ให้ใช้ **ภาษาไทย** เป็นหลัก
@@ -76,4 +79,4 @@ npm run test:coverage
 
 1. **อัปเดต Activity Log**: เมื่อ Agent ทำการสร้างหรือแก้ไขไฟล์งาน ให้ลงบันทึกใน [docs/ACTIVITY_LOG.md](file:///Users/user/Desktop/playgroud/playground/playground-api/docs/ACTIVITY_LOG.md) เสมอ
 2. **รักษาความสะอาดของโค้ด**: ก่อนจบการทำงาน ให้รัน `npm test` เพื่อตรวจสอบว่าไม่มี Breaking Changes
-3. **การส่งมอบงาน (Handover)**: หากต้องส่งต่องานให้อีก Agent ให้ระบุสถานะล่าสุดลงใน `docs/ACTIVITY_LOG.md`
+3. **การส่งมอบงาน (Handover)**: หากต้องส่งต่องานใหีก Agent ให้ระบุสถานะล่าสุดลงใน `docs/ACTIVITY_LOG.md`
