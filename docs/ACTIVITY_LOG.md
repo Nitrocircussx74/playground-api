@@ -58,6 +58,9 @@
 ### Phase 9: การปรับปรุงระบบ CORS สำหรับ Dynamic Localhost Development Ports
 - **`src/app.js`**: ปรับแต่ง CORS Middleware ให้อนุญาตการเชื่อมต่อจาก `http://localhost:*` ทุกพอร์ตที่รันโหมดพัฒนา (เช่น 5173, 5174, 5175, 80) โดยคงความปลอดภัยของ `credentials: true` สำหรับ HTTP-Only Cookies ไว้ 100%
 
+### Phase 10: การออกแบบสถาปัตยกรรมและบันทึกแผนงานระบบจัดการหอพัก (Dormitory Management System MVP)
+- **`implementation_plan.md`**: บันทึกแผนงานการพัฒนาระบบหอพัก (Prisma PostgreSQL + Express API + Vue 3 Tailwind/Shadcn) ครอบคลุม 7 โมดูลหลัก, Prisma Schema, User Roles & Permissions, API Specifications และ Business Edge Cases
+
 ---
 
 ## 📂 สรุปรายการไฟล์ทั้งหมดที่สร้างขึ้น (Created Files Inventory)
