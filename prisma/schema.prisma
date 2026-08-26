@@ -288,3 +288,26 @@ model Announcement {
 
   @@map("announcements")
 }
+
+/// ตารางจัดการสวิตช์เปิด-ปิดฟีเจอร์ของระบบ (Feature Flags / Feature Toggles)
+model FeatureToggle {
+  /// รหัสอ้างอิงฟีเจอร์ (PK, UUID)
+  id String @id @default(uuid()) @db.Uuid
+
+  /// คีย์อ้างอิงฟีเจอร์ (เช่น ENABLE_VEHICLE_MANAGEMENT, ENABLE_PARCEL_NOTIFY)
+  key String @unique
+
+  /// สถานะเปิดใช้งานฟีเจอร์ (true = เปิดใช้งาน, false = ปิดใช้งาน)
+  isActive Boolean @default(true) @map("is_active")
+
+  /// คำอธิบายรายละเอียดฟีเจอร์
+  description String?
+
+  /// วันเวลาที่สร้างเรคคอร์ด
+  createdAt DateTime @default(now()) @map("created_at")
+
+  /// วันเวลาที่อัปเดตเรคคอร์ดล่าสุด
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("feature_toggles")
+}

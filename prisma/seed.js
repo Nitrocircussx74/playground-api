@@ -89,6 +89,24 @@ async function main() {
   });
 
   console.log('🏠 Rooms seeded:', room101.roomNumber, room102.roomNumber, room201.roomNumber);
+
+  // 4. Create Feature Toggles
+  const defaultFeatures = [
+    { key: 'ENABLE_VEHICLE_MANAGEMENT', description: 'ระบบจัดการป้ายทะเบียนและยานพาหนะลูกบ้าน', isActive: true },
+    { key: 'ENABLE_PARCEL_NOTIFY', description: 'ระบบแจ้งเตือนพัสดุมาถึงผ่าน LINE', isActive: true },
+    { key: 'ENABLE_MAINTENANCE_REQUEST', description: 'ระบบแจ้งซ่อมแซมและติดตามสถานะ', isActive: true },
+    { key: 'ENABLE_LINE_PAYMENT', description: 'ระบบชำระเงินและแนบสลิปผ่าน LIFF', isActive: true }
+  ];
+
+  for (const feature of defaultFeatures) {
+    await prisma.featureToggle.upsert({
+      where: { key: feature.key },
+      update: {},
+      create: feature
+    });
+  }
+  console.log('🚩 Feature Toggles seeded successfully!');
+
   console.log('✅ Database seeding finished successfully!');
 }
 

@@ -11,6 +11,7 @@ const uploadRoutes = require('./uploadRoutes');
 const maintenanceRoutes = require('./maintenanceRoutes');
 const announcementRoutes = require('./announcementRoutes');
 const dashboardRoutes = require('./dashboardRoutes');
+const featureRoutes = require('./featureRoutes');
 const liffRoutes = require('./liffRoutes');
 
 // Root Health Check Route
@@ -22,9 +23,13 @@ router.get('/', (req, res) => {
   });
 });
 
-// Public LIFF App & Auth Routes (Mounted BEFORE protected /api prefix)
+// Public LIFF App, Feature Flags & Auth Routes (Mounted BEFORE protected /api prefix)
 router.use('/auth', authRoutes);
 router.use('/api/v1/liff', liffRoutes);
+
+// Feature Toggles (Public GET for initial app load, Protected PUT for admin)
+router.get('/api/features', (req, res, next) => featureRoutes.handle(req, res, next));
+router.use('/api/v1/features', featureRoutes);
 
 // Protected RESTful Modules (Plural & Kebab-case API Endpoints)
 router.use('/api', apiRoutes);
