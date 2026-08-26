@@ -121,6 +121,129 @@ class LineService {
   }
 
   /**
+   * สร้าง Flex Message แจ้งอัปเดตสถานะรายการแจ้งซ่อม
+   */
+  createMaintenanceFlexMessage(request) {
+    const liffId = process.env.LINE_LIFF_ID || '2000000000-mockliffid';
+    const trackingUrl = `https://liff.line.me/${liffId}/maintenance`;
+
+    const statusTextMap = {
+      pending: '⏳ รอดำเนินการ (Pending)',
+      in_progress: '🔧 กำลังดำเนินการซ่อม (In Progress)',
+      resolved: '✅ ซ่อมแซมเสร็จสิ้น (Resolved)',
+      completed: '✅ ซ่อมแซมเสร็จสิ้น (Completed)'
+    };
+    const statusColorMap = {
+      pending: '#f59e0b',
+      in_progress: '#2563eb',
+      resolved: '#16a34a',
+      completed: '#16a34a'
+    };
+
+    const statusLabel = statusTextMap[request.status] || request.status;
+    const headerBg = statusColorMap[request.status] || '#2563eb';
+
+    return {
+      type: 'flex',
+      altText: `🔧 อัปเดตสถานะแจ้งซ่อม: ${request.title}`,
+      contents: {
+        type: 'bubble',
+        header: {
+          type: 'box',
+          layout: 'vertical',
+          contents: [
+            {
+              type: 'text',
+              text: '🔧 อัปเดตสถานะการแจ้งซ่อม',
+              weight: 'bold',
+              size: 'lg',
+              color: '#ffffff'
+            },
+            {
+              type: 'text',
+              text: `ห้อง ${request.room?.roomNumber || ''}`,
+              size: 'xs',
+              color: '#ffffff',
+              margin: 'xs'
+            }
+          ],
+          backgroundColor: headerBg,
+          paddingAll: '15px'
+        },
+        body: {
+          type: 'box',
+          layout: 'vertical',
+          contents: [
+            {
+              type: 'text',
+              text: request.title,
+              weight: 'bold',
+              size: 'md',
+              color: '#0f172a'
+            },
+            {
+              type: 'box',
+              layout: 'horizontal',
+              margin: 'md',
+              contents: [
+                { type: 'text', text: 'สถานะปัจจุบัน', size: 'xs', color: '#64748b' },
+                { type: 'text', text: statusLabel, size: 'xs', weight: 'bold', color: headerBg, align: 'end' }
+              ]
+            },
+            ...(request.adminNote ? [
+              { type: 'separator', margin: 'md' },
+              {
+                type: 'text',
+                text: `💬 หมายเหตุจากช่าง/แอดมิน: ${request.adminNote}`,
+                size: 'xs',
+                color: '#334155',
+                margin: 'md',
+                wrap: true
+              }
+            ] : [])
+          ]
+        },
+        footer: {
+          type: 'box',
+          layout: 'vertical',
+          contents: [
+            {
+              type: 'button',
+              action: {
+                type: 'uri',
+                label: '📜 ติดตามสถานะใน LIFF',
+                uri: trackingUrl
+              },
+              style: 'primary',
+              color: headerBg
+            }
+          ]
+        }
+      }
+    };
+  }
+
+  /**
+   * ส่ง LINE Push Notification แจ้งอัปเดตสถานะการแจ้งซ่อม
+   */
+  async sendMaintenanceStatusNotification(lineUserId, request) {
+    if (!lineUserId) return false;
+
+    try {
+      const flexMsg = this.createMaintenanceFlexMessage(request);
+      await client.pushMessage({
+        to: lineUserId,
+        messages: [flexMsg]
+      });
+      console.log(`✅ ส่ง LINE Push Message แจ้งเตือนสถานะซ่อมหา ${lineUserId} สำเร็จ`);
+      return true;
+    } catch (err) {
+      console.warn(`⚠️ ไม่สามารถส่ง LINE Maintenance Notification ได้: ${err.message}`);
+      return false;
+    }
+  }
+
+  /**
    * สร้าง Flex Message สำหรับเตือนทวงหนี้แบบสุภาพ
    */
   createDebtReminderFlexMessage(invoice) {

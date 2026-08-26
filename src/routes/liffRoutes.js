@@ -3,10 +3,23 @@ const router = express.Router();
 const upload = require('../middlewares/uploadMiddleware');
 const liffController = require('../controllers/liffController');
 const announcementController = require('../controllers/announcementController');
+const maintenanceController = require('../controllers/maintenanceController');
+const invoiceController = require('../controllers/invoiceController');
 
+// LIFF Invoices & Payment
+router.get('/invoices/history', (req, res, next) => invoiceController.getPaidInvoicesForLiff(req, res, next));
+router.get('/invoices/:id/receipt-pdf', (req, res, next) => invoiceController.exportReceiptPdf(req, res, next));
 router.get('/invoices/:id', (req, res, next) => liffController.getInvoiceForLiff(req, res, next));
 router.post('/invoices/:id/slip', upload.single('file'), (req, res, next) => liffController.uploadSlipFromLiff(req, res, next));
+
+// LIFF Tenant Registration
 router.post('/register/invite', (req, res, next) => liffController.registerTenantWithInvite(req, res, next));
+
+// LIFF Announcements
 router.get('/announcements', (req, res, next) => announcementController.getAnnouncementsForLiff(req, res, next));
+
+// LIFF Maintenance Requests & Status Tracking
+router.get('/maintenance', (req, res, next) => maintenanceController.getMaintenanceRequestsForLiff(req, res, next));
+router.post('/maintenance', upload.single('file'), (req, res, next) => maintenanceController.createMaintenanceRequest(req, res, next));
 
 module.exports = router;

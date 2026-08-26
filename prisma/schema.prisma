@@ -218,7 +218,10 @@ model MaintenanceRequest {
   /// รูปภาพประกอบการแจ้งซ่อม (URL/Path)
   imageUrl String? @map("image_url")
 
-  /// สถานะการดำเนินการ (pending = รอดำเนินการ, in_progress = กำลังซ่อม, completed = ซ่อมเสร็จสิ้น, cancelled = ยกเลิก)
+  /// ข้อความตอบกลับ/บันทึกจากแอดมินหรือช่างซ่อม
+  adminNote String? @map("admin_note") @db.Text
+
+  /// สถานะการดำเนินการ (pending = รอดำเนินการ, in_progress = กำลังซ่อม, resolved = ซ่อมเสร็จสิ้น, cancelled = ยกเลิก)
   status String @default("pending")
 
   /// วันเวลาที่สร้างเรคคอร์ด
