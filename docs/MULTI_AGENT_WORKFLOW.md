@@ -8,11 +8,11 @@
 
 เมื่อผู้ใช้พิมพ์คำสั่ง **`update memory`** ในการสนทนา:
 > **ข้อตกลงบังคับ (Mandatory Rule)**: ไม่ว่าจะเป็น Gemini หรือ Claude ที่กำลังปฏิบัติงาน จะต้องดำเนินการอัปเดตไฟล์คอนฟิกหลักและเอกสารสรุปเหล่านี้พร้อมกันทันที:
-> 1. 📝 **[AGENTS.md](file:///Users/user/Desktop/playgroud/playground/AGENTS.md)**: เพิ่ม/แก้ไขกฎสเปกกลางและข้อตกลงใหม่
-> 2. ♊ **[GEMINI.md](file:///Users/user/Desktop/playgroud/playground/GEMINI.md)**: อัปเดตบริบทเฉพาะของ Gemini
-> 3. 🧠 **[CLAUDE.md](file:///Users/user/Desktop/playgroud/playground/CLAUDE.md)**: อัปเดตบริบทเฉพาะของ Claude
-> 4. 📋 **[docs/ACTIVITY_LOG.md](file:///Users/user/Desktop/playgroud/playground/docs/ACTIVITY_LOG.md)**: ลงบันทึกประวัติการอัปเดต Memory ล่าสุด
-> 5. 📘 **[README.md](file:///Users/user/Desktop/playgroud/playground/README.md)**: ปรับปรุงคู่มือให้ตรงกับสถานะปัจจุบัน
+> 1. 📝 **[AGENTS.md](file:///Users/user/Desktop/playgroud/playground/playground-api/AGENTS.md)**: เพิ่ม/แก้ไขกฎสเปกกลางและข้อตกลงใหม่
+> 2. ♊ **[GEMINI.md](file:///Users/user/Desktop/playgroud/playground/playground-api/GEMINI.md)**: อัปเดตบริบทเฉพาะของ Gemini
+> 3. 🧠 **[CLAUDE.md](file:///Users/user/Desktop/playgroud/playground/playground-api/CLAUDE.md)**: อัปเดตบริบทเฉพาะของ Claude
+> 4. 📋 **[docs/ACTIVITY_LOG.md](file:///Users/user/Desktop/playgroud/playground/playground-api/docs/ACTIVITY_LOG.md)**: ลงบันทึกประวัติการอัปเดต Memory ล่าสุด
+> 5. 📘 **[README.md](file:///Users/user/Desktop/playgroud/playground/playground-api/README.md)**: ปรับปรุงคู่มือให้ตรงกับสถานะปัจจุบัน
 
 ---
 
@@ -32,11 +32,11 @@
 
 เพื่อให้ทั้งสอง AI สามารถสลับกันทำงานต่อจากกันได้อย่างราบรื่นโดยไม่เสียบริบท (Context):
 
-1. **[AGENTS.md](file:///Users/user/Desktop/playgroud/playground/AGENTS.md)**: สเปกรวมของโปรเจกต์และกฎกติกาที่ทุก AI ต้องปฏิบัติตาม
-2. **[docs/ACTIVITY_LOG.md](file:///Users/user/Desktop/playgroud/playground/docs/ACTIVITY_LOG.md)**: บันทึกสถานะล่าสุด ไฟล์ที่ถูกสร้าง/แก้ไข และสิ่งที่ทำเสร็จแล้ว
-3. **[GEMINI.md](file:///Users/user/Desktop/playgroud/playground/GEMINI.md)**: แนวทางและสไตล์เฉพาะของ Gemini Agent
-4. **[CLAUDE.md](file:///Users/user/Desktop/playgroud/playground/CLAUDE.md)**: แนวทางและสไตล์เฉพาะของ Claude Agent
-5. **[.agents/rules/memory.md](file:///Users/user/Desktop/playgroud/playground/.agents/rules/memory.md)**: กฎคำสั่งพิเศษ `update memory`
+1. **[AGENTS.md](file:///Users/user/Desktop/playgroud/playground/playground-api/AGENTS.md)**: สเปกรวมของโปรเจกต์และกฎกติกาที่ทุก AI ต้องปฏิบัติตาม
+2. **[docs/ACTIVITY_LOG.md](file:///Users/user/Desktop/playgroud/playground/playground-api/docs/ACTIVITY_LOG.md)**: บันทึกสถานะล่าสุด ไฟล์ที่ถูกสร้าง/แก้ไข และสิ่งที่ทำเสร็จแล้ว
+3. **[GEMINI.md](file:///Users/user/Desktop/playgroud/playground/playground-api/GEMINI.md)**: แนวทางและสไตล์เฉพาะของ Gemini Agent
+4. **[CLAUDE.md](file:///Users/user/Desktop/playgroud/playground/playground-api/CLAUDE.md)**: แนวทางและสไตล์เฉพาะของ Claude Agent
+5. **[.agents/rules/memory.md](file:///Users/user/Desktop/playgroud/playground/playground-api/.agents/rules/memory.md)**: กฎคำสั่งพิเศษ `update memory`
 
 ---
 
@@ -45,7 +45,7 @@
 เมื่อ Agent ตัวใดตัวหนึ่งพัฒนาฟีเจอร์เสร็จเรียบร้อยแล้ว และต้องการส่งต่อให้อีก Agent ทำงานต่อ:
 
 1. **รัน Verification**: รัน `npm test` เพื่อให้แน่ใจว่าไม่มีข้อผิดพลาดเกิดขึ้น
-2. **อัปเดต Activity Log**: เขียนบันทึกสั้นๆ ใน [docs/ACTIVITY_LOG.md](file:///Users/user/Desktop/playgroud/playground/docs/ACTIVITY_LOG.md) ระบุ:
+2. **อัปเดต Activity Log**: เขียนบันทึกสั้นๆ ใน [docs/ACTIVITY_LOG.md](file:///Users/user/Desktop/playgroud/playground/playground-api/docs/ACTIVITY_LOG.md) ระบุ:
    - ฟีเจอร์ที่พัฒนาสำเร็จ
    - ไฟล์ที่แก้ไขหรือสร้างใหม่
    - ข้อเสนอแนะหรือสิ่งที่ต้องทำต่อใน Phase ถัดไป

@@ -22,11 +22,11 @@
 
 เมื่อผู้ใช้พิมพ์คำสั่ง **`update memory`**:
 > Gemini ต้องทำการอัปเดตไฟล์คอนฟิกหลักร่วมกันทั้งหมดทันที ได้แก่:
-> - [AGENTS.md](file:///Users/user/Desktop/playgroud/playground/AGENTS.md)
-> - [GEMINI.md](file:///Users/user/Desktop/playgroud/playground/GEMINI.md) (ไฟล์นี้)
-> - [CLAUDE.md](file:///Users/user/Desktop/playgroud/playground/CLAUDE.md)
-> - [docs/ACTIVITY_LOG.md](file:///Users/user/Desktop/playgroud/playground/docs/ACTIVITY_LOG.md)
-> - [README.md](file:///Users/user/Desktop/playgroud/playground/README.md)
+> - [AGENTS.md](file:///Users/user/Desktop/playgroud/playground/playground-api/AGENTS.md)
+> - [GEMINI.md](file:///Users/user/Desktop/playgroud/playground/playground-api/GEMINI.md) (ไฟล์นี้)
+> - [CLAUDE.md](file:///Users/user/Desktop/playgroud/playground/playground-api/CLAUDE.md)
+> - [docs/ACTIVITY_LOG.md](file:///Users/user/Desktop/playgroud/playground/playground-api/docs/ACTIVITY_LOG.md)
+> - [README.md](file:///Users/user/Desktop/playgroud/playground/playground-api/README.md)
 
 ---
 
@@ -38,5 +38,5 @@
    - รันการตรวจสอบไวยากรณ์ด้วย `node --check` เสมอ
    - รันการทดสอบด้วย `npm test` เพื่อยืนยันว่าโค้ดทำงานได้ถูกต้อง 100%
 3. **การทำงานร่วมกับ Claude**:
-   - บันทึกรายละเอียดการเปลี่ยนแปลงและรายการไฟล์ลงใน [docs/ACTIVITY_LOG.md](file:///Users/user/Desktop/playgroud/playground/docs/ACTIVITY_LOG.md)
-   - อัปเดตข้อมูลการออกแบบใน [AGENTS.md](file:///Users/user/Desktop/playgroud/playground/AGENTS.md) เพื่อให้ Claude นำไปใช้ต่อได้อย่างราบรื่น
+   - บันทึกรายละเอียดการเปลี่ยนแปลงและรายการไฟล์ลงใน [docs/ACTIVITY_LOG.md](file:///Users/user/Desktop/playgroud/playground/playground-api/docs/ACTIVITY_LOG.md)
+   - อัปเดตข้อมูลการออกแบบใน [AGENTS.md](file:///Users/user/Desktop/playgroud/playground/playground-api/AGENTS.md) เพื่อให้ Claude นำไปใช้ต่อได้อย่างราบรื่น

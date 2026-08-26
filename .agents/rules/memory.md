@@ -11,9 +11,9 @@
 
 1. **สรุปความรู้ใหม่**: สรุปกฎระเบียบ การตัดสินใจเชิงสถาปัตยกรรม เทคโนโลยีใหม่ หรือข้อตกลงที่เพิ่งตกลงกับผู้ใช้
 2. **อัปเดตไฟล์คอนฟิกหลัก**:
-   - 📝 **[AGENTS.md](file:///Users/user/Desktop/playgroud/playground/AGENTS.md)**: อัปเดตกฎและสเปกกลางของโปรเจกต์
-   - ♊ **[GEMINI.md](file:///Users/user/Desktop/playgroud/playground/GEMINI.md)**: อัปเดตแนวทางเฉพาะสำหรับ Gemini
-   - 🧠 **[CLAUDE.md](file:///Users/user/Desktop/playgroud/playground/CLAUDE.md)**: อัปเดตแนวทางเฉพาะสำหรับ Claude
+   - 📝 **[AGENTS.md](file:///Users/user/Desktop/playgroud/playground/playground-api/AGENTS.md)**: อัปเดตกฎและสเปกกลางของโปรเจกต์
+   - ♊ **[GEMINI.md](file:///Users/user/Desktop/playgroud/playground/playground-api/GEMINI.md)**: อัปเดตแนวทางเฉพาะสำหรับ Gemini
+   - 🧠 **[CLAUDE.md](file:///Users/user/Desktop/playgroud/playground/playground-api/CLAUDE.md)**: อัปเดตแนวทางเฉพาะสำหรับ Claude
 3. **อัปเดตไฟล์บันทึกและคู่มือ**:
-   - 📋 **[docs/ACTIVITY_LOG.md](file:///Users/user/Desktop/playgroud/playground/docs/ACTIVITY_LOG.md)**: ลงบันทึกการอัปเดต memory ล่าสุด
-   - 📘 **[README.md](file:///Users/user/Desktop/playgroud/playground/README.md)**: อัปเดตคู่มือหากมีการเปลี่ยนแปลงฟีเจอร์หรือคำสั่ง
+   - 📋 **[docs/ACTIVITY_LOG.md](file:///Users/user/Desktop/playgroud/playground/playground-api/docs/ACTIVITY_LOG.md)**: ลงบันทึกการอัปเดต memory ล่าสุด
+   - 📘 **[README.md](file:///Users/user/Desktop/playgroud/playground/playground-api/README.md)**: อัปเดตคู่มือหากมีการเปลี่ยนแปลงฟีเจอร์หรือคำสั่ง

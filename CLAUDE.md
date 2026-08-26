@@ -14,11 +14,11 @@
 
 When user inputs **`update memory`**:
 > Claude MUST update the following configuration & log files simultaneously:
-> 1. [AGENTS.md](file:///Users/user/Desktop/playgroud/playground/AGENTS.md)
-> 2. [GEMINI.md](file:///Users/user/Desktop/playgroud/playground/GEMINI.md)
-> 3. [CLAUDE.md](file:///Users/user/Desktop/playgroud/playground/CLAUDE.md) (This file)
-> 4. [docs/ACTIVITY_LOG.md](file:///Users/user/Desktop/playgroud/playground/docs/ACTIVITY_LOG.md)
-> 5. [README.md](file:///Users/user/Desktop/playgroud/playground/README.md)
+> 1. [AGENTS.md](file:///Users/user/Desktop/playgroud/playground/playground-api/AGENTS.md)
+> 2. [GEMINI.md](file:///Users/user/Desktop/playgroud/playground/playground-api/GEMINI.md)
+> 3. [CLAUDE.md](file:///Users/user/Desktop/playgroud/playground/playground-api/CLAUDE.md) (This file)
+> 4. [docs/ACTIVITY_LOG.md](file:///Users/user/Desktop/playgroud/playground/playground-api/docs/ACTIVITY_LOG.md)
+> 5. [README.md](file:///Users/user/Desktop/playgroud/playground/playground-api/README.md)
 
 ---
 
@@ -52,5 +52,5 @@ When user inputs **`update memory`**:
 ## 🤝 Multi-Agent Synchronization (กับ Gemini)
 
 - เคารพการออกแบบของ **Gemini** ใน `AGENTS.md` และ `GEMINI.md`
-- บันทึกการเปลี่ยนแปลงและสถานะการทำงานลงใน [docs/ACTIVITY_LOG.md](file:///Users/user/Desktop/playgroud/playground/docs/ACTIVITY_LOG.md) เมื่อทำงานเสร็จสิ้น
+- บันทึกการเปลี่ยนแปลงและสถานะการทำงานลงใน [docs/ACTIVITY_LOG.md](file:///Users/user/Desktop/playgroud/playground/playground-api/docs/ACTIVITY_LOG.md) เมื่อทำงานเสร็จสิ้น
 - อ่านข้อมูลบริบทจาก `AGENTS.md` ก่อนเริ่มสกัดโค้ดหรือ Refactor

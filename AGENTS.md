@@ -25,11 +25,11 @@
 
 เมื่อผู้ใช้พิมพ์คำสั่ง **`update memory`** (หรือขอให้อัปเดตความจำ/ความรู้โปรเจกต์):
 > **บังคับ (Mandatory)**: AI Agents ต้องทำการอัปเดตไฟล์ข้อมูลและคอนฟิกเหล่านี้พร้อมกันทันที:
-> 1. [AGENTS.md](file:///Users/user/Desktop/playgroud/playground/AGENTS.md) (ไฟล์นี้)
-> 2. [GEMINI.md](file:///Users/user/Desktop/playgroud/playground/GEMINI.md)
-> 3. [CLAUDE.md](file:///Users/user/Desktop/playgroud/playground/CLAUDE.md)
-> 4. [docs/ACTIVITY_LOG.md](file:///Users/user/Desktop/playgroud/playground/docs/ACTIVITY_LOG.md)
-> 5. [README.md](file:///Users/user/Desktop/playgroud/playground/README.md)
+> 1. [AGENTS.md](file:///Users/user/Desktop/playgroud/playground/playground-api/AGENTS.md) (ไฟล์นี้)
+> 2. [GEMINI.md](file:///Users/user/Desktop/playgroud/playground/playground-api/GEMINI.md)
+> 3. [CLAUDE.md](file:///Users/user/Desktop/playgroud/playground/playground-api/CLAUDE.md)
+> 4. [docs/ACTIVITY_LOG.md](file:///Users/user/Desktop/playgroud/playground/playground-api/docs/ACTIVITY_LOG.md)
+> 5. [README.md](file:///Users/user/Desktop/playgroud/playground/playground-api/README.md)
 
 ---
 
@@ -74,6 +74,6 @@ npm run test:coverage
 
 ## 🤝 ข้อตกลงการทำงานร่วมกันระหว่าง Gemini และ Claude (Multi-Agent Protocol)
 
-1. **อัปเดต Activity Log**: เมื่อ Agent ทำการสร้างหรือแก้ไขไฟล์งาน ให้ลงบันทึกใน [docs/ACTIVITY_LOG.md](file:///Users/user/Desktop/playgroud/playground/docs/ACTIVITY_LOG.md) เสมอ
+1. **อัปเดต Activity Log**: เมื่อ Agent ทำการสร้างหรือแก้ไขไฟล์งาน ให้ลงบันทึกใน [docs/ACTIVITY_LOG.md](file:///Users/user/Desktop/playgroud/playground/playground-api/docs/ACTIVITY_LOG.md) เสมอ
 2. **รักษาความสะอาดของโค้ด**: ก่อนจบการทำงาน ให้รัน `npm test` เพื่อตรวจสอบว่าไม่มี Breaking Changes
 3. **การส่งมอบงาน (Handover)**: หากต้องส่งต่องานให้อีก Agent ให้ระบุสถานะล่าสุดลงใน `docs/ACTIVITY_LOG.md`
