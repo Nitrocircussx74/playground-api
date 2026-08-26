@@ -43,6 +43,47 @@ class RoomController {
       next(error);
     }
   }
+
+  async createRoom(req, res, next) {
+    try {
+      const { roomNumber, floor, price, status } = req.body;
+
+      if (!roomNumber || floor == null || price == null) {
+        return res.status(400).json({
+          success: false,
+          message: 'Missing required parameters: roomNumber, floor, and price'
+        });
+      }
+
+      const existingRoom = await billingService.prisma.room.findUnique({
+        where: { roomNumber: String(roomNumber) }
+      });
+
+      if (existingRoom) {
+        return res.status(400).json({
+          success: false,
+          message: `Room ${roomNumber} already exists in the system`
+        });
+      }
+
+      const newRoom = await billingService.prisma.room.create({
+        data: {
+          roomNumber: String(roomNumber),
+          floor: Number(floor),
+          price: Number(price),
+          status: status || 'available'
+        }
+      });
+
+      return res.status(201).json({
+        success: true,
+        message: `Room ${newRoom.roomNumber} created successfully`,
+        data: newRoom
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 module.exports = new RoomController();
