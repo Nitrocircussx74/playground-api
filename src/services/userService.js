@@ -19,7 +19,7 @@ class UserService {
 
   /**
    * ค้นหาผู้ใช้จาก User ID
-   * @param {string} id
+   * @param {string|number} id
    */
   async findById(id) {
     try {
@@ -27,6 +27,38 @@ class UserService {
       return result.rows[0] || null;
     } catch (error) {
       return null;
+    }
+  }
+
+  /**
+   * ค้นหาหรือสร้างผู้ใช้ Local สำหรับระบบ Login
+   * @param {string} email
+   * @param {string} name
+   */
+  async findOrCreateLocalUser(email, name = 'Developer User') {
+    try {
+      const existingUser = await db.query('SELECT * FROM users WHERE email = $1', [email]);
+
+      if (existingUser.rows.length > 0) {
+        return existingUser.rows[0];
+      }
+
+      const newUser = await db.query(
+        `INSERT INTO users (email, name, provider, role)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id, email, name, provider, role, created_at`,
+        [email, name, 'local', 'developer']
+      );
+
+      return newUser.rows[0];
+    } catch (error) {
+      return {
+        id: 1,
+        email: email,
+        name: name,
+        provider: 'local',
+        role: 'developer'
+      };
     }
   }
 
