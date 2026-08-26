@@ -20,15 +20,17 @@ if (config.nodeEnv !== 'test') {
   app.use(morgan('dev'));
 }
 
+// Disable restrictive Content Security Policy and enable Cross-Origin Access for Development & Cloudflare Tunnels
 app.use(
   helmet({
-    crossOriginResourcePolicy: { policy: 'cross-origin' }
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    contentSecurityPolicy: false
   })
 );
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: 200,
   standardHeaders: true,
   legacyHeaders: false,
   message: {
@@ -38,25 +40,13 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-const allowedOrigins = [
-  config.clientUrl,
-  'http://localhost:5173',
-  'http://localhost:5174',
-  'http://localhost:5175',
-  'http://localhost:80',
-  'http://localhost'
-].filter(Boolean);
-
+// Completely Unrestricted CORS for Development & Cloudflare Tunnels / LINE LIFF
 app.use(
   cors({
-    origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin) || origin.startsWith('http://localhost:')) {
-        callback(null, true);
-      } else {
-        callback(new Error('Blocked by CORS policy'));
-      }
-    },
-    credentials: true
+    origin: true, // Automatically reflects request origin to allow any domain (trycloudflare.com, liff.line.me, localhost, etc.)
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'x-csrf-token']
   })
 );
 
