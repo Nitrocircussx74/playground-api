@@ -18,10 +18,13 @@
 - **Repository**: `https://github.com/Nitrocircussx74/playground-api` (GitHub Account: `Nitrocircussx74`)
 - **Package Manager**: **Yarn** (`yarn.lock`)
 - **Technology Stack**: Node.js, Express.js, JavaScript (CommonJS)
-- **Security Layer**: Helmet (HTTP Header Protection) + Express Rate Limit (DoS/Brute-force Protection) + cookie-parser
+- **Security Layer**: Helmet + Express Rate Limit + Cookie Parser + Double CSRF Protection (`/api/csrf-token`)
+- **API Documentation**: **Swagger UI** (`swagger-ui-express` & `swagger-jsdoc` at `/api-docs`)
+- **Logging Layer**: **Morgan** HTTP Request Logger (`morgan`)
 - **Data Validation Layer**: Zod (`src/validators/authValidator.js`, `src/validators/mainValidator.js`, `src/middlewares/validateMiddleware.js`)
 - **Database & Migrations**: PostgreSQL (`pg` Connection Pool) + Custom SQL Migration Runner (`yarn migrate`)
 - **Authentication**: JWT Best Practices (Dual Tokens: Access Token 15m ใน Body + Refresh Token 7d ใน HttpOnly, Secure, SameSite Cookie + Database Persistence `refresh_tokens` + Token Rotation & Revocation) + Google OAuth 2.0 (Passport.js)
+- **DevOps & Containerization**: Dockerfile (Node 20 Alpine) + Docker Compose + Colima Support
 - **Testing Coverage**: **100% Full API Integration Testing** (19/19 Test Cases Passed Across All Endpoints)
 - **Architecture**: Layered Clean Architecture (`src/config`, `src/routes`, `src/controllers`, `src/services`, `src/middlewares`, `src/validators`, `src/migrations`)
 

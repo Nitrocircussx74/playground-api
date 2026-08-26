@@ -49,6 +49,12 @@
 - **`src/migrations/migrate.js`**: ระบบตรวจเช็คตาราง `schema_migrations` และรันไฟล์ SQL Migrations ภายใต้ Transaction
 - **`src/migrations/files/001_create_users_and_tokens_table.sql`**: DDL Script สำหรับสร้างตาราง `users` และ `refresh_tokens`
 
+### Phase 8: การตั้งค่า Swagger API Docs, Morgan Logging, Double CSRF & Docker Orchestration
+- **`src/config/swagger.js`**: ตั้งค่า Swagger OpenAPI 3.0 Specification สำหรับ API Documentation
+- **`src/app.js`**: ติดตั้ง **Swagger UI** (`/api-docs`), **Morgan Logging** (`morgan`), และ **Double CSRF Protection** (`/api/csrf-token`)
+- **`Dockerfile` & `.dockerignore`**: สร้าง Node.js 20 Alpine Image พร้อมสคริปต์รัน Migration + Start Server
+- **`docker-compose.yml`**: จัดการ Container Orchestration สำหรับ `db` (PostgreSQL 16), `backend` (Node.js API) และ `frontend` (Vue 3 Nginx) รองรับการรันผ่าน **Colima** และ Docker Desktop
+
 ---
 
 ## 📂 สรุปรายการไฟล์ทั้งหมดที่สร้างขึ้น (Created Files Inventory)
