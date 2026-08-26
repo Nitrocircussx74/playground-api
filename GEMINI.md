@@ -13,6 +13,7 @@
 ## 📌 สรุปบทบาทของ Gemini ในโปรเจกต์นี้
 
 - **Role**: Lead Architect & Backend Feature Developer
+- **Repository**: `https://github.com/Nitrocircussx74/playground-api`
 - **การสื่อสาร**: ใช้ **ภาษาไทย** ในการอธิบายผลงานและการเขียนคอมเมนต์ในโค้ดทั้งหมดตามข้อตกลงกับผู้ใช้
 
 ---

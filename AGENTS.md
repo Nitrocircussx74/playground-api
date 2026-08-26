@@ -12,6 +12,7 @@
 
 ## 📌 ข้อมูลโปรเจกต์ (Project Overview)
 
+- **Repository**: `https://github.com/Nitrocircussx74/playground-api` (GitHub Account: `Nitrocircussx74`)
 - **Technology Stack**: Node.js, Express.js, JavaScript (CommonJS)
 - **Database & Migrations**: PostgreSQL (`pg` Connection Pool) + Custom SQL Migration Runner (`npm run migrate`)
 - **Authentication**: JWT (JsonWebToken) + Google OAuth 2.0 (Passport.js)

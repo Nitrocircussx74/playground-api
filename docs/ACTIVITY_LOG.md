@@ -1,6 +1,6 @@
 # 📋 บันทึกกิจกรรมการพัฒนา (Development Activity Log)
 
-บันทึกสรุปขั้นตอน การดำเนินการสร้างโปรเจกต์ **Node.js + Express REST API Starter (JWT, Google OAuth 2.0 & PostgreSQL)**, ชุดทดสอบ **Unit & Integration Testing**, ระบบ **Multi-Agent Collaboration Setup (Gemini + Claude)** และการตั้งค่าระบบ **PostgreSQL Database Integration**
+บันทึกสรุปขั้นตอน การดำเนินการสร้างโปรเจกต์ **Node.js + Express REST API Starter (JWT, Google OAuth 2.0 & PostgreSQL)**, ชุดทดสอบ **Unit & Integration Testing**, ระบบ **Multi-Agent Collaboration Setup (Gemini + Claude)**, ระบบ **PostgreSQL Database & Migration Runner** และการรันโปรโตคอล **`update memory`**
 
 ---
 
@@ -8,7 +8,8 @@
 
 - **วันที่ดำเนินการ**: 26 สิงหาคม 2026
 - **สถานะ**: ✅ สำเร็จเสร็จสมบูรณ์ 100%
-- **เป้าหมาย**: เพิ่มระบบเชื่อมต่อ PostgreSQL Database ผ่าน `pg` Connection Pool และระบบจัดการผู้ใช้ (`userService`)
+- **คำสั่งล่าสุด**: `update memory` (Memory Sync Protocol Executed)
+- **Repository**: `https://github.com/Nitrocircussx74/playground-api`
 
 ---
 
@@ -47,8 +48,17 @@
 - **`tests/unit/middlewares/authMiddleware.test.js`**: เขียน Unit Tests ตรวจสอบพฤติกรรมของ `authMiddleware`
 - **`tests/integration/apiRoutes.test.js`**: เขียน Integration Tests โดยใช้ Supertest จำลอง HTTP Request ไปยัง `/api`
 
-### Phase 7: การเพิ่มการเชื่อมต่อ PostgreSQL Database & Schema Script
-- **`docs/schema.sql`**: สร้าง SQL DDL สคริปต์สำหรับการสร้างตาราง `users` และ Indexes ใน PostgreSQL
+### Phase 7: การเพิ่มระบบ Database Migration Runner (`npm run migrate`)
+- **`src/migrations/migrate.js`**: สร้างระบบตรวจเช็คตาราง `schema_migrations` และรันไฟล์ SQL Migrations ภายใต้ Transaction
+- **`src/migrations/files/001_create_users_table.sql`**: สร้าง DDL Script สำหรับสร้างตาราง `users` และ Indexes
+
+### Phase 8: การสร้าง Git Repository & Multi-Agent Collaboration
+- สลับเข้าใช้งานบัญชี GitHub `Nitrocircussx74` ผ่าน GitHub CLI
+- สร้าง Public Repository `playground-api` บน GitHub และ Push โค้ดทั้งหมดขึ้น Branch `main`
+- กำหนดกฎเหล็กห้ามใส่ Credit ของ AI/Agent ทุกชนิดในโปรเจกต์
+
+### Phase 9: การประมวลผลคำสั่ง `update memory` (Memory Sync Protocol)
+- ทำการซิงค์ข้อมูลและอัปเดตไฟล์คอนฟิกหลักทั้งหมด (`AGENTS.md`, `GEMINI.md`, `CLAUDE.md`, `docs/ACTIVITY_LOG.md`, `README.md`) ให้มีข้อมูลตรงกัน 100%
 
 ---
 
@@ -56,7 +66,7 @@
 
 | ลำดับ | ชื่อไฟล์ / พาธ | ชนิดไฟล์ | หน้าที่และความรับผิดชอบ |
 | :---: | :--- | :---: | :--- |
-| 1 | `package.json` | JSON | กำหนด Dependencies, Scripts การรัน และ Scripts การทดสอบ |
+| 1 | `package.json` | JSON | กำหนด Dependencies, Scripts การรัน (`dev`, `start`, `migrate`, `test`) |
 | 2 | `.env.example` | ENV | แม่แบบกำหนดตัวแปรสภาพแวดล้อม (Port, DB Config, JWT Secret, OAuth) |
 | 3 | `.gitignore` | Git | ละเว้นโฟลเดอร์ `node_modules` และไฟล์ `.env` |
 | 4 | `jest.config.js` | JS Config | กำหนดการตั้งค่าสำหรับการรัน Jest Test Framework |
@@ -64,25 +74,27 @@
 | 6 | `CLAUDE.md` | Markdown | คำสั่งเฉพาะและแนวทางการทำงานสำหรับ Claude Agent |
 | 7 | `GEMINI.md` | Markdown | คำสั่งเฉพาะและแนวทางการทำงานสำหรับ Gemini Agent |
 | 8 | `docs/MULTI_AGENT_WORKFLOW.md` | Markdown | กรอบการทำงานและการแบ่งบทบาทหน้าที่ระหว่าง Gemini และ Claude |
-| 9 | `docs/schema.sql` | SQL Script | DDL สคริปต์สำหรับสร้างตาราง `users` และ Indexes ใน PostgreSQL |
+| 9 | `docs/schema.sql` | SQL Script | DDL สคริปต์สำรองสำหรับสร้างตาราง `users` ใน PostgreSQL |
 | 10 | `.agents/rules/memory.md` | Rule | กฎคำสั่งพิเศษ `update memory` สำหรับ AI Agents |
 | 11 | `src/config/env.js` | JS Module | รวมและส่งออกค่า Environment Variables (App, DB, JWT, OAuth) |
 | 12 | `src/config/db.js` | JS Config | ตั้งค่า PostgreSQL Connection Pool (`pg.Pool`) และฟังก์ชันทดสอบการเชื่อมต่อ |
 | 13 | `src/config/passport.js` | JS Module | ตั้งค่า Google OAuth 2.0 Strategy ร่วมกับ `userService` |
-| 14 | `src/services/authService.js` | JS Service | จัดการการ Sign (ออก) และ Verify JWT Tokens |
-| 15 | `src/services/userService.js` | JS Service | จัดการการค้นหาและบันทึกข้อมูลผู้ใช้ลง PostgreSQL |
-| 16 | `src/services/mainService.js` | JS Service | จัดการ Business Logic สำหรับ Endpoint หลัก `/api` |
-| 17 | `src/middlewares/authMiddleware.js` | JS Middleware | ตรวจสอบ JWT Bearer Token ป้องกัน Protected Routes |
-| 18 | `src/middlewares/errorMiddleware.js` | JS Middleware | จัดการ Error 404 และ Global Error 500 รวมศูนย์ |
-| 19 | `src/controllers/authController.js` | JS Controller | ควบคุม OAuth Callback, Mock Login และ Profile Endpoint |
-| 20 | `src/controllers/mainController.js` | JS Controller | ควบคุม Request/Response สำหรับ `GET /api` และ `POST /api` |
-| 21 | `src/routes/authRoutes.js` | JS Route | เส้นทางสำหรับระบบ Auth (`/auth/google`, `/auth/login`, `/auth/me`) |
-| 22 | `src/routes/apiRoutes.js` | JS Route | เส้นทางสำหรับ `/api` พร้อมครอบ `authMiddleware` |
-| 23 | `src/routes/index.js` | JS Route | Master Router รวมเส้นทางทั้งหมด |
-| 24 | `src/app.js` | JS App | ประกอบ Express Application, Middlewares และ Routes |
-| 25 | `src/server.js` | JS Entrypoint | จุดเริ่มต้นเปิด HTTP Server และการทดสอบเชื่อมต่อ PostgreSQL |
-| 26 | `tests/unit/services/authService.test.js` | Test File | Unit Tests สำหรับ AuthService |
-| 27 | `tests/unit/middlewares/authMiddleware.test.js` | Test File | Unit Tests สำหรับ authMiddleware |
-| 28 | `tests/integration/apiRoutes.test.js` | Test File | Integration Tests สำหรับ Protected Endpoints ผ่าน Supertest |
-| 29 | `README.md` | Markdown | เอกสารคู่มือการใช้งานโปรเจกต์ภาษาไทย |
-| 30 | `docs/ACTIVITY_LOG.md` | Markdown | เอกสารบันทึกกิจกรรมการพัฒนาโปรเจกต์ |
+| 14 | `src/migrations/migrate.js` | JS Script | ระบบรัน Database Schema Migrations ภายใต้ SQL Transaction |
+| 15 | `src/migrations/files/001_create_users_table.sql` | Migration SQL | ไฟล์ DDL Migration สำหรับสร้างตาราง `users` และ Indexes |
+| 16 | `src/services/authService.js` | JS Service | จัดการการ Sign (ออก) และ Verify JWT Tokens |
+| 17 | `src/services/userService.js` | JS Service | จัดการการค้นหาและบันทึกข้อมูลผู้ใช้ลง PostgreSQL |
+| 18 | `src/services/mainService.js` | JS Service | จัดการ Business Logic สำหรับ Endpoint หลัก `/api` |
+| 19 | `src/middlewares/authMiddleware.js` | JS Middleware | ตรวจสอบ JWT Bearer Token ป้องกัน Protected Routes |
+| 20 | `src/middlewares/errorMiddleware.js` | JS Middleware | จัดการ Error 404 และ Global Error 500 รวมศูนย์ |
+| 21 | `src/controllers/authController.js` | JS Controller | ควบคุม OAuth Callback, Mock Login และ Profile Endpoint |
+| 22 | `src/controllers/mainController.js` | JS Controller | ควบคุม Request/Response สำหรับ `GET /api` และ `POST /api` |
+| 23 | `src/routes/authRoutes.js` | JS Route | เส้นทางสำหรับระบบ Auth (`/auth/google`, `/auth/login`, `/auth/me`) |
+| 24 | `src/routes/apiRoutes.js` | JS Route | เส้นทางสำหรับ `/api` พร้อมครอบ `authMiddleware` |
+| 25 | `src/routes/index.js` | JS Route | Master Router รวมเส้นทางทั้งหมด |
+| 26 | `src/app.js` | JS App | ประกอบ Express Application, Middlewares และ Routes |
+| 27 | `src/server.js` | JS Entrypoint | จุดเริ่มต้นเปิด HTTP Server และการทดสอบเชื่อมต่อ PostgreSQL |
+| 28 | `tests/unit/services/authService.test.js` | Test File | Unit Tests สำหรับ AuthService |
+| 29 | `tests/unit/middlewares/authMiddleware.test.js` | Test File | Unit Tests สำหรับ authMiddleware |
+| 30 | `tests/integration/apiRoutes.test.js` | Test File | Integration Tests สำหรับ Protected Endpoints ผ่าน Supertest |
+| 31 | `README.md` | Markdown | เอกสารคู่มือการใช้งานโปรเจกต์ภาษาไทย |
+| 32 | `docs/ACTIVITY_LOG.md` | Markdown | เอกสารบันทึกกิจกรรมการพัฒนาโปรเจกต์ |
