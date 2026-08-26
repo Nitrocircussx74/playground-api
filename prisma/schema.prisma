@@ -1,0 +1,199 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// ตารางข้อมูลผู้ใช้งานและผู้ดูแลระบบ
+model User {
+  /// รหัสอ้างอิงผู้ใช้งาน (PK, UUID)
+  id String @id @default(uuid()) @db.Uuid
+
+  /// อีเมลผู้ใช้งาน
+  email String @unique
+
+  /// รหัสผ่านที่เข้ารหัสแล้ว (PBKDF2/Bcrypt)
+  passwordHash String @map("password_hash")
+
+  /// ชื่อจริง-นามสกุล
+  name String
+
+  /// สิทธิ์ผู้ใช้งาน (admin = ผู้ดูแลระบบ, tenant = ผู้เช่า)
+  role String @default("tenant")
+
+  /// เบอร์โทรศัพท์ติดต่อ
+  phone String?
+
+  /// วันเวลาที่สร้างเรคคอร์ด
+  createdAt DateTime @default(now()) @map("created_at")
+
+  /// วันเวลาที่อัปเดตเรคคอร์ดล่าสุด
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+/// ตารางข้อมูลห้องพัก
+model Room {
+  /// รหัสอ้างอิงห้องพัก (PK, UUID)
+  id String @id @default(uuid()) @db.Uuid
+
+  /// หมายเลขห้องพัก (เช่น A101, B202)
+  roomNumber String @unique @map("room_number")
+
+  /// ชั้นที่ห้องพักตั้งอยู่
+  floor Int
+
+  /// ราคาค่าเช่าห้องพักต่อเดือน
+  price Decimal @db.Decimal(10, 2)
+
+  /// สถานะห้องพัก (available = ว่าง, occupied = มีผู้เช่า, maintenance = ซ่อมบำรุง)
+  status String @default("available")
+
+  /// รหัสผู้เช่าปัจจุบัน (Foreign Key ไปยังตาราง Tenant)
+  tenantId String? @map("tenant_id") @db.Uuid
+  tenant   Tenant? @relation(fields: [tenantId], references: [id])
+
+  /// วันเวลาที่สร้างเรคคอร์ด
+  createdAt DateTime @default(now()) @map("created_at")
+
+  /// วันเวลาที่อัปเดตเรคคอร์ดล่าสุด
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // ความสัมพันธ์ (Relations)
+  meterRecords MeterRecord[]
+  invoices     Invoice[]
+
+  // แมปชื่อตารางในฐานข้อมูลเป็น snake_case และพหูพจน์
+  @@map("rooms")
+}
+
+/// ตารางข้อมูลผู้เช่า
+model Tenant {
+  /// รหัสอ้างอิงผู้เช่า (PK, UUID)
+  id String @id @default(uuid()) @db.Uuid
+
+  /// ชื่อจริงของผู้เช่า
+  firstName String @map("first_name")
+
+  /// นามสกุลของผู้เช่า
+  lastName String @map("last_name")
+
+  /// เบอร์โทรศัพท์ติดต่อ
+  phone String
+
+  /// เลขบัตรประจำตัวประชาชน
+  idCard String? @map("id_card")
+
+  /// LINE User ID สำหรับผูกกับระบบ LIFF (ไม่ซ้ำกัน)
+  lineUserId String? @unique @map("line_user_id")
+
+  /// วันเวลาที่สร้างเรคคอร์ด
+  createdAt DateTime @default(now()) @map("created_at")
+
+  /// วันเวลาที่อัปเดตเรคคอร์ดล่าสุด
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // ความสัมพันธ์ (Relations)
+  rooms    Room[]
+  invoices Invoice[]
+
+  @@map("tenants")
+}
+
+/// ตารางประวัติการจดมิเตอร์น้ำและไฟ
+model MeterRecord {
+  /// รหัสอ้างอิงการจดมิเตอร์ (PK, UUID)
+  id String @id @default(uuid()) @db.Uuid
+
+  /// รหัสอ้างอิงห้องพัก (Foreign Key)
+  roomId String @map("room_id") @db.Uuid
+  room   Room   @relation(fields: [roomId], references: [id])
+
+  /// ประเภทของมิเตอร์ (water = น้ำ, electric = ไฟ)
+  meterType String @map("meter_type")
+
+  /// เลขมิเตอร์ของเดือนที่แล้ว
+  previousReading Decimal @map("previous_reading") @db.Decimal(10, 2)
+
+  /// เลขมิเตอร์ของเดือนปัจจุบัน
+  currentReading Decimal @map("current_reading") @db.Decimal(10, 2)
+
+  /// จำนวนหน่วยที่ใช้ไป
+  unitsUsed Decimal @map("units_used") @db.Decimal(10, 2)
+
+  /// รอบบิลที่ทำการจด (รูปแบบเดือน/ปี เช่น 08-2026)
+  billingCycle String @map("billing_cycle")
+
+  /// วันที่และเวลาที่เดินจดเลขมิเตอร์
+  recordedAt DateTime @map("recorded_at")
+
+  /// วันเวลาที่สร้างเรคคอร์ด
+  createdAt DateTime @default(now()) @map("created_at")
+
+  /// วันเวลาที่อัปเดตเรคคอร์ดล่าสุด
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("meter_records")
+}
+
+/// ตารางใบแจ้งหนี้ (บิลค่าเช่า)
+model Invoice {
+  /// รหัสอ้างอิงใบแจ้งหนี้ (PK, UUID)
+  id String @id @default(uuid()) @db.Uuid
+
+  /// หมายเลขใบแจ้งหนี้ (เช่น INV-202608-101)
+  invoiceNumber String @unique @map("invoice_number")
+
+  /// รหัสอ้างอิงห้องพัก (Foreign Key)
+  roomId String @map("room_id") @db.Uuid
+  room   Room   @relation(fields: [roomId], references: [id])
+
+  /// รหัสอ้างอิงผู้เช่า ณ วันที่ออกบิล (Foreign Key)
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  /// รอบบิล (รูปแบบเดือน/ปี เช่น 08-2026)
+  billingCycle String @map("billing_cycle")
+
+  /// ค่าเช่าห้องพักที่ล็อคไว้ ณ เดือนนั้น
+  roomPrice Decimal @map("room_price") @db.Decimal(10, 2)
+
+  /// ยอดรวมค่าน้ำที่คำนวณแล้ว
+  waterTotal Decimal @map("water_total") @db.Decimal(10, 2)
+
+  /// ยอดรวมค่าไฟที่คำนวณแล้ว
+  electricTotal Decimal @map("electric_total") @db.Decimal(10, 2)
+
+  /// ค่าส่วนกลางคงที่
+  commonFee Decimal @default(100.00) @map("common_fee") @db.Decimal(10, 2)
+
+  /// ยอดเงินสุทธิที่ต้องชำระ (ค่าห้อง + ค่าน้ำ + ค่าไฟ + ค่าอื่นๆ)
+  grandTotal Decimal @map("grand_total") @db.Decimal(10, 2)
+
+  /// สถานะการชำระเงิน (pending = รอชำระ, paid = ชำระแล้ว, overdue = เกินกำหนด)
+  status String @default("pending")
+
+  /// สลิปโอนเงิน (URL/Path)
+  slipUrl String? @map("slip_url")
+
+  /// วันครบกำหนดชำระเงิน
+  dueDate DateTime @map("due_date")
+
+  /// วันเวลาที่ชำระเงินเสร็จสิ้น
+  paidAt DateTime? @map("paid_at")
+
+  /// วันเวลาที่สร้างเรคคอร์ด
+  createdAt DateTime @default(now()) @map("created_at")
+
+  /// วันเวลาที่อัปเดตเรคคอร์ดล่าสุด
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("invoices")
+}

@@ -1,106 +1,51 @@
-const db = require('../config/db');
+const { PrismaClient } = require('@prisma/client');
+const crypto = require('crypto');
 
-/**
- * Service สำหรับจัดการข้อมูลผู้ใช้ร่วมกับ PostgreSQL Database
- */
+const prisma = new PrismaClient();
+
+function verifyPassword(password, storedPasswordHash) {
+  if (!storedPasswordHash || !storedPasswordHash.includes(':')) return false;
+  const [salt, originalHash] = storedPasswordHash.split(':');
+  const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
+  return hash === originalHash;
+}
+
 class UserService {
-  /**
-   * ค้นหาผู้ใช้จาก Email
-   * @param {string} email
-   */
   async findByEmail(email) {
-    try {
-      const result = await db.query('SELECT * FROM users WHERE email = $1', [email]);
-      return result.rows[0] || null;
-    } catch (error) {
-      return null;
-    }
+    return await prisma.user.findUnique({ where: { email } });
   }
 
-  /**
-   * ค้นหาผู้ใช้จาก User ID
-   * @param {string|number} id
-   */
   async findById(id) {
-    try {
-      const result = await db.query('SELECT id, email, name, role, provider, created_at FROM users WHERE id = $1', [id]);
-      return result.rows[0] || null;
-    } catch (error) {
-      return null;
-    }
+    return await prisma.user.findUnique({
+      where: { id },
+      select: { id: true, email: true, name: true, role: true, phone: true, createdAt: true }
+    });
   }
 
-  /**
-   * ค้นหาหรือสร้างผู้ใช้ Local สำหรับระบบ Login
-   * @param {string} email
-   * @param {string} name
-   */
-  async findOrCreateLocalUser(email, name = 'Developer User') {
-    try {
-      const existingUser = await db.query('SELECT * FROM users WHERE email = $1', [email]);
+  async findOrCreateLocalUser(email, password, name = 'User') {
+    let user = await prisma.user.findUnique({ where: { email } });
 
-      if (existingUser.rows.length > 0) {
-        return existingUser.rows[0];
+    if (!user) {
+      const salt = crypto.randomBytes(16).toString('hex');
+      const hash = crypto.pbkdf2Sync(password || 'password123', salt, 1000, 64, 'sha512').toString('hex');
+      const passwordHash = `${salt}:${hash}`;
+
+      user = await prisma.user.create({
+        data: {
+          email,
+          name,
+          role: email.includes('admin') ? 'ADMIN' : 'TENANT',
+          passwordHash
+        }
+      });
+    } else if (password) {
+      const isValid = verifyPassword(password, user.passwordHash);
+      if (!isValid) {
+        throw new Error('อีเมลหรือรหัสผ่านไม่ถูกต้อง');
       }
-
-      const newUser = await db.query(
-        `INSERT INTO users (email, name, provider, role)
-         VALUES ($1, $2, $3, $4)
-         RETURNING id, email, name, provider, role, created_at`,
-        [email, name, 'local', 'developer']
-      );
-
-      return newUser.rows[0];
-    } catch (error) {
-      return {
-        id: 1,
-        email: email,
-        name: name,
-        provider: 'local',
-        role: 'developer'
-      };
     }
-  }
 
-  /**
-   * ค้นหาหรือสร้างผู้ใช้ใหม่จากการยืนยันตัวตน Google OAuth
-   * @param {Object} googleProfile
-   */
-  async findOrCreateGoogleUser(googleProfile) {
-    try {
-      const existingUser = await db.query(
-        'SELECT * FROM users WHERE google_id = $1 OR email = $2',
-        [googleProfile.id, googleProfile.email]
-      );
-
-      if (existingUser.rows.length > 0) {
-        return existingUser.rows[0];
-      }
-
-      const newUser = await db.query(
-        `INSERT INTO users (google_id, email, name, avatar, provider, role)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         RETURNING id, email, name, avatar, provider, role, created_at`,
-        [
-          googleProfile.id,
-          googleProfile.email,
-          googleProfile.displayName,
-          googleProfile.avatar,
-          'google',
-          'user'
-        ]
-      );
-
-      return newUser.rows[0];
-    } catch (error) {
-      return {
-        id: googleProfile.id,
-        email: googleProfile.email,
-        name: googleProfile.displayName,
-        provider: 'google',
-        role: 'user'
-      };
-    }
+    return user;
   }
 }
 
