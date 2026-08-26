@@ -38,14 +38,15 @@ When user inputs **`update memory`**:
    - `src/routes/` -> `src/controllers/` -> `src/services/`
    - ห้ามเขียน SQL/Database Queries หรือ JWT Sign/Verify ใน Controller หรือ Route โดยเด็ดขาด ให้ย้ายไปไว้ใน `src/services/`
 2. **Security & Validation**:
-   - Helmet for HTTP headers, express-rate-limit for DoS protection
+   - Helmet for HTTP headers, express-rate-limit for DoS protection, cookie-parser
    - Zod schemas in `src/validators/` with `validateMiddleware.js`
-3. **Database & Migrations**:
+3. **JWT Best Practices (Dual Tokens)**:
+   - Access Token (15m) in response payload for `Authorization: Bearer <TOKEN>`
+   - Refresh Token (7d) in HttpOnly, Secure, SameSite Cookie + DB table `refresh_tokens`
+   - Endpoints: `/auth/login`, `/auth/refresh` (Rotation), `/auth/logout` (Revocation), `/auth/me`
+4. **Database & Migrations**:
    - PostgreSQL connection pool configured in `src/config/db.js`
    - SQL migration files placed in `src/migrations/files/*.sql`
-4. **Authentication Flow**:
-   - JWT Auth ใช้ `src/middlewares/authMiddleware.js`
-   - Google OAuth 2.0 ตั้งค่าไว้ใน `src/config/passport.js`
 5. **Testing Expectations**:
    - เมื่อสร้าง Service หรือ Middleware ใหม่ ต้องสร้างไฟล์ Unit Test ใน `tests/unit/` ควบคู่กันเสมอ
    - เมื่อสร้าง Endpoint ใหม่ ต้องสร้าง Integration Test ใน `tests/integration/` ด้วย Supertest

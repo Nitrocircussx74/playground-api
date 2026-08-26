@@ -15,9 +15,9 @@
 - **Repository**: `https://github.com/Nitrocircussx74/playground-api` (GitHub Account: `Nitrocircussx74`)
 - **Technology Stack**: Node.js, Express.js, JavaScript (CommonJS)
 - **Security Layer**: Helmet (HTTP Header Protection) + Express Rate Limit (DoS/Brute-force Protection) + cookie-parser
-- **Data Validation Layer**: Zod (`src/validators/`, `src/middlewares/validateMiddleware.js`)
+- **Data Validation Layer**: Zod (`src/validators/authValidator.js`, `src/validators/mainValidator.js`, `src/middlewares/validateMiddleware.js`)
 - **Database & Migrations**: PostgreSQL (`pg` Connection Pool) + Custom SQL Migration Runner (`npm run migrate`)
-- **Authentication**: JWT Best Practices (Dual Tokens: Access Token 15m + Refresh Token 7d ใน HttpOnly, Secure, SameSite Cookie + Database Token Persistence/Rotation) + Google OAuth 2.0 (Passport.js)
+- **Authentication**: JWT Best Practices (Dual Tokens: Access Token 15mใน Body + Refresh Token 7d ใน HttpOnly, Secure, SameSite Cookie + Database Persistence `refresh_tokens` + Token Rotation & Revocation) + Google OAuth 2.0 (Passport.js)
 - **Testing**: Jest + Supertest
 - **Architecture**: Layered Clean Architecture (`src/config`, `src/routes`, `src/controllers`, `src/services`, `src/middlewares`, `src/validators`, `src/migrations`)
 
