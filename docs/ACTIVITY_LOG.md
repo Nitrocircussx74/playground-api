@@ -55,6 +55,9 @@
 - **`Dockerfile` & `.dockerignore`**: สร้าง Node.js 20 Alpine Image พร้อมสคริปต์รัน Migration + Start Server
 - **`docker-compose.yml`**: จัดการ Container Orchestration สำหรับ `db` (PostgreSQL 16), `backend` (Node.js API) และ `frontend` (Vue 3 Nginx) รองรับการรันผ่าน **Colima** และ Docker Desktop
 
+### Phase 9: การปรับปรุงระบบ CORS สำหรับ Dynamic Localhost Development Ports
+- **`src/app.js`**: ปรับแต่ง CORS Middleware ให้อนุญาตการเชื่อมต่อจาก `http://localhost:*` ทุกพอร์ตที่รันโหมดพัฒนา (เช่น 5173, 5174, 5175, 80) โดยคงความปลอดภัยของ `credentials: true` สำหรับ HTTP-Only Cookies ไว้ 100%
+
 ---
 
 ## 📂 สรุปรายการไฟล์ทั้งหมดที่สร้างขึ้น (Created Files Inventory)
