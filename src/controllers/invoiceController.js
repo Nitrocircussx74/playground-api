@@ -1,4 +1,5 @@
 const billingService = require('../services/billingService');
+const PDFDocument = require('pdfkit');
 
 class InvoiceController {
   async getInvoices(req, res, next) {
@@ -93,7 +94,7 @@ class InvoiceController {
   async updateInvoiceStatus(req, res, next) {
     try {
       const { id } = req.params;
-      const { status } = req.body; // 'paid' or 'pending' or 'overdue'
+      const { status } = req.body;
 
       const invoice = await billingService.prisma.invoice.findUnique({ where: { id } });
       if (!invoice) {
@@ -113,6 +114,90 @@ class InvoiceController {
         message: `Invoice status updated to ${status}`,
         data: updatedInvoice
       });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * สร้างและส่งสตรีมไฟล์ PDF ใบแจ้งหนี้สำหรับดาวน์โหลด
+   */
+  async exportInvoicePdf(req, res, next) {
+    try {
+      const { id } = req.params;
+
+      const invoice = await billingService.prisma.invoice.findUnique({
+        where: { id },
+        include: { room: true, tenant: true }
+      });
+
+      if (!invoice) {
+        return res.status(404).json({ success: false, message: 'Invoice not found' });
+      }
+
+      const doc = new PDFDocument({ margin: 40, size: 'A4' });
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename=Invoice-${invoice.invoiceNumber}.pdf`);
+
+      doc.pipe(res);
+
+      // Header
+      doc.fontSize(20).font('Helvetica-Bold').text('DORMITORY MONTHLY INVOICE', { align: 'center' });
+      doc.moveDown(0.5);
+      doc.fontSize(10).font('Helvetica').text('123 Playground Resident Road, Bangkok | Tel: 02-123-4567', { align: 'center' });
+      doc.moveDown(1);
+
+      doc.moveTo(40, doc.y).lineTo(555, doc.y).strokeColor('#cbd5e1').stroke();
+      doc.moveDown(1);
+
+      // Details Block
+      const startY = doc.y;
+      doc.fontSize(11).font('Helvetica-Bold').text(`Invoice No: ${invoice.invoiceNumber}`);
+      doc.fontSize(10).font('Helvetica').text(`Billing Cycle: ${invoice.billingCycle}`);
+      doc.text(`Due Date: ${new Date(invoice.dueDate).toLocaleDateString()}`);
+
+      doc.x = 320;
+      doc.y = startY;
+      doc.fontSize(11).font('Helvetica-Bold').text(`Room Number: ${invoice.room?.roomNumber}`);
+      doc.fontSize(10).font('Helvetica').text(`Tenant: ${invoice.tenant ? `${invoice.tenant.firstName} ${invoice.tenant.lastName}` : 'N/A'}`);
+      doc.text(`Status: ${invoice.status.toUpperCase()}`);
+
+      doc.x = 40;
+      doc.moveDown(2);
+
+      // Items Table
+      const tableTop = doc.y;
+      doc.rect(40, tableTop, 515, 24).fill('#f1f5f9');
+      doc.fillColor('#0f172a').fontSize(10).font('Helvetica-Bold');
+      doc.text('Description', 50, tableTop + 7);
+      doc.text('Amount (THB)', 430, tableTop + 7, { width: 110, align: 'right' });
+
+      let y = tableTop + 32;
+      doc.font('Helvetica').fillColor('#334155');
+
+      const items = [
+        { desc: `Room Rent (Room ${invoice.room?.roomNumber})`, amount: Number(invoice.roomPrice) },
+        { desc: 'Water Consumption Fee', amount: Number(invoice.waterTotal) },
+        { desc: 'Electricity Consumption Fee', amount: Number(invoice.electricTotal) },
+        { desc: 'Common Service Fee', amount: Number(invoice.commonFee) }
+      ];
+
+      items.forEach((item) => {
+        doc.text(item.desc, 50, y);
+        doc.text(item.amount.toLocaleString('en-US', { minimumFractionDigits: 2 }), 430, y, { width: 110, align: 'right' });
+        y += 24;
+      });
+
+      doc.moveTo(40, y).lineTo(555, y).strokeColor('#cbd5e1').stroke();
+      y += 12;
+
+      // Grand Total
+      doc.font('Helvetica-Bold').fontSize(12).fillColor('#0f172a');
+      doc.text('TOTAL AMOUNT DUE:', 250, y);
+      doc.text(`THB ${Number(invoice.grandTotal).toLocaleString('en-US', { minimumFractionDigits: 2 })}`, 430, y, { width: 110, align: 'right' });
+
+      doc.end();
     } catch (error) {
       next(error);
     }

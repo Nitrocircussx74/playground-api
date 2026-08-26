@@ -7,6 +7,8 @@ const apiRoutes = require('./apiRoutes');
 const roomRoutes = require('./roomRoutes');
 const meterRoutes = require('./meterRoutes');
 const invoiceRoutes = require('./invoiceRoutes');
+const uploadRoutes = require('./uploadRoutes');
+const maintenanceRoutes = require('./maintenanceRoutes');
 
 // Root Health Check Route
 router.get('/', (req, res) => {
@@ -25,5 +27,7 @@ router.use('/api', apiRoutes);
 router.use('/api/v1/rooms', authenticateJWT, roomRoutes);
 router.use('/api/v1/meter-records', authenticateJWT, meterRoutes);
 router.use('/api/v1/invoices', authenticateJWT, invoiceRoutes);
+router.use('/api/v1/uploads', authenticateJWT, uploadRoutes);
+router.use('/api/v1/maintenance-requests', authenticateJWT, maintenanceRoutes);
 
 module.exports = router;

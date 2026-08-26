@@ -67,8 +67,9 @@ model Room {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   // ความสัมพันธ์ (Relations)
-  meterRecords MeterRecord[]
-  invoices     Invoice[]
+  meterRecords        MeterRecord[]
+  invoices            Invoice[]
+  maintenanceRequests MaintenanceRequest[]
 
   // แมปชื่อตารางในฐานข้อมูลเป็น snake_case และพหูพจน์
   @@map("rooms")
@@ -196,4 +197,34 @@ model Invoice {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("invoices")
+}
+
+/// ตารางแจ้งซ่อมแซมสิ่งอำนวยความสะดวกในห้องพัก
+model MaintenanceRequest {
+  /// รหัสอ้างอิงรายการแจ้งซ่อม (PK, UUID)
+  id String @id @default(uuid()) @db.Uuid
+
+  /// รหัสอ้างอิงห้องพัก (Foreign Key)
+  roomId String @map("room_id") @db.Uuid
+  room   Room   @relation(fields: [roomId], references: [id])
+
+  /// หัวข้อเรื่องที่แจ้งซ่อม
+  title String
+
+  /// รายละเอียดการแจ้งซ่อม
+  description String
+
+  /// รูปภาพประกอบการแจ้งซ่อม (URL/Path)
+  imageUrl String? @map("image_url")
+
+  /// สถานะการดำเนินการ (pending = รอดำเนินการ, in_progress = กำลังซ่อม, completed = ซ่อมเสร็จสิ้น, cancelled = ยกเลิก)
+  status String @default("pending")
+
+  /// วันเวลาที่สร้างเรคคอร์ด
+  createdAt DateTime @default(now()) @map("created_at")
+
+  /// วันเวลาที่อัปเดตเรคคอร์ดล่าสุด
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("maintenance_requests")
 }
