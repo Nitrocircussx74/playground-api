@@ -14,10 +14,10 @@
 
 - **Repository**: `https://github.com/Nitrocircussx74/playground-api` (GitHub Account: `Nitrocircussx74`)
 - **Technology Stack**: Node.js, Express.js, JavaScript (CommonJS)
-- **Security Layer**: Helmet (HTTP Header Protection) + Express Rate Limit (DoS/Brute-force Protection)
+- **Security Layer**: Helmet (HTTP Header Protection) + Express Rate Limit (DoS/Brute-force Protection) + cookie-parser
 - **Data Validation Layer**: Zod (`src/validators/`, `src/middlewares/validateMiddleware.js`)
 - **Database & Migrations**: PostgreSQL (`pg` Connection Pool) + Custom SQL Migration Runner (`npm run migrate`)
-- **Authentication**: JWT (JsonWebToken) + Google OAuth 2.0 (Passport.js)
+- **Authentication**: JWT Best Practices (Dual Tokens: Access Token 15m + Refresh Token 7d ใน HttpOnly, Secure, SameSite Cookie + Database Token Persistence/Rotation) + Google OAuth 2.0 (Passport.js)
 - **Testing**: Jest + Supertest
 - **Architecture**: Layered Clean Architecture (`src/config`, `src/routes`, `src/controllers`, `src/services`, `src/middlewares`, `src/validators`, `src/migrations`)
 
@@ -65,10 +65,10 @@ npm run test:coverage
 2. **Layer Responsibilities**:
    - `routes`: กำหนด Endpoint URL และผูก Middleware (ห้ามใส่ Business Logic ใน Route)
    - `controllers`: รับ HTTP Request, เรียกใช้ Services และส่งคืน HTTP Response
-   - `services`: ประมวลผล Business Logic และการติดต่อกับ Database (`src/services/userService.js`)
-   - `validators`: กำหนด Zod Validation Schemas (`src/validators/mainValidator.js`)
+   - `services`: ประมวลผล Business Logic และการติดต่อกับ Database (`src/services/userService.js`, `src/services/authService.js`)
+   - `validators`: กำหนด Zod Validation Schemas (`src/validators/authValidator.js`, `src/validators/mainValidator.js`)
    - `migrations`: จัดการสร้างและอัปเดตโครงสร้าง Database Schema แบบอัตโนมัติ (`src/migrations/files/*.sql`)
-   - `middlewares`: Security (Helmet, Rate Limiting), Auth, Zod Validation และ Error Handling
+   - `middlewares`: Security (Helmet, Rate Limiting), Auth (Access Token Verification), Zod Validation และ Error Handling
    - `config`: จัดการการอ่านค่า Environment Variables และการตั้งค่า Third-party libraries (`src/config/db.js`)
 3. **Error Handling**: ส่งผ่าน Error ด้วย `next(error)` เสมอเพื่อให้ `errorMiddleware` จัดการ
 4. **Language Policy**: ความคิดเห็นในโค้ด (Comments) และเอกสารคำอธิบาย ให้ใช้ **ภาษาไทย** เป็นหลัก

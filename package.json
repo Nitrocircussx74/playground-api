@@ -1,7 +1,7 @@
 {
   "name": "node-express-auth-starter",
   "version": "1.0.0",
-  "description": "โครงสร้างโปรเจกต์ Node.js + Express API ระดับ Production-Ready (Security, Zod Validation, PostgreSQL, JWT & OAuth 2.0)",
+  "description": "โครงสร้างโปรเจกต์ Node.js + Express API ระดับ Production-Ready อิงตาม JWT Best Practices (Dual Token & HttpOnly Cookies)",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
@@ -15,6 +15,7 @@
     "nodejs",
     "express",
     "jwt",
+    "jwt-best-practices",
     "oauth2",
     "passport",
     "google-auth",
@@ -23,11 +24,13 @@
     "zod",
     "helmet",
     "rate-limit",
+    "cookie-parser",
     "migrations"
   ],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",

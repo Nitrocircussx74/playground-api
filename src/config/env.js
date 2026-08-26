@@ -15,8 +15,10 @@ module.exports = {
     ssl: process.env.DB_SSL === 'true'
   },
   jwt: {
-    secret: process.env.JWT_SECRET || 'default_secret_key',
-    expiresIn: process.env.JWT_EXPIRES_IN || '1d'
+    accessSecret: process.env.JWT_ACCESS_SECRET || 'default_access_secret_key',
+    accessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN || '15m',
+    refreshSecret: process.env.JWT_REFRESH_SECRET || 'default_refresh_secret_key',
+    refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d'
   },
   google: {
     clientId: process.env.GOOGLE_CLIENT_ID || '',

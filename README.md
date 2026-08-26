@@ -1,23 +1,30 @@
-# Node.js + Express REST API Starter (Production-Ready Architecture)
+# Node.js + Express REST API Starter (JWT Best Practices Architecture)
 
-โปรเจกต์เริ่มต้น REST API พัฒนาด้วย **Node.js** และ **Express** ที่ออกแบบในสถาปัตยกรรมแบบ **Clean & Scalable Architecture** ระดับ Production-Ready ครอบคลุมทั้ง **Security (Helmet, Rate Limiting)**, **Data Validation (Zod)**, **JSON Web Token (JWT)**, **Google OAuth 2.0**, **PostgreSQL Database + SQL Migration Runner** รวมถึงชุดทดสอบ **Unit & Integration Test (Jest & Supertest)**
+โปรเจกต์เริ่มต้น REST API พัฒนาด้วย **Node.js** และ **Express** ที่ออกแบบในสถาปัตยกรรมแบบ **Clean & Scalable Architecture** ระดับ Production-Ready อิงตามมาตรฐาน **JWT Best Practices**:
+- **Access Token (อายุสั้น 15 นาที)**: ส่งคืนใน JSON Payload สำหรับใส่ใน Header `Authorization: Bearer <TOKEN>`
+- **Refresh Token (อายุยาว 7 วัน)**: จัดเก็บอย่างปลอดภัยใน **HTTP-Only, Secure, SameSite Cookie** และเก็บบันทึกลง **PostgreSQL Database**
+- **Token Rotation & Revocation**: ระบบหมุนเวียน Token เมื่อใช้งาน และระบบเพิกถอน Token เมื่อ Logout
 
 ---
 
 ## 📌 คุณสมบัติหลัก (Features)
 
 - 🏗️ **Clean & Scalable Architecture**: แบ่งแยกเลเยอร์ชัดเจน (`Config`, `Routes`, `Controllers`, `Services`, `Middlewares`, `Validators`, `Migrations`)
+- 🔐 **JWT Best Practices (Dual Tokens)**:
+  - Access Token (15m): ใช้ยืนยันตัวตนสำหรับ Protected Routes
+  - Refresh Token (7d): ฝังใน HTTP-Only Cookie ป้องกัน XSS
+  - `/auth/refresh`: ขอ Access Token ใหม่พร้อมหมุนเวียน (Rotate) Refresh Token
+  - `/auth/logout`: ลบ Token ใน Database และเพิกถอน Cookie (`res.clearCookie('refreshToken')`)
 - 🛡️ **Security Layer**: 
   - `helmet`: ป้องกันการโจมตีผ่าน HTTP Headers
   - `express-rate-limit`: จำกัดจำนวน Request ป้องกัน Brute-force & DoS (100 Request / 15 นาที)
+  - `cookie-parser` & `cors`: รองรับ `credentials: true` สำหรับการรับส่ง HTTP-Only Cookies
 - ✅ **Data Validation (Zod)**: ตรวจสอบความถูกต้องของ Request Body ล่วงหน้าก่อนเข้า Controller หากไม่ถูกต้องตอบกลับ `400 Bad Request` พร้อมรายละเอียด Zod Issues
 - 🐘 **PostgreSQL Integration**: เชื่อมต่อผ่าน `pg` Connection Pool ประสิทธิภาพสูง
 - 🔄 **SQL Migration Runner**: ระบบจัดการและบันทึกประวัติ Database Schema Migrations อัตโนมัติ (`npm run migrate`)
-- 🔐 **JWT Authentication**: ระบบออกและตรวจสอบ Token สำหรับป้องกัน Route (Protected Routes)
-- 🔑 **Google OAuth 2.0 Integration**: ยืนยันตัวตนผ่าน Google ด้วย Passport.js พร้อมบันทึกผู้ใช้ลง PostgreSQL
+- 🔑 **Google OAuth 2.0 Integration**: ยืนยันตัวตนผ่าน Google ด้วย Passport.js พร้อมออก Dual Tokens
 - 🚨 **Centralized Error Handling**: ระบบจัดการ Error และ 404 Not Found แบบรวมศูนย์
 - 🧪 **Unit & Integration Tests**: ชุดทดสอบพร้อมใช้งานด้วย Jest และ Supertest
-- 🤖 **Multi-Agent Support**: ระบบไฟล์คอนฟิกสำหรับให้ Gemini และ Claude ทำงานร่วมกันได้อย่างราบรื่น
 
 ---
 
@@ -25,7 +32,7 @@
 
 ```text
 playground-api/
-├── .env.example              # ตัวแปรสภาพแวดล้อมจำลอง (App, DB, Security, JWT, OAuth)
+├── .env.example              # ตัวแปรสภาพแวดล้อมจำลอง (JWT_ACCESS_SECRET, JWT_REFRESH_SECRET, DB, OAuth)
 ├── .gitignore                # ป้องกันการติดตามไฟล์ที่ไม่จำเป็น
 ├── jest.config.js            # การตั้งค่า Jest Testing Framework
 ├── package.json              # กำหนด Dependencies และ Scripts
@@ -42,15 +49,16 @@ playground-api/
 │       └── memory.md         # กฎคำสั่งพิเศษ update memory
 ├── src/
 │   ├── config/               # ตั้งค่า App, DB (PostgreSQL Pool), Passport
-│   ├── controllers/          # HTTP Controllers
-│   ├── middlewares/          # Security, JWT Verification, Zod Validator & Error Handlers
+│   ├── controllers/          # HTTP Controllers (Auth, Main)
+│   ├── middlewares/          # Security, JWT Access Token Verification, Zod Validator & Error Handlers
 │   ├── migrations/           # 📁 ระบบ Database Migration Runner
 │   │   ├── migrate.js        # สคริปต์ประมวลผล Migration
 │   │   └── files/            # 📁 โฟลเดอร์เก็บไฟล์ .sql สำหรับ Migrations
-│   │       └── 001_create_users_table.sql
+│   │       └── 001_create_users_and_tokens_table.sql
 │   ├── routes/               # API Routes (Auth, Protected /api)
-│   ├── services/             # Business Logic & DB Queries (Auth, User, Main)
+│   ├── services/             # Business Logic & DB Queries (Auth Dual Token, User, Main)
 │   ├── validators/           # 📁 Zod Data Validation Schemas
+│   │   ├── authValidator.js  # Zod Schema สำหรับ Login
 │   │   └── mainValidator.js  # Zod Schema สำหรับ POST /api
 │   ├── app.js
 │   └── server.js
@@ -75,7 +83,7 @@ npm install
 cp .env.example .env
 ```
 
-ปรับแต่งข้อมูลการเชื่อมต่อ PostgreSQL ในไฟล์ `.env`:
+ปรับแต่งข้อมูลในไฟล์ `.env`:
 
 ```env
 PORT=3000
@@ -89,8 +97,11 @@ DB_PASSWORD=your_password
 DB_NAME=playground_db
 DB_SSL=false
 
-JWT_SECRET=your_super_secret_jwt_key
-JWT_EXPIRES_IN=1d
+# การตั้งค่า JWT Best Practices Dual Tokens
+JWT_ACCESS_SECRET=your_super_secret_access_token_key
+JWT_ACCESS_EXPIRES_IN=15m
+JWT_REFRESH_SECRET=your_super_secret_refresh_token_key
+JWT_REFRESH_EXPIRES_IN=7d
 
 GOOGLE_CLIENT_ID=your_google_client_id.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=your_google_client_secret
@@ -102,7 +113,7 @@ CLIENT_URL=http://localhost:5173
 ### 3. คำสั่งการรันโปรเจกต์ (Scripts)
 
 ```bash
-# 1. รัน Database Migrations เพื่อสร้างตารางและ Indexes ใน PostgreSQL
+# 1. รัน Database Migrations เพื่อสร้างตาราง users และ refresh_tokens
 npm run migrate
 
 # 2. รันในโหมด Development (มี Auto-Reload ด้วย Nodemon)
@@ -123,55 +134,19 @@ npm run test:coverage
 
 ---
 
-## ✅ การทดสอบ Zod Data Validation (`POST /api`)
-
-ตัวอย่างการยิงคำสั่ง cURL เพื่อทดสอบ Zod Validation ใน `POST /api`:
-
-### กรณี 1: ข้อมูลไม่ถูกต้อง (Validation Failed -> HTTP 400)
-
-```bash
-curl -X POST http://localhost:3000/api \
-  -H "Authorization: Bearer <YOUR_JWT_TOKEN>" \
-  -H "Content-Type: application/json" \
-  -d '{"title": "ab", "description": "short"}'
-```
-
-**Response (HTTP 400 Bad Request)**:
-```json
-{
-  "success": false,
-  "message": "ข้อมูลที่ส่งมาไม่ถูกต้องตามข้อกำหนด (Validation Failed)",
-  "errors": [
-    {
-      "field": "title",
-      "message": "หัวข้อ (title) ต้องมีความยาวอย่างน้อย 3 ตัวอักษร"
-    }
-  ]
-}
-```
-
-### กรณี 2: ข้อมูลถูกต้องตาม Zod Schema (Success -> HTTP 201)
-
-```bash
-curl -X POST http://localhost:3000/api \
-  -H "Authorization: Bearer <YOUR_JWT_TOKEN>" \
-  -H "Content-Type: application/json" \
-  -d '{"title": "New Product Title", "description": "Valid detailed description text", "category": "technology"}'
-```
-
----
-
 ## 🔌 ตารางสรุป API Endpoints
 
-| Method | Endpoint | Description | Authentication Required | Validation Required |
-| :--- | :--- | :--- | :---: | :---: |
-| `GET` | `/` | ตรวจสอบสถานะการทำงานของ API (Health Check) | ❌ ไม่ต้องมี | ❌ |
-| `GET` | `/auth/google` | เริ่มต้นยืนยันตัวตนด้วย Google OAuth 2.0 | ❌ ไม่ต้องมี | ❌ |
-| `GET` | `/auth/google/callback` | Google Callback ส่งคืน JWT Token | ❌ ไม่ต้องมี | ❌ |
-| `POST` | `/auth/login` | Mock Login สำหรับรับ JWT Token | ❌ ไม่ต้องมี | ❌ |
-| `GET` | `/auth/me` | เรียกดูข้อมูล Profile จาก JWT Token | ✅ ต้องมี JWT | ❌ |
-| `GET` | `/api` | ดึงข้อมูลภาพรวมหน้าหลัก API | ✅ ต้องมี JWT | ❌ |
-| `POST` | `/api` | ส่งและประมวลผลข้อมูลใหม่ | ✅ ต้องมี JWT | ✅ Zod Validation |
+| Method | Endpoint | Description | Authentication Required | Validation Required | Cookie Support |
+| :--- | :--- | :--- | :---: | :---: | :---: |
+| `GET` | `/` | ตรวจสอบสถานะการทำงานของ API (Health Check) | ❌ ไม่ต้องมี | ❌ | ❌ |
+| `GET` | `/auth/google` | เริ่มต้นยืนยันตัวตนด้วย Google OAuth 2.0 | ❌ ไม่ต้องมี | ❌ | ❌ |
+| `GET` | `/auth/google/callback` | Google Callback ส่งคืน Access Token & Refresh Cookie | ❌ ไม่ต้องมี | ❌ | 🍪 Refresh Cookie |
+| `POST` | `/auth/login` | เข้าสู่ระบบ -> รับ Access Token ใน Body + Refresh Cookie | ❌ ไม่ต้องมี | ✅ Zod Validation | 🍪 Set Refresh Cookie |
+| `POST` | `/auth/refresh` | ขอ Access Token ใหม่โดยอ่าน Refresh Cookie (Token Rotation) | ❌ ไม่ต้องมี | ❌ | 🍪 Read Refresh Cookie |
+| `POST` | `/auth/logout` | ออกจากระบบ -> เพิกถอน Token ใน DB และเคลียร์ Cookie | ❌ ไม่ต้องมี | ❌ | 🧹 Clear Cookie |
+| `GET` | `/auth/me` | เรียกดูข้อมูล Profile จาก Access Token | ✅ ต้องมี JWT Bearer | ❌ | ❌ |
+| `GET` | `/api` | ดึงข้อมูลภาพรวมหน้าหลัก API | ✅ ต้องมี JWT Bearer | ❌ | ❌ |
+| `POST` | `/api` | ส่งและประมวลผลข้อมูลใหม่ | ✅ ต้องมี JWT Bearer | ✅ Zod Validation | ❌ |
 
 ---
 

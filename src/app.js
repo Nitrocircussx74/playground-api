@@ -1,7 +1,9 @@
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
+const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
+const config = require('./config/env');
 const passport = require('./config/passport');
 const routes = require('./routes');
 const { notFoundHandler, errorHandler } = require('./middlewares/errorMiddleware');
@@ -10,11 +12,11 @@ const { notFoundHandler, errorHandler } = require('./middlewares/errorMiddleware
 const app = express();
 
 // 1. ตั้งค่า Security Middlewares (Helmet & Rate Limiting)
-app.use(helmet()); // ป้องกัน HTTP Headers จากการโจมตีทางเว็บ
+app.use(helmet());
 
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // กำหนดช่วงเวลา 15 นาที
-  max: 100, // จำกัดจำนวนสูงสุด 100 Requests ต่อ 1 IP ในช่วงเวลาที่กำหนด
+  windowMs: 15 * 60 * 1000, // ช่วงเวลา 15 นาที
+  max: 100, // จำกัดสูงสุด 100 Requests ต่อ 1 IP
   standardHeaders: true,
   legacyHeaders: false,
   message: {
@@ -23,20 +25,28 @@ const limiter = rateLimit({
   }
 });
 
-app.use(limiter); // ติดตั้ง Rate Limiter ป้องกัน Brute-force & DoS Attacks
+app.use(limiter);
 
-// 2. ตั้งค่า Parser และ CORS
-app.use(cors()); // อนุญาต Cross-Origin Resource Sharing
-app.use(express.json()); // JSON Body Parser สำหรับรับข้อมูลแบบ application/json
-app.use(express.urlencoded({ extended: true })); // URL-encoded Body Parser
+// 2. ตั้งค่า CORS (ต้องเปิด credentials: true เพื่อให้ส่ง HTTP-Only Cookies ได้)
+app.use(
+  cors({
+    origin: config.clientUrl,
+    credentials: true
+  })
+);
 
-// 3. Initial setup สำหรับระบบ OAuth 2.0 (Passport.js)
+// 3. ตั้งค่า Parsers (JSON, URL-Encoded และ Cookie Parser)
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser()); // Cookie Parser สำหรับอ่าน req.cookies.refreshToken
+
+// 4. Initial setup สำหรับระบบ OAuth 2.0 (Passport.js)
 app.use(passport.initialize());
 
-// 4. ติดตั้ง Master Router
+// 5. ติดตั้ง Master Router
 app.use('/', routes);
 
-// 5. ติดตั้ง Middlewares สำหรับจัดการ Error
+// 6. ติดตั้ง Middlewares สำหรับจัดการ Error
 app.use(notFoundHandler); // 404 Handler
 app.use(errorHandler); // Global Error Handler
 
