@@ -70,6 +70,7 @@ model Room {
   meterRecords        MeterRecord[]
   invoices            Invoice[]
   maintenanceRequests MaintenanceRequest[]
+  roomInvites         RoomInvite[]
 
   // แมปชื่อตารางในฐานข้อมูลเป็น snake_case และพหูพจน์
   @@map("rooms")
@@ -227,4 +228,31 @@ model MaintenanceRequest {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("maintenance_requests")
+}
+
+/// ตารางรหัสเชิญสำหรับลงทะเบียนผู้เช่าห้องพัก (Invite Codes)
+model RoomInvite {
+  /// รหัสอ้างอิงรหัสเชิญ (PK, UUID)
+  id String @id @default(uuid()) @db.Uuid
+
+  /// รหัสอ้างอิงห้องพัก (Foreign Key)
+  roomId String @map("room_id") @db.Uuid
+  room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  /// รหัสเชิญลงทะเบียน (เช่น X9K2P4, INV101)
+  code String @unique
+
+  /// วันเวลาหมดอายุของรหัสเชิญ
+  expiresAt DateTime @map("expires_at")
+
+  /// สถานะการใช้งานรหัสเชิญ (true = ถูกใช้งานแล้ว, false = ยังไม่ได้ใช้งาน)
+  isUsed Boolean @default(false) @map("is_used")
+
+  /// วันเวลาที่สร้างเรคคอร์ด
+  createdAt DateTime @default(now()) @map("created_at")
+
+  /// วันเวลาที่อัปเดตเรคคอร์ดล่าสุด
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("room_invites")
 }
