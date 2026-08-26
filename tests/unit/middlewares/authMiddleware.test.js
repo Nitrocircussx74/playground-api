@@ -37,9 +37,9 @@ describe('authMiddleware Unit Tests', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  test('ควรอนุญาตให้ผ่าน (เรียก next) และฝัง req.user เมื่อ Token ถูกต้อง', () => {
-    const mockUser = { id: '123', email: 'test@example.com' };
-    const token = authService.generateToken(mockUser);
+  test('ควรอนุญาตให้ผ่าน (เรียก next) และฝัง req.user เมื่อ Access Token ถูกต้อง', () => {
+    const mockUser = { id: 123, email: 'test@example.com' };
+    const token = authService.generateAccessToken(mockUser);
 
     req.headers.authorization = `Bearer ${token}`;
 

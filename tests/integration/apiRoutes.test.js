@@ -3,15 +3,15 @@ const app = require('../../src/app');
 const authService = require('../../src/services/authService');
 
 describe('API Routes Integration Tests (/api)', () => {
-  let validToken;
+  let validAccessToken;
 
   beforeAll(() => {
     const mockUser = {
-      id: 'integration_user_1',
+      id: 1,
       email: 'integration@test.com',
       name: 'Integration User'
     };
-    validToken = authService.generateToken(mockUser);
+    validAccessToken = authService.generateAccessToken(mockUser);
   });
 
   test('GET / - Health Check ต้องได้ 200 OK', async () => {
@@ -21,17 +21,17 @@ describe('API Routes Integration Tests (/api)', () => {
     expect(response.body.success).toBe(true);
   });
 
-  test('GET /api - แบบไม่แนบ Token ต้องปฏิเสธ 401 Unauthorized', async () => {
+  test('GET /api - แบบไม่แนบ Access Token ต้องปฏิเสธ 401 Unauthorized', async () => {
     const response = await request(app).get('/api');
 
     expect(response.statusCode).toBe(401);
     expect(response.body.success).toBe(false);
   });
 
-  test('GET /api - แนบ Token ที่ถูกต้อง ต้องได้ 200 OK และส่งคืนข้อมูล', async () => {
+  test('GET /api - แนบ Access Token ที่ถูกต้อง ต้องได้ 200 OK และส่งคืนข้อมูล', async () => {
     const response = await request(app)
       .get('/api')
-      .set('Authorization', `Bearer ${validToken}`);
+      .set('Authorization', `Bearer ${validAccessToken}`);
 
     expect(response.statusCode).toBe(200);
     expect(response.body.success).toBe(true);

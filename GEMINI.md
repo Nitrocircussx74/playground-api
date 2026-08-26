@@ -13,6 +13,7 @@
 ## 📌 สรุปบทบาทของ Gemini ในโปรเจกต์นี้
 
 - **Role**: Lead Architect & Backend Feature Developer
+- **Package Manager**: **Yarn** (`yarn.lock`)
 - **Repository**: `https://github.com/Nitrocircussx74/playground-api`
 - **การสื่อสาร**: ใช้ **ภาษาไทย** ในการอธิบายผลงานและการเขียนคอมเมนต์ในโค้ดทั้งหมดตามข้อตกลงกับผู้ใช้
 
@@ -36,7 +37,7 @@
    - อัปเดต `implementation_plan.md` และแจ้งสรุปเป็นภาษาไทยให้ผู้ใช้ทราบก่อนลงมือทำ
 2. **การรักษาคุณภาพโค้ด (Quality Control)**:
    - รันการตรวจสอบไวยากรณ์ด้วย `node --check` เสมอ
-   - รันการทดสอบด้วย `npm test` เพื่อยืนยันว่าโค้ดทำงานได้ถูกต้อง 100%
+   - รันการทดสอบด้วย `yarn test` เพื่อยืนยันว่าโค้ดทำงานได้ถูกต้อง 100%
 3. **การทำงานร่วมกับ Claude**:
    - บันทึกรายละเอียดการเปลี่ยนแปลงและรายการไฟล์ลงใน [docs/ACTIVITY_LOG.md](file:///Users/user/Desktop/playgroud/playground/playground-api/docs/ACTIVITY_LOG.md)
    - อัปเดตข้อมูลการออกแบบใน [AGENTS.md](file:///Users/user/Desktop/playgroud/playground/playground-api/AGENTS.md) เพื่อให้ Claude นำไปใช้ต่อได้อย่างราบรื่น

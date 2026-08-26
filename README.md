@@ -1,6 +1,7 @@
-# Node.js + Express REST API Starter (JWT Best Practices Architecture)
+# Node.js + Express REST API Starter (Production-Ready Architecture)
 
 โปรเจกต์เริ่มต้น REST API พัฒนาด้วย **Node.js** และ **Express** ที่ออกแบบในสถาปัตยกรรมแบบ **Clean & Scalable Architecture** ระดับ Production-Ready อิงตามมาตรฐาน **JWT Best Practices**:
+- **Package Manager**: **Yarn** (`yarn.lock`)
 - **Access Token (อายุสั้น 15 นาที)**: ส่งคืนใน JSON Payload สำหรับใส่ใน Header `Authorization: Bearer <TOKEN>`
 - **Refresh Token (อายุยาว 7 วัน)**: จัดเก็บอย่างปลอดภัยใน **HTTP-Only, Secure, SameSite Cookie** และเก็บบันทึกลง **PostgreSQL Database**
 - **Token Rotation & Revocation**: ระบบหมุนเวียน Token เมื่อใช้งาน และระบบเพิกถอน Token เมื่อ Logout
@@ -10,6 +11,7 @@
 ## 📌 คุณสมบัติหลัก (Features)
 
 - 🏗️ **Clean & Scalable Architecture**: แบ่งแยกเลเยอร์ชัดเจน (`Config`, `Routes`, `Controllers`, `Services`, `Middlewares`, `Validators`, `Migrations`)
+- 🧶 **Yarn Package Manager**: จัดการ Dependencies อย่างรวดเร็ว ปลอดภัยด้วย `yarn.lock`
 - 🔐 **JWT Best Practices (Dual Tokens)**:
   - Access Token (15m): ใช้ยืนยันตัวตนสำหรับ Protected Routes
   - Refresh Token (7d): ฝังใน HTTP-Only Cookie ป้องกัน XSS
@@ -21,8 +23,8 @@
   - `cookie-parser` & `cors`: รองรับ `credentials: true` สำหรับการรับส่ง HTTP-Only Cookies
 - ✅ **Data Validation (Zod)**: ตรวจสอบความถูกต้องของ Request Body ล่วงหน้าก่อนเข้า Controller หากไม่ถูกต้องตอบกลับ `400 Bad Request` พร้อมรายละเอียด Zod Issues
 - 🐘 **PostgreSQL Integration**: เชื่อมต่อผ่าน `pg` Connection Pool ประสิทธิภาพสูง
-- 🔄 **SQL Migration Runner**: ระบบจัดการและบันทึกประวัติ Database Schema Migrations อัตโนมัติ (`npm run migrate`)
-- 🔑 **Google OAuth 2.0 Integration**: ยืนยันตัวตนผ่าน Google ด้วย Passport.js พร้อมออก Dual Tokens
+- 🔄 **SQL Migration Runner**: ระบบจัดการและบันทึกประวัติ Database Schema Migrations อัตโนมัติ (`yarn migrate`)
+- 🔑 **Google OAuth 2.0 Integration**: ยืนยันตัวตนผ่าน Google ด้วย Passport.js พร้อมบันทึกผู้ใช้ลง PostgreSQL
 - 🚨 **Centralized Error Handling**: ระบบจัดการ Error และ 404 Not Found แบบรวมศูนย์
 - 🧪 **Unit & Integration Tests**: ชุดทดสอบพร้อมใช้งานด้วย Jest และ Supertest
 
@@ -36,6 +38,7 @@ playground-api/
 ├── .gitignore                # ป้องกันการติดตามไฟล์ที่ไม่จำเป็น
 ├── jest.config.js            # การตั้งค่า Jest Testing Framework
 ├── package.json              # กำหนด Dependencies และ Scripts
+├── yarn.lock                 # ไฟล์ ล็อกสเปก Dependencies ของ Yarn
 ├── README.md                 # คู่มือแนะนำการใช้งานโปรเจกต์
 ├── AGENTS.md                 # คอนฟิกและข้อตกลงกลางสำหรับ AI Agents
 ├── GEMINI.md                 # คำสั่งเฉพาะสำหรับ Gemini Agent
@@ -67,12 +70,12 @@ playground-api/
 
 ---
 
-## 🚀 ขั้นตอนการติดตั้งและการใช้งาน (Getting Started)
+## 🚀 ขั้นตอนการติดตั้งและการใช้งานด้วย Yarn (Getting Started)
 
-### 1. ติดตั้ง Dependencies
+### 1. ติดตั้ง Dependencies ด้วย Yarn
 
 ```bash
-npm install
+yarn install
 ```
 
 ### 2. ตั้งค่า ตัวแปรสภาพแวดล้อม (Environment Variables)
@@ -110,26 +113,26 @@ GOOGLE_CALLBACK_URL=http://localhost:3000/auth/google/callback
 CLIENT_URL=http://localhost:5173
 ```
 
-### 3. คำสั่งการรันโปรเจกต์ (Scripts)
+### 3. คำสั่งการรันโปรเจกต์ด้วย Yarn (Yarn Scripts)
 
 ```bash
 # 1. รัน Database Migrations เพื่อสร้างตาราง users และ refresh_tokens
-npm run migrate
+yarn migrate
 
 # 2. รันในโหมด Development (มี Auto-Reload ด้วย Nodemon)
-npm run dev
+yarn dev
 
 # 3. รันในโหมด Production
-npm start
+yarn start
 
 # 4. รันการทดสอบ Unit & Integration Tests (Jest)
-npm test
+yarn test
 
 # 5. รันการทดสอบแบบ Watch Mode
-npm run test:watch
+yarn test:watch
 
 # 6. รันการทดสอบเพื่อดูรายงาน Code Coverage
-npm run test:coverage
+yarn test:coverage
 ```
 
 ---

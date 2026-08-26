@@ -13,11 +13,12 @@
 ## 📌 ข้อมูลโปรเจกต์ (Project Overview)
 
 - **Repository**: `https://github.com/Nitrocircussx74/playground-api` (GitHub Account: `Nitrocircussx74`)
+- **Package Manager**: **Yarn** (`yarn.lock`)
 - **Technology Stack**: Node.js, Express.js, JavaScript (CommonJS)
 - **Security Layer**: Helmet (HTTP Header Protection) + Express Rate Limit (DoS/Brute-force Protection) + cookie-parser
 - **Data Validation Layer**: Zod (`src/validators/authValidator.js`, `src/validators/mainValidator.js`, `src/middlewares/validateMiddleware.js`)
-- **Database & Migrations**: PostgreSQL (`pg` Connection Pool) + Custom SQL Migration Runner (`npm run migrate`)
-- **Authentication**: JWT Best Practices (Dual Tokens: Access Token 15mใน Body + Refresh Token 7d ใน HttpOnly, Secure, SameSite Cookie + Database Persistence `refresh_tokens` + Token Rotation & Revocation) + Google OAuth 2.0 (Passport.js)
+- **Database & Migrations**: PostgreSQL (`pg` Connection Pool) + Custom SQL Migration Runner (`yarn migrate`)
+- **Authentication**: JWT Best Practices (Dual Tokens: Access Token 15m ใน Body + Refresh Token 7d ใน HttpOnly, Secure, SameSite Cookie + Database Persistence `refresh_tokens` + Token Rotation & Revocation) + Google OAuth 2.0 (Passport.js)
 - **Testing**: Jest + Supertest
 - **Architecture**: Layered Clean Architecture (`src/config`, `src/routes`, `src/controllers`, `src/services`, `src/middlewares`, `src/validators`, `src/migrations`)
 
@@ -35,26 +36,29 @@
 
 ---
 
-## 🛠️ คำสั่งที่ใช้ในโปรเจกต์ (Core Commands)
+## 🛠️ คำสั่งที่ใช้ในโปรเจกต์ (Yarn Commands)
 
 ```bash
+# การติดตั้ง Dependencies ด้วย Yarn
+yarn install
+
 # การรันระบบในโหมดพัฒนา
-npm run dev
+yarn dev
 
 # การรันระบบในโหมด Production
-npm start
+yarn start
 
 # การรันระบบ Database Migrations
-npm run migrate
+yarn migrate
 
 # การรันชุดทดสอบทั้งหมด
-npm test
+yarn test
 
 # การรันชุดทดสอบแบบ Watch Mode
-npm run test:watch
+yarn test:watch
 
 # การตรวจสอบ Code Coverage
-npm run test:coverage
+yarn test:coverage
 ```
 
 ---
@@ -78,5 +82,5 @@ npm run test:coverage
 ## 🤝 ข้อตกลงการทำงานร่วมกันระหว่าง Gemini และ Claude (Multi-Agent Protocol)
 
 1. **อัปเดต Activity Log**: เมื่อ Agent ทำการสร้างหรือแก้ไขไฟล์งาน ให้ลงบันทึกใน [docs/ACTIVITY_LOG.md](file:///Users/user/Desktop/playgroud/playground/playground-api/docs/ACTIVITY_LOG.md) เสมอ
-2. **รักษาความสะอาดของโค้ด**: ก่อนจบการทำงาน ให้รัน `npm test` เพื่อตรวจสอบว่าไม่มี Breaking Changes
+2. **รักษาความสะอาดของโค้ด**: ก่อนจบการทำงาน ให้รัน `yarn test` เพื่อตรวจสอบว่าไม่มี Breaking Changes
 3. **การส่งมอบงาน (Handover)**: หากต้องส่งต่องานใหีก Agent ให้ระบุสถานะล่าสุดลงใน `docs/ACTIVITY_LOG.md`

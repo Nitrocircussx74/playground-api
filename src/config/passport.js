@@ -9,8 +9,8 @@ const userService = require('../services/userService');
 passport.use(
   new GoogleStrategy(
     {
-      clientID: config.google.clientId,
-      clientSecret: config.google.clientSecret,
+      clientID: config.google.clientId || 'dummy_google_client_id_for_testing',
+      clientSecret: config.google.clientSecret || 'dummy_google_client_secret_for_testing',
       callbackURL: config.google.callbackUrl
     },
     async (accessToken, refreshToken, profile, done) => {

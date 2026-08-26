@@ -22,13 +22,14 @@ When user inputs **`update memory`**:
 
 ---
 
-## 🚀 Quick Reference Commands
+## 🚀 Quick Reference Commands (Yarn)
 
-- **Build / Run Dev Server**: `npm run dev`
-- **Run Migrations**: `npm run migrate`
-- **Run All Tests**: `npm test`
-- **Run Single Test**: `npx jest tests/unit/services/authService.test.js`
-- **Check Code Coverage**: `npm run test:coverage`
+- **Install Dependencies**: `yarn install`
+- **Build / Run Dev Server**: `yarn dev`
+- **Run Migrations**: `yarn migrate`
+- **Run All Tests**: `yarn test`
+- **Run Single Test**: `yarn jest tests/unit/services/authService.test.js`
+- **Check Code Coverage**: `yarn test:coverage`
 
 ---
 
