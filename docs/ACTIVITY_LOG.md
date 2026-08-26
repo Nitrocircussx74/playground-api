@@ -61,6 +61,9 @@
 ### Phase 10: การออกแบบสถาปัตยกรรมและบันทึกแผนงานระบบจัดการหอพัก (Dormitory Management System MVP)
 - **`implementation_plan.md`**: บันทึกแผนงานการพัฒนาระบบหอพัก (Prisma PostgreSQL + Express API + Vue 3 Tailwind/Shadcn) ครอบคลุม 7 โมดูลหลัก, Prisma Schema, User Roles & Permissions, API Specifications และ Business Edge Cases
 
+### Phase 11: การออกแบบและบันทึกสถาปัตยกรรมโมดูล Meter Reading & Billing Calculation Engine
+- **`billingService.js`**: ออกแบบลอจิกการคำนวณค่าน้ำขั้นต่ำ (Minimum Base Rate), ค่าไฟอัตราคงที่ (Unit Rate), การจัดการ Edge Case มิเตอร์รันกลับไป 0 (`isMeterReset`), และการสร้างใบแจ้งหนี้ภายใต้ Prisma Database Transaction
+
 ---
 
 ## 📂 สรุปรายการไฟล์ทั้งหมดที่สร้างขึ้น (Created Files Inventory)
