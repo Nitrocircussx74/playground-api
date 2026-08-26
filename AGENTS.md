@@ -12,6 +12,9 @@
 
 ## 📌 ข้อมูลโปรเจกต์ (Project Overview)
 
+- **Architecture Overview**: โปรเจกต์นี้ทำงานร่วมกันเป็นคู่ (Full-Stack Architecture):
+  - ⚙️ **`playground-api`**: ระบบ Backend (Node.js + Express + PostgreSQL + JWT + HTTP-Only Cookie)
+  - 🖥️ **`playground-frontend`**: ระบบ Frontend (Vue 3 + Vite + Pinia + Axios Interceptors)
 - **Repository**: `https://github.com/Nitrocircussx74/playground-api` (GitHub Account: `Nitrocircussx74`)
 - **Package Manager**: **Yarn** (`yarn.lock`)
 - **Technology Stack**: Node.js, Express.js, JavaScript (CommonJS)
