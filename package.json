@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
+    "migrate": "node src/migrations/migrate.js",
     "test": "jest --detectOpenHandles --forceExit",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage"
@@ -18,7 +19,8 @@
     "passport",
     "google-auth",
     "postgresql",
-    "pg"
+    "pg",
+    "migrations"
   ],
   "author": "",
   "license": "ISC",

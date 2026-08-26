@@ -13,10 +13,10 @@
 ## 📌 ข้อมูลโปรเจกต์ (Project Overview)
 
 - **Technology Stack**: Node.js, Express.js, JavaScript (CommonJS)
-- **Database**: PostgreSQL (`pg` Connection Pool)
+- **Database & Migrations**: PostgreSQL (`pg` Connection Pool) + Custom SQL Migration Runner (`npm run migrate`)
 - **Authentication**: JWT (JsonWebToken) + Google OAuth 2.0 (Passport.js)
 - **Testing**: Jest + Supertest
-- **Architecture**: Layered Clean Architecture (`src/config`, `src/routes`, `src/controllers`, `src/services`, `src/middlewares`)
+- **Architecture**: Layered Clean Architecture (`src/config`, `src/routes`, `src/controllers`, `src/services`, `src/middlewares`, `src/migrations`)
 
 ---
 
@@ -41,6 +41,9 @@ npm run dev
 # การรันระบบในโหมด Production
 npm start
 
+# การรันระบบ Database Migrations
+npm run migrate
+
 # การรันชุดทดสอบทั้งหมด
 npm test
 
@@ -59,9 +62,10 @@ npm run test:coverage
 2. **Layer Responsibilities**:
    - `routes`: กำหนด Endpoint URL และผูก Middleware (ห้ามใส่ Business Logic ใน Route)
    - `controllers`: รับ HTTP Request, เรียกใช้ Services และส่งคืน HTTP Response
-   - `services`: ประมวลผล Business Logic และการติดต่อกับ Database
+   - `services`: ประมวลผล Business Logic และการติดต่อกับ Database (`src/services/userService.js`)
+   - `migrations`: จัดการสร้างและอัปเดตโครงสร้าง Database Schema แบบอัตโนมัติ (`src/migrations/files/*.sql`)
    - `middlewares`: ตรวจสอบสิทธิ์ (Auth), Validation และ Error Handling
-   - `config`: จัดการการอ่านค่า Environment Variables และการตั้งค่า Third-party libraries (`src/config/db.js` สำหรับ PostgreSQL Connection Pool)
+   - `config`: จัดการการอ่านค่า Environment Variables และการตั้งค่า Third-party libraries (`src/config/db.js`)
 3. **Error Handling**: ส่งผ่าน Error ด้วย `next(error)` เสมอเพื่อให้ `errorMiddleware` จัดการ
 4. **Language Policy**: ความคิดเห็นในโค้ด (Comments) และเอกสารคำอธิบาย ให้ใช้ **ภาษาไทย** เป็นหลัก
 
