@@ -1,7 +1,7 @@
 {
   "name": "node-express-auth-starter",
   "version": "1.0.0",
-  "description": "โครงสร้างโปรเจกต์ Node.js + Express API พร้อมระบบ JWT และ OAuth 2.0 (Google Login)",
+  "description": "โครงสร้างโปรเจกต์ Node.js + Express API พร้อมระบบ JWT, OAuth 2.0 และ PostgreSQL Database",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
@@ -16,7 +16,9 @@
     "jwt",
     "oauth2",
     "passport",
-    "google-auth"
+    "google-auth",
+    "postgresql",
+    "pg"
   ],
   "author": "",
   "license": "ISC",
@@ -26,7 +28,8 @@
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
     "passport": "^0.7.0",
-    "passport-google-oauth20": "^2.0.0"
+    "passport-google-oauth20": "^2.0.0",
+    "pg": "^8.11.5"
   },
   "devDependencies": {
     "jest": "^29.7.0",

@@ -13,6 +13,7 @@
 ## 📌 ข้อมูลโปรเจกต์ (Project Overview)
 
 - **Technology Stack**: Node.js, Express.js, JavaScript (CommonJS)
+- **Database**: PostgreSQL (`pg` Connection Pool)
 - **Authentication**: JWT (JsonWebToken) + Google OAuth 2.0 (Passport.js)
 - **Testing**: Jest + Supertest
 - **Architecture**: Layered Clean Architecture (`src/config`, `src/routes`, `src/controllers`, `src/services`, `src/middlewares`)
@@ -60,7 +61,7 @@ npm run test:coverage
    - `controllers`: รับ HTTP Request, เรียกใช้ Services และส่งคืน HTTP Response
    - `services`: ประมวลผล Business Logic และการติดต่อกับ Database
    - `middlewares`: ตรวจสอบสิทธิ์ (Auth), Validation และ Error Handling
-   - `config`: จัดการการอ่านค่า Environment Variables และการตั้งค่า Third-party libraries
+   - `config`: จัดการการอ่านค่า Environment Variables และการตั้งค่า Third-party libraries (`src/config/db.js` สำหรับ PostgreSQL Connection Pool)
 3. **Error Handling**: ส่งผ่าน Error ด้วย `next(error)` เสมอเพื่อให้ `errorMiddleware` จัดการ
 4. **Language Policy**: ความคิดเห็นในโค้ด (Comments) และเอกสารคำอธิบาย ให้ใช้ **ภาษาไทย** เป็นหลัก
 
