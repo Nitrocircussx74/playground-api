@@ -121,6 +121,111 @@ class LineService {
   }
 
   /**
+   * สร้าง Flex Message สำหรับเตือนทวงหนี้แบบสุภาพ
+   */
+  createDebtReminderFlexMessage(invoice) {
+    const liffId = process.env.LINE_LIFF_ID || '2000000000-mockliffid';
+    const payUrl = `https://liff.line.me/${liffId}/pay/${invoice.id}`;
+    const dueDateStr = new Date(invoice.dueDate).toLocaleDateString('th-TH');
+
+    return {
+      type: 'flex',
+      altText: `⚠️ แจ้งเตือนยอดค้างชำระค่าเช่าห้อง ${invoice.room?.roomNumber || ''}`,
+      contents: {
+        type: 'bubble',
+        header: {
+          type: 'box',
+          layout: 'vertical',
+          contents: [
+            {
+              type: 'text',
+              text: '⚠️ แจ้งเตือนยอดค้างชำระ',
+              weight: 'bold',
+              size: 'lg',
+              color: '#ffffff'
+            },
+            {
+              type: 'text',
+              text: `ห้อง ${invoice.room?.roomNumber} | รอบบิล ${invoice.billingCycle}`,
+              size: 'xs',
+              color: '#fecdd3',
+              margin: 'xs'
+            }
+          ],
+          backgroundColor: '#be123c',
+          paddingAll: '15px'
+        },
+        body: {
+          type: 'box',
+          layout: 'vertical',
+          contents: [
+            {
+              type: 'text',
+              text: `เรียนคุณ ${invoice.tenant?.firstName || ''} ${invoice.tenant?.lastName || ''}`,
+              size: 'sm',
+              color: '#475569'
+            },
+            {
+              type: 'text',
+              text: `ขอเรียนแจ้งเตือนยอดค้างชำระบิลค่าเช่าเลขที่ ${invoice.invoiceNumber} ซึ่งเกินกำหนดชำระตั้งแต่วันที่ ${dueDateStr} ครับ`,
+              size: 'sm',
+              color: '#0f172a',
+              margin: 'md',
+              wrap: true
+            },
+            { type: 'separator', margin: 'lg' },
+            {
+              type: 'box',
+              layout: 'horizontal',
+              margin: 'lg',
+              contents: [
+                { type: 'text', text: 'ยอดค้างชำระรวม', weight: 'bold', size: 'sm', color: '#64748b' },
+                { type: 'text', text: `฿${Number(invoice.grandTotal).toLocaleString()}`, weight: 'bold', size: 'lg', color: '#dc2626', align: 'end' }
+              ]
+            }
+          ]
+        },
+        footer: {
+          type: 'box',
+          layout: 'vertical',
+          contents: [
+            {
+              type: 'button',
+              action: {
+                type: 'uri',
+                label: '💳 ชำระเงินผ่าน LIFF',
+                uri: payUrl
+              },
+              style: 'primary',
+              color: '#dc2626'
+            }
+          ]
+        }
+      }
+    };
+  }
+
+  /**
+   * ส่ง Flex Message แจ้งเตือนทวงหนี้ไปยังลูกบ้านที่ค้างชำระ
+   */
+  async sendDebtReminderNotification(invoice) {
+    if (!invoice.tenant?.lineUserId) return false;
+
+    try {
+      const flexMessage = this.createDebtReminderFlexMessage(invoice);
+      await client.pushMessage({
+        to: invoice.tenant.lineUserId,
+        messages: [flexMessage]
+      });
+      console.log(`✅ ส่ง LINE Push Message เตือนทวงหนี้หา ${invoice.tenant.lineUserId} สำเร็จ`);
+      return true;
+    } catch (error) {
+      console.warn(`⚠️ ไม่สามารถส่ง LINE Debt Reminder ได้: ${error.message}`);
+      return false;
+    }
+  }
+
+  /**
    * สร้าง Flex Message สวยงามสำหรับการประกาศข่าวสาร
    */
   createAnnouncementFlexMessage(announcement) {
@@ -213,7 +318,6 @@ class LineService {
       const flexMessage = this.createAnnouncementFlexMessage(announcement);
 
       if (userIds.length > 1) {
-        // ส่งแบบ Multicast (LINE API รองรับสูงสุด 500 userIds ต่อคำขอ)
         const batchSize = 500;
         for (let i = 0; i < userIds.length; i += batchSize) {
           const batch = userIds.slice(i, i + batchSize);
@@ -224,7 +328,6 @@ class LineService {
         }
         console.log(`✅ ส่ง LINE Multicast ประกาศข่าวสารหา ${userIds.length} คนสำเร็จ`);
       } else {
-        // ส่งแบบ Push Message 1 คน
         await client.pushMessage({
           to: userIds[0],
           messages: [flexMessage]

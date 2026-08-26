@@ -10,6 +10,7 @@ const invoiceRoutes = require('./invoiceRoutes');
 const uploadRoutes = require('./uploadRoutes');
 const maintenanceRoutes = require('./maintenanceRoutes');
 const announcementRoutes = require('./announcementRoutes');
+const dashboardRoutes = require('./dashboardRoutes');
 const liffRoutes = require('./liffRoutes');
 
 // Root Health Check Route
@@ -33,5 +34,6 @@ router.use('/api/v1/invoices', authenticateJWT, invoiceRoutes);
 router.use('/api/v1/uploads', authenticateJWT, uploadRoutes);
 router.use('/api/v1/maintenance-requests', authenticateJWT, maintenanceRoutes);
 router.use('/api/v1/announcements', authenticateJWT, announcementRoutes);
+router.use('/api/v1/dashboard', authenticateJWT, dashboardRoutes);
 
 module.exports = router;
