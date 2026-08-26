@@ -37,9 +37,24 @@ const limiter = rateLimit({
 app.use(limiter);
 
 // 3. ตั้งค่า CORS ( credentials: true สำหรับ HTTP-Only Cookie )
+const allowedOrigins = [
+  config.clientUrl,
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'http://localhost:5175',
+  'http://localhost:80',
+  'http://localhost'
+].filter(Boolean);
+
 app.use(
   cors({
-    origin: config.clientUrl || 'http://localhost:5173',
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin) || origin.startsWith('http://localhost:')) {
+        callback(null, true);
+      } else {
+        callback(new Error('Blocked by CORS policy'));
+      }
+    },
     credentials: true
   })
 );
