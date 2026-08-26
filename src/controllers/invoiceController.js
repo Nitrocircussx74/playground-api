@@ -1,4 +1,5 @@
 const billingService = require('../services/billingService');
+const lineService = require('../services/lineService');
 const PDFDocument = require('pdfkit');
 
 class InvoiceController {
@@ -46,6 +47,11 @@ class InvoiceController {
         dueDate
       });
 
+      // ส่ง LINE Push Notification หาผู้เช่ากรณีผูก LINE User ID
+      if (invoice.tenant?.lineUserId) {
+        await lineService.pushInvoiceNotification(invoice.tenant.lineUserId, invoice);
+      }
+
       return res.status(201).json({
         success: true,
         message: `Invoice ${invoice.invoiceNumber} created successfully`,
@@ -77,7 +83,7 @@ class InvoiceController {
         where: { id },
         data: {
           slipUrl: slipUrl || 'https://images.unsplash.com/photo-1559526324-4b87b5e36e44?auto=format&fit=crop&w=600&q=80',
-          status: 'pending'
+          status: 'reviewing'
         }
       });
 

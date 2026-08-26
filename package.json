@@ -30,6 +30,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@line/bot-sdk": "^11.2.0",
     "@prisma/client": "5.22.0",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
@@ -45,6 +46,8 @@
     "passport-google-oauth20": "^2.0.0",
     "pdfkit": "^0.20.1",
     "pg": "^8.11.5",
+    "promptpay-qr": "^0.5.0",
+    "qrcode": "^1.5.4",
     "swagger-jsdoc": "^6.3.0",
     "swagger-ui-express": "^5.0.1",
     "zod": "^3.23.8"
