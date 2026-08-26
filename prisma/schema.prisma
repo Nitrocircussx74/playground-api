@@ -256,3 +256,32 @@ model RoomInvite {
 
   @@map("room_invites")
 }
+
+/// ตารางข่าวสารและประกาศจากแอดมินหอพัก (Announcements & Broadcasts)
+model Announcement {
+  /// รหัสอ้างอิงประกาศ (PK, UUID)
+  id String @id @default(uuid()) @db.Uuid
+
+  /// หัวข้อประกาศ
+  title String
+
+  /// รายละเอียดประกาศ
+  content String @db.Text
+
+  /// ประเภทเป้าหมาย (all = ผู้เช่าทั้งหมด, floor = ระบุชั้น, room = ระบุห้อง)
+  targetType String @map("target_type")
+
+  /// ค่าของเป้าหมาย (เช่น เลขชั้น '3' หรือ UUID ของห้อง)
+  targetValue String? @map("target_value")
+
+  /// แอดมินผู้สร้างประกาศ
+  createdBy String? @map("created_by")
+
+  /// วันเวลาที่สร้างเรคคอร์ด
+  createdAt DateTime @default(now()) @map("created_at")
+
+  /// วันเวลาที่อัปเดตเรคคอร์ดล่าสุด
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("announcements")
+}
