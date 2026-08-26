@@ -68,7 +68,7 @@ npm run test:coverage
    - `services`: ประมวลผล Business Logic และการติดต่อกับ Database (`src/services/userService.js`)
    - `validators`: กำหนด Zod Validation Schemas (`src/validators/mainValidator.js`)
    - `migrations`: จัดการสร้างและอัปเดตโครงสร้าง Database Schema แบบอัตโนมัติ (`src/migrations/files/*.sql`)
-   - `middlewares`: Security, Auth, Zod Validation และ Error Handling
+   - `middlewares`: Security (Helmet, Rate Limiting), Auth, Zod Validation และ Error Handling
    - `config`: จัดการการอ่านค่า Environment Variables และการตั้งค่า Third-party libraries (`src/config/db.js`)
 3. **Error Handling**: ส่งผ่าน Error ด้วย `next(error)` เสมอเพื่อให้ `errorMiddleware` จัดการ
 4. **Language Policy**: ความคิดเห็นในโค้ด (Comments) และเอกสารคำอธิบาย ให้ใช้ **ภาษาไทย** เป็นหลัก

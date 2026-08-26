@@ -10,7 +10,7 @@
 - 🛡️ **Security Layer**: 
   - `helmet`: ป้องกันการโจมตีผ่าน HTTP Headers
   - `express-rate-limit`: จำกัดจำนวน Request ป้องกัน Brute-force & DoS (100 Request / 15 นาที)
-- ✅ **Data Validation (Zod)**: ตรวจสอบความถูกต้องของ Request Body ล่วงหน้าก่อนเข้า Controller หากไม่ถูกต้องตอบกลับ `400 Bad Request` พร้อมรายละเอียด
+- ✅ **Data Validation (Zod)**: ตรวจสอบความถูกต้องของ Request Body ล่วงหน้าก่อนเข้า Controller หากไม่ถูกต้องตอบกลับ `400 Bad Request` พร้อมรายละเอียด Zod Issues
 - 🐘 **PostgreSQL Integration**: เชื่อมต่อผ่าน `pg` Connection Pool ประสิทธิภาพสูง
 - 🔄 **SQL Migration Runner**: ระบบจัดการและบันทึกประวัติ Database Schema Migrations อัตโนมัติ (`npm run migrate`)
 - 🔐 **JWT Authentication**: ระบบออกและตรวจสอบ Token สำหรับป้องกัน Route (Protected Routes)
@@ -25,11 +25,11 @@
 
 ```text
 playground-api/
-├── .env.example              # ตัวแปรสภาพแวดล้อมจำลอง
+├── .env.example              # ตัวแปรสภาพแวดล้อมจำลอง (App, DB, Security, JWT, OAuth)
 ├── .gitignore                # ป้องกันการติดตามไฟล์ที่ไม่จำเป็น
 ├── jest.config.js            # การตั้งค่า Jest Testing Framework
 ├── package.json              # กำหนด Dependencies และ Scripts
-├── README.md                 # คู่มือการใช้งานโปรเจกต์
+├── README.md                 # คู่มือแนะนำการใช้งานโปรเจกต์
 ├── AGENTS.md                 # คอนฟิกและข้อตกลงกลางสำหรับ AI Agents
 ├── GEMINI.md                 # คำสั่งเฉพาะสำหรับ Gemini Agent
 ├── CLAUDE.md                 # คำสั่งเฉพาะสำหรับ Claude Agent
