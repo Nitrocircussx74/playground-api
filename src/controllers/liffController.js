@@ -279,6 +279,9 @@ class LiffController {
           phone: tenant.phone,
           idCard: tenant.idCard,
           lineUserId: tenant.lineUserId,
+          lineDisplayName: tenant.lineDisplayName,
+          linePictureUrl: tenant.linePictureUrl,
+          lineStatusMessage: tenant.lineStatusMessage,
           roomNumber,
           contractEndDate: '31 ธันวาคม 2026'
         }
