@@ -61,6 +61,7 @@ router.use('/api/v1', authenticateJWT, leaseRoutes);
 router.use('/api/v1', authenticateJWT, moveOutRoutes);
 router.use('/api/v1', authenticateJWT, parcelRoutes);
 router.use('/api/admin/audit-logs', authenticateJWT, auditLogRoutes);
+router.use('/api/admin/dashboard', authenticateJWT, dashboardRoutes);
 router.use('/api/v1/dashboard', authenticateJWT, dashboardRoutes);
 
 module.exports = router;

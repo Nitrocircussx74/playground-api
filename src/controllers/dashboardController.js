@@ -93,7 +93,29 @@ class DashboardController {
         include: { room: true, tenant: true }
       });
 
-      // 4. Building Breakdown (สำหรับ Consolidated All Buildings Mode)
+      // 4. Expiring Leases in the next 30 days
+      const in30Days = new Date();
+      in30Days.setDate(in30Days.getDate() + 30);
+
+      const expiringLeases = await billingService.prisma.leaseContract.findMany({
+        where: {
+          status: 'ACTIVE',
+          expectedEndDate: { gte: now, lte: in30Days },
+          ...(buildingId && { buildingId })
+        },
+        orderBy: { expectedEndDate: 'asc' },
+        include: { room: true, tenant: true, building: true }
+      });
+
+      // 5. Pending Maintenance Requests Count
+      const pendingMaintenanceCount = await billingService.prisma.maintenanceRequest.count({
+        where: {
+          status: { in: ['pending', 'in_progress'] },
+          ...(buildingId && { room: { buildingId } })
+        }
+      });
+
+      // 6. Building Breakdown (สำหรับ Consolidated All Buildings Mode)
       let buildingBreakdown = [];
       if (!buildingId) {
         const buildings = await billingService.prisma.building.findMany({
@@ -158,7 +180,10 @@ class DashboardController {
             totalDebt: Number(debtStats._sum.grandTotal || 0),
             debtorCount: debtStats._count.id || 0,
             debtors
-          }
+          },
+          expiringLeases,
+          expiringLeasesCount: expiringLeases.length,
+          pendingMaintenanceCount
         }
       });
     } catch (error) {
