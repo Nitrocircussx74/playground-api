@@ -273,6 +273,63 @@ class LiffController {
       next(error);
     }
   }
+
+  /**
+   * ตรวจสอบความถูกต้องของ Invite Code ล่วงหน้าก่อนลงทะเบียน
+   */
+  async verifyInviteCode(req, res, next) {
+    try {
+      const { code } = req.params;
+      const normalizedCode = String(code).trim().toUpperCase();
+
+      const invite = await billingService.prisma.roomInvite.findUnique({
+        where: { code: normalizedCode },
+        include: { room: true }
+      });
+
+      if (!invite) {
+        return res.status(404).json({
+          success: false,
+          message: 'ไม่พบรหัสเชิญ (Invite Code) นี้ในระบบ'
+        });
+      }
+
+      if (invite.isUsed) {
+        return res.status(400).json({
+          success: false,
+          message: 'รหัสเชิญนี้ถูกใช้งานไปแล้ว'
+        });
+      }
+
+      if (new Date() > new Date(invite.expiresAt)) {
+        return res.status(400).json({
+          success: false,
+          message: 'รหัสเชิญนี้หมดอายุแล้ว (เกิน 48 ชั่วโมง)'
+        });
+      }
+
+      if (invite.room.status !== 'available') {
+        return res.status(400).json({
+          success: false,
+          message: `ห้อง ${invite.room.roomNumber} มีผู้เช่าอยู่แล้ว`
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: `รหัสเชิญถูกต้อง: ห้องพัก ${invite.room.roomNumber}`,
+        data: {
+          code: invite.code,
+          roomNumber: invite.room.roomNumber,
+          floor: invite.room.floor,
+          price: Number(invite.room.price),
+          expiresAt: invite.expiresAt
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 module.exports = new LiffController();

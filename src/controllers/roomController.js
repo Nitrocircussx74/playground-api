@@ -129,6 +129,50 @@ class RoomController {
       next(error);
     }
   }
+
+  /**
+   * ดึงรายการ Invite Codes ของห้องพัก
+   */
+  async getRoomInvites(req, res, next) {
+    try {
+      const { id } = req.params; // roomId
+      const invites = await billingService.prisma.roomInvite.findMany({
+        where: { roomId: id },
+        orderBy: { createdAt: 'desc' },
+        include: { room: true }
+      });
+
+      return res.status(200).json({
+        success: true,
+        data: invites
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * ยกเลิก/เพิกถอน Invite Code ที่ยังไม่ได้ใช้งาน
+   */
+  async revokeRoomInvite(req, res, next) {
+    try {
+      const { inviteId } = req.params;
+      const invite = await billingService.prisma.roomInvite.findUnique({ where: { id: inviteId } });
+
+      if (!invite) {
+        return res.status(404).json({ success: false, message: 'ไม่พบรหัสเชิญในระบบ' });
+      }
+
+      await billingService.prisma.roomInvite.delete({ where: { id: inviteId } });
+
+      return res.status(200).json({
+        success: true,
+        message: `ยกเลิกรหัสเชิญ ${invite.code} เรียบร้อยแล้ว`
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 module.exports = new RoomController();
