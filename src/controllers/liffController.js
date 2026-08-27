@@ -1,5 +1,6 @@
 const billingService = require('../services/billingService');
 const lineService = require('../services/lineService');
+const slipService = require('../services/slipService');
 
 class LiffController {
   /**
@@ -163,12 +164,21 @@ class LiffController {
       const host = req.get('host');
       const slipUrl = `${protocol}://${host}/uploads/${req.file.filename}`;
 
+      // Trigger Auto Slip Verification Engine
+      const verification = await slipService.verifyAndProcessSlip(invoice, req.file, req.body.declaredAmount);
+
+      const updateData = {
+        slipUrl,
+        status: verification.status
+      };
+
+      if (verification.autoApproved) {
+        updateData.paidAt = new Date();
+      }
+
       const updatedInvoice = await billingService.prisma.invoice.update({
         where: { id },
-        data: {
-          slipUrl,
-          status: 'reviewing'
-        }
+        data: updateData
       });
 
       if (invoice.tenant?.lineUserId || lineUserId) {
@@ -180,8 +190,14 @@ class LiffController {
 
       return res.status(200).json({
         success: true,
-        message: 'แนบสลิปโอนเงินเรียบร้อยแล้ว สถานะเปลี่ยนเป็นรอแอดมินตรวจสอบ (reviewing)',
-        data: updatedInvoice
+        message: verification.autoApproved
+          ? '✓ ตรวจสอบสลิปอัตโนมัติสำเร็จ! ยอดเงินโอนตรงกับยอดบิล บิลเปลี่ยนสถานะเป็น PAID เรียบร้อยแล้ว'
+          : `แนบสลิปเรียบร้อยแล้ว สถานะเปลี่ยนเป็นรอตรวจสอบ (reviewing): ${verification.reason}`,
+        data: {
+          ...updatedInvoice,
+          autoApproved: verification.autoApproved,
+          verificationReason: verification.reason
+        }
       });
     } catch (error) {
       next(error);
