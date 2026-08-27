@@ -39,10 +39,61 @@ model User {
   @@map("users")
 }
 
+/// ตารางอาคาร/ตึก (Building)
+model Building {
+  /// รหัสอ้างอิงตึก (PK, UUID)
+  id String @id @default(uuid()) @db.Uuid
+
+  /// ชื่อตึก (เช่น อาคาร A, อาคาร B)
+  name String
+
+  /// ที่อยู่หรือรายละเอียดตึก
+  address String?
+
+  /// วันเวลาที่สร้างเรคคอร์ด
+  createdAt DateTime @default(now()) @map("created_at")
+
+  /// วันเวลาที่อัปเดตเรคคอร์ดล่าสุด
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  rooms Room[]
+  setting BuildingSetting?
+
+  @@map("buildings")
+}
+
+/// ตารางการตั้งค่าและบัญชีชำระเงินของแต่ละตึก (Building Settings)
+model BuildingSetting {
+  /// รหัสอ้างอิงการตั้งค่า (PK, UUID)
+  id String @id @default(uuid()) @db.Uuid
+
+  /// รหัสอ้างอิงตึก (Foreign Key, 1-to-1 Relation)
+  buildingId String @unique @map("building_id") @db.Uuid
+  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  /// รูปภาพ PromptPay QR Code ชำระเงินประจำตึก (URL/Path)
+  paymentQrUrl String? @map("payment_qr_url")
+
+  /// หมายเลข PromptPay ประจำตึก (เช่น เบอร์โทรศัพท์ หรือ เลขประจำตัวผู้เสียภาษี)
+  promptpayNum String? @map("promptpay_num")
+
+  /// วันเวลาที่สร้างเรคคอร์ด
+  createdAt DateTime @default(now()) @map("created_at")
+
+  /// วันเวลาที่อัปเดตเรคคอร์ดล่าสุด
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("building_settings")
+}
+
 /// ตารางข้อมูลห้องพัก
 model Room {
   /// รหัสอ้างอิงห้องพัก (PK, UUID)
   id String @id @default(uuid()) @db.Uuid
+
+  /// รหัสอ้างอิงตึก (Foreign Key ไปยังตาราง Building)
+  buildingId String? @map("building_id") @db.Uuid
+  building Building? @relation(fields: [buildingId], references: [id], onDelete: Cascade)
 
   /// หมายเลขห้องพัก (เช่น A101, B202)
   roomNumber String @unique @map("room_number")
@@ -58,7 +109,7 @@ model Room {
 
   /// รหัสผู้เช่าปัจจุบัน (Foreign Key ไปยังตาราง Tenant)
   tenantId String? @map("tenant_id") @db.Uuid
-  tenant   Tenant? @relation(fields: [tenantId], references: [id])
+  tenant Tenant? @relation(fields: [tenantId], references: [id])
 
   /// วันเวลาที่สร้างเรคคอร์ด
   createdAt DateTime @default(now()) @map("created_at")
@@ -67,10 +118,10 @@ model Room {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   // ความสัมพันธ์ (Relations)
-  meterRecords        MeterRecord[]
-  invoices            Invoice[]
+  meterRecords MeterRecord[]
+  invoices Invoice[]
   maintenanceRequests MaintenanceRequest[]
-  roomInvites         RoomInvite[]
+  roomInvites RoomInvite[]
 
   // แมปชื่อตารางในฐานข้อมูลเป็น snake_case และพหูพจน์
   @@map("rooms")
@@ -103,7 +154,7 @@ model Tenant {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   // ความสัมพันธ์ (Relations)
-  rooms    Room[]
+  rooms Room[]
   invoices Invoice[]
 
   @@map("tenants")
@@ -116,7 +167,7 @@ model MeterRecord {
 
   /// รหัสอ้างอิงห้องพัก (Foreign Key)
   roomId String @map("room_id") @db.Uuid
-  room   Room   @relation(fields: [roomId], references: [id])
+  room Room @relation(fields: [roomId], references: [id])
 
   /// ประเภทของมิเตอร์ (water = น้ำ, electric = ไฟ)
   meterType String @map("meter_type")
@@ -155,11 +206,11 @@ model Invoice {
 
   /// รหัสอ้างอิงห้องพัก (Foreign Key)
   roomId String @map("room_id") @db.Uuid
-  room   Room   @relation(fields: [roomId], references: [id])
+  room Room @relation(fields: [roomId], references: [id])
 
   /// รหัสอ้างอิงผู้เช่า ณ วันที่ออกบิล (Foreign Key)
   tenantId String @map("tenant_id") @db.Uuid
-  tenant   Tenant @relation(fields: [tenantId], references: [id])
+  tenant Tenant @relation(fields: [tenantId], references: [id])
 
   /// รอบบิล (รูปแบบเดือน/ปี เช่น 08-2026)
   billingCycle String @map("billing_cycle")
@@ -213,7 +264,7 @@ model MaintenanceRequest {
 
   /// รหัสอ้างอิงห้องพัก (Foreign Key)
   roomId String @map("room_id") @db.Uuid
-  room   Room   @relation(fields: [roomId], references: [id])
+  room Room @relation(fields: [roomId], references: [id])
 
   /// หัวข้อเรื่องที่แจ้งซ่อม
   title String
@@ -246,7 +297,7 @@ model RoomInvite {
 
   /// รหัสอ้างอิงห้องพัก (Foreign Key)
   roomId String @map("room_id") @db.Uuid
-  room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
 
   /// รหัสเชิญลงทะเบียน (เช่น X9K2P4, INV101)
   code String @unique

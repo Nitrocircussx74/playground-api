@@ -5,18 +5,21 @@ const PDFDocument = require('pdfkit');
 class InvoiceController {
   async getInvoices(req, res, next) {
     try {
-      const { billingCycle, status, roomId } = req.query;
+      const { billingCycle, status, roomId, buildingId } = req.query;
 
       const where = {};
       if (billingCycle) where.billingCycle = billingCycle;
       if (status) where.status = status;
       if (roomId) where.roomId = roomId;
+      if (buildingId) where.room = { buildingId };
 
       const invoices = await billingService.prisma.invoice.findMany({
         where,
         orderBy: [{ createdAt: 'desc' }],
         include: {
-          room: true,
+          room: {
+            include: { building: true }
+          },
           tenant: true
         }
       });

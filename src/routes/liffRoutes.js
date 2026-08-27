@@ -6,6 +6,9 @@ const announcementController = require('../controllers/announcementController');
 const maintenanceController = require('../controllers/maintenanceController');
 const invoiceController = require('../controllers/invoiceController');
 
+// LIFF Settings & Payment QR per Building
+router.get('/settings', (req, res, next) => liffController.getSettingsForTenant(req, res, next));
+
 // LIFF Tenant Profile & Contact Update
 router.get('/profile', (req, res, next) => liffController.getTenantProfile(req, res, next));
 router.put('/profile', (req, res, next) => liffController.updateTenantProfile(req, res, next));

@@ -4,9 +4,14 @@ const billingService = require('../services/billingService');
 class RoomController {
   async getRooms(req, res, next) {
     try {
+      const { buildingId } = req.query;
+      const where = buildingId ? { buildingId } : {};
+
       const rooms = await billingService.prisma.room.findMany({
+        where,
         orderBy: { roomNumber: 'asc' },
         include: {
+          building: true,
           tenant: true
         }
       });

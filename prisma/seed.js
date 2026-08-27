@@ -12,7 +12,51 @@ function hashPassword(password) {
 async function main() {
   console.log('🌱 Seeding database according to strict Naming Conventions...');
 
-  // 1. Create Admin User
+  // 1. Seed Buildings
+  let buildingA = await prisma.building.findFirst({ where: { name: 'อาคาร A (Main Building)' } });
+  if (!buildingA) {
+    buildingA = await prisma.building.create({
+      data: {
+        name: 'อาคาร A (Main Building)',
+        address: '123/1 ถนนสุขุมวิท กรุงเทพมหานคร'
+      }
+    });
+  }
+
+  let buildingB = await prisma.building.findFirst({ where: { name: 'อาคาร B (North Wing)' } });
+  if (!buildingB) {
+    buildingB = await prisma.building.create({
+      data: {
+        name: 'อาคาร B (North Wing)',
+        address: '123/2 ถนนสุขุมวิท กรุงเทพมหานคร'
+      }
+    });
+  }
+  console.log('🏢 Buildings seeded:', buildingA.name, buildingB.name);
+
+  // 2. Seed Building Settings (PromptPay QR & Account per Building)
+  await prisma.buildingSetting.upsert({
+    where: { buildingId: buildingA.id },
+    update: {},
+    create: {
+      buildingId: buildingA.id,
+      promptpayNum: '0812345678',
+      paymentQrUrl: 'https://images.unsplash.com/photo-1559526324-4b87b5e36e44?auto=format&fit=crop&w=600&q=80'
+    }
+  });
+
+  await prisma.buildingSetting.upsert({
+    where: { buildingId: buildingB.id },
+    update: {},
+    create: {
+      buildingId: buildingB.id,
+      promptpayNum: '0899998888',
+      paymentQrUrl: 'https://images.unsplash.com/photo-1559526324-4b87b5e36e44?auto=format&fit=crop&w=600&q=80'
+    }
+  });
+  console.log('⚙️ Building Settings seeded per building');
+
+  // 3. Create Admin User
   const adminPassword = hashPassword('password123');
   const admin = await prisma.user.upsert({
     where: { email: 'admin@dorm.com' },
@@ -27,19 +71,7 @@ async function main() {
   });
   console.log('👤 Admin user seeded:', admin.email);
 
-  // 2. Create Sample Tenant
-  const tenantUser = await prisma.user.upsert({
-    where: { email: 'tenant@dorm.com' },
-    update: {},
-    create: {
-      email: 'tenant@dorm.com',
-      passwordHash: hashPassword('password123'),
-      name: 'Somchai Jaidee',
-      role: 'tenant',
-      phone: '0812345678'
-    }
-  });
-
+  // 4. Create Sample Tenant
   let tenant = await prisma.tenant.findFirst({ where: { firstName: 'Somchai', lastName: 'Jaidee' } });
   if (!tenant) {
     tenant = await prisma.tenant.create({
@@ -53,11 +85,12 @@ async function main() {
   }
   console.log('👤 Tenant record seeded:', tenant.firstName, tenant.lastName);
 
-  // 3. Create Sample Rooms
+  // 5. Create Sample Rooms (Linked to Building A & Building B)
   const room101 = await prisma.room.upsert({
     where: { roomNumber: '101' },
-    update: { tenantId: tenant.id, status: 'occupied' },
+    update: { buildingId: buildingA.id, tenantId: tenant.id, status: 'occupied' },
     create: {
+      buildingId: buildingA.id,
       roomNumber: '101',
       floor: 1,
       price: 4000.0,
@@ -68,8 +101,9 @@ async function main() {
 
   const room102 = await prisma.room.upsert({
     where: { roomNumber: '102' },
-    update: {},
+    update: { buildingId: buildingA.id },
     create: {
+      buildingId: buildingA.id,
       roomNumber: '102',
       floor: 1,
       price: 4000.0,
@@ -79,8 +113,9 @@ async function main() {
 
   const room201 = await prisma.room.upsert({
     where: { roomNumber: '201' },
-    update: {},
+    update: { buildingId: buildingB.id },
     create: {
+      buildingId: buildingB.id,
       roomNumber: '201',
       floor: 2,
       price: 4500.0,
@@ -88,9 +123,9 @@ async function main() {
     }
   });
 
-  console.log('🏠 Rooms seeded:', room101.roomNumber, room102.roomNumber, room201.roomNumber);
+  console.log('🏠 Rooms seeded:', room101.roomNumber, '(Building A),', room102.roomNumber, '(Building A),', room201.roomNumber, '(Building B)');
 
-  // 4. Create Feature Toggles
+  // 6. Create Feature Toggles
   const defaultFeatures = [
     { key: 'ENABLE_VEHICLE_MANAGEMENT', description: 'ระบบจัดการป้ายทะเบียนและยานพาหนะลูกบ้าน', isActive: true },
     { key: 'ENABLE_PARCEL_NOTIFY', description: 'ระบบแจ้งเตือนพัสดุมาถึงผ่าน LINE', isActive: true },

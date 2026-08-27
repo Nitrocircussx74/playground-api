@@ -103,6 +103,78 @@ class LiffController {
   }
 
   /**
+   * ดึงการตั้งค่า QR Code และบัญชีชำระเงินเฉพาะตึกที่ลูกบ้านสังกัดอยู่
+   * (Tenant -> Room -> Building -> BuildingSetting)
+   */
+  async getSettingsForTenant(req, res, next) {
+    try {
+      const { lineUserId, tenantId, roomId } = req.query;
+
+      let targetRoom = null;
+
+      if (roomId) {
+        targetRoom = await billingService.prisma.room.findUnique({
+          where: { id: roomId },
+          include: { building: { include: { setting: true } } }
+        });
+      }
+
+      if (!targetRoom && lineUserId) {
+        const tenant = await billingService.prisma.tenant.findUnique({
+          where: { lineUserId },
+          include: {
+            rooms: {
+              include: { building: { include: { setting: true } } }
+            }
+          }
+        });
+        if (tenant && tenant.rooms.length > 0) {
+          targetRoom = tenant.rooms[0];
+        }
+      }
+
+      if (!targetRoom && tenantId) {
+        const tenant = await billingService.prisma.tenant.findUnique({
+          where: { id: tenantId },
+          include: {
+            rooms: {
+              include: { building: { include: { setting: true } } }
+            }
+          }
+        });
+        if (tenant && tenant.rooms.length > 0) {
+          targetRoom = tenant.rooms[0];
+        }
+      }
+
+      // Fallback: ดึงตึกแรกในระบบ
+      if (!targetRoom) {
+        targetRoom = await billingService.prisma.room.findFirst({
+          include: { building: { include: { setting: true } } }
+        });
+      }
+
+      let buildingSetting = targetRoom?.building?.setting;
+
+      if (!buildingSetting) {
+        buildingSetting = await billingService.prisma.buildingSetting.findFirst();
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: {
+          buildingId: targetRoom?.building?.id || null,
+          buildingName: targetRoom?.building?.name || 'หอพักหลัก',
+          promptpayNum: buildingSetting?.promptpayNum || '0812345678',
+          paymentQrUrl: buildingSetting?.paymentQrUrl || 'https://images.unsplash.com/photo-1559526324-4b87b5e36e44?auto=format&fit=crop&w=600&q=80'
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * ดึงข้อมูลบิลพร้อม PromptPay QR สำหรับแสดงผลใน LIFF App
    */
   async getInvoiceForLiff(req, res, next) {
