@@ -6,7 +6,7 @@
 - **Access Token (อายุสั้น 15 นาที)**: ส่งคืนใน JSON Payload สำหรับใส่ใน Header `Authorization: Bearer <TOKEN>`
 - **Refresh Token (อายุยาว 7 วัน)**: จัดเก็บอย่างปลอดภัยใน **HTTP-Only, Secure, SameSite Cookie** และเก็บบันทึกลง **PostgreSQL Database**
 - **Token Rotation & Revocation**: ระบบหมุนเวียน Token เมื่อใช้งาน และระบบเพิกถอน Token เมื่อ Logout
-- **Testing Coverage**: **100% Full API Integration Testing** (24/24 Test Cases Passed Across All Endpoints)
+- **Testing Coverage**: **100% Full API Integration Testing** (28/28 Test Cases Passed Across All Endpoints)
 
 ---
 
@@ -14,6 +14,8 @@
 
 - 🏗️ **Clean & Scalable Architecture**: แบ่งแยกเลเยอร์ชัดเจน (`Config`, `Routes`, `Controllers`, `Services`, `Middlewares`, `Validators`, `Prisma Schema`)
 - 🧶 **Yarn Package Manager**: จัดการ Dependencies อย่างรวดเร็ว ปลอดภัยด้วย `yarn.lock`
+- 🛡️ **Role-Based Access Control (RBAC)**:
+  - `roleMiddleware.js` (`requireRole('admin')`): ควบคุมสิทธิ์การเข้าถึง API แอดมิน ป้องกันผู้เช่าหรือบุคคลภายนอกเรียกใช้ Admin Endpoints (`HTTP 403 Forbidden`)
 - 🔐 **JWT Best Practices (Dual Tokens)**:
   - Access Token (15m): ใช้ยืนยันตัวตนสำหรับ Protected Routes
   - Refresh Token (7d): ฝังใน HTTP-Only Cookie ป้องกัน XSS
@@ -30,7 +32,7 @@
   - `CSV Export Engine`: ส่งออกรายงานใบแจ้งหนี้เป็น CSV ด้วย UTF-8 BOM (`\uFEFF`) แสดงผลภาษาไทยบน Excel สมบูรณ์แบบ
 - 🔑 **Google OAuth 2.0 Integration**: ยืนยันตัวตนผ่าน Google ด้วย Passport.js พร้อมบันทึกผู้ใช้ลง PostgreSQL
 - 🚨 **Centralized Error Handling**: ระบบจัดการ Error และ 404 Not Found แบบรวมศูนย์
-- 🧪 **100% Full API Integration Tests**: ชุดทดสอบครอบคลุม API Endpoints ทุกตัวในระบบด้วย Jest และ Supertest (24/24 passed)
+- 🧪 **100% Full API Integration Tests**: ชุดทดสอบครอบคลุม API Endpoints ทุกตัวในระบบด้วย Jest และ Supertest (28/28 passed)
 
 ---
 
