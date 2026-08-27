@@ -27,6 +27,7 @@ router.post('/invoices/:id/slip', upload.single('file'), (req, res, next) => lif
 router.get('/invites/verify/:code', (req, res, next) => liffController.verifyInviteCode(req, res, next));
 router.post('/register/invite', (req, res, next) => liffController.registerTenantWithInvite(req, res, next));
 router.post('/auth/link-account', (req, res, next) => liffController.linkTenantAccount(req, res, next));
+router.patch('/auth/sync-profile', (req, res, next) => liffController.syncLineProfile(req, res, next));
 
 // LIFF Announcements
 router.get('/announcements', (req, res, next) => announcementController.getAnnouncementsForLiff(req, res, next));

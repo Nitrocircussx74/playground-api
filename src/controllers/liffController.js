@@ -43,7 +43,10 @@ class LiffController {
             firstName: tenant.firstName,
             lastName: tenant.lastName,
             phone: tenant.phone,
-            lineUserId: tenant.lineUserId
+            lineUserId: tenant.lineUserId,
+            lineDisplayName: tenant.lineDisplayName,
+            linePictureUrl: tenant.linePictureUrl,
+            lineStatusMessage: tenant.lineStatusMessage
           },
           room: room ? { id: room.id, roomNumber: room.roomNumber, price: room.price } : null,
           building: building ? { id: building.id, name: building.name } : null
@@ -105,7 +108,7 @@ class LiffController {
    */
   async linkTenantAccount(req, res, next) {
     try {
-      const { lineUserId, inviteCode, phoneLast4 } = req.body;
+      const { lineUserId, inviteCode, phoneLast4, lineDisplayName, linePictureUrl, lineStatusMessage } = req.body;
 
       if (!inviteCode || !phoneLast4) {
         return res.status(400).json({
@@ -145,10 +148,25 @@ class LiffController {
         });
       }
 
+      if (lineUserId) {
+        const existingTenant = await billingService.prisma.tenant.findUnique({
+          where: { lineUserId }
+        });
+        if (existingTenant && existingTenant.id !== tenant.id) {
+          return res.status(400).json({
+            success: false,
+            message: 'บัญชี LINE นี้ถูกนำไปผูกกับผู้เช่ารายอื่นในระบบแล้ว'
+          });
+        }
+      }
+
       const updatedTenant = await billingService.prisma.tenant.update({
         where: { id: tenant.id },
         data: {
           lineUserId: lineUserId || tenant.lineUserId,
+          lineDisplayName: lineDisplayName || tenant.lineDisplayName,
+          linePictureUrl: linePictureUrl || tenant.linePictureUrl,
+          lineStatusMessage: lineStatusMessage || tenant.lineStatusMessage,
           inviteCode: null,
           inviteExpiresAt: null
         },
@@ -170,9 +188,54 @@ class LiffController {
             firstName: updatedTenant.firstName,
             lastName: updatedTenant.lastName,
             phone: updatedTenant.phone,
-            lineUserId: updatedTenant.lineUserId
+            lineUserId: updatedTenant.lineUserId,
+            lineDisplayName: updatedTenant.lineDisplayName,
+            linePictureUrl: updatedTenant.linePictureUrl,
+            lineStatusMessage: updatedTenant.lineStatusMessage
           },
           room: room ? { id: room.id, roomNumber: room.roomNumber } : null
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * ซิงค์ข้อมูลโปรไฟล์ LINE ของลูกบ้านอัตโนมัติ (Profile Auto-Sync)
+   */
+  async syncLineProfile(req, res, next) {
+    try {
+      const { lineUserId, lineDisplayName, linePictureUrl, lineStatusMessage } = req.body;
+
+      if (!lineUserId) {
+        return res.status(400).json({ success: false, message: 'กรุณาระบุ lineUserId' });
+      }
+
+      const tenant = await billingService.prisma.tenant.findUnique({
+        where: { lineUserId }
+      });
+
+      if (!tenant) {
+        return res.status(404).json({ success: false, message: 'ไม่พบผู้เช่าที่ผูกกับบัญชี LINE นี้' });
+      }
+
+      const updatedTenant = await billingService.prisma.tenant.update({
+        where: { id: tenant.id },
+        data: {
+          lineDisplayName: lineDisplayName !== undefined ? lineDisplayName : tenant.lineDisplayName,
+          linePictureUrl: linePictureUrl !== undefined ? linePictureUrl : tenant.linePictureUrl,
+          lineStatusMessage: lineStatusMessage !== undefined ? lineStatusMessage : tenant.lineStatusMessage
+        }
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: 'ซิงค์ข้อมูลโปรไฟล์ LINE สำเร็จ',
+        data: {
+          lineDisplayName: updatedTenant.lineDisplayName,
+          linePictureUrl: updatedTenant.linePictureUrl,
+          lineStatusMessage: updatedTenant.lineStatusMessage
         }
       });
     } catch (error) {

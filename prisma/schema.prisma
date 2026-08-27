@@ -210,6 +210,15 @@ model Tenant {
   /// LINE User ID สำหรับผูกกับระบบ LIFF (ไม่ซ้ำกัน)
   lineUserId String? @unique @map("line_user_id")
 
+  /// LINE Display Name จากโปรไฟล์ LINE
+  lineDisplayName String? @map("line_display_name")
+
+  /// LINE Picture URL รูปโปรไฟล์จาก LINE
+  linePictureUrl String? @map("line_picture_url")
+
+  /// LINE Status Message ข้อความสถานะจาก LINE
+  lineStatusMessage String? @map("line_status_message")
+
   /// รหัสเชิญ 6 หลักสำหรับผูกบัญชีลูกบ้าน (Alphanumeric)
   inviteCode String? @unique @map("invite_code")
 

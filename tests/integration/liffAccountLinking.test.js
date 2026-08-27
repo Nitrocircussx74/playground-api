@@ -15,6 +15,12 @@ describe('Account Linking & Onboarding Integration Tests', () => {
     adminToken = authService.generateAccessToken(adminUser);
 
     testTenant = await billingService.prisma.tenant.findFirst();
+    if (testTenant) {
+      await billingService.prisma.tenant.update({
+        where: { id: testTenant.id },
+        data: { lineUserId: null, inviteCode: null, inviteExpiresAt: null }
+      });
+    }
   });
 
   describe('POST /api/admin/tenants/:id/generate-invite', () => {
@@ -86,6 +92,55 @@ describe('Account Linking & Onboarding Integration Tests', () => {
         where: { id: testTenant.id }
       });
       expect(recheckedTenant.inviteCode).toBeNull();
+    });
+
+    test('กรณีแนบข้อมูล LINE Profile ต้องบันทึก lineDisplayName และ linePictureUrl ลง DB (200 OK)', async () => {
+      if (!testTenant) return;
+
+      const inviteRes = await request(app)
+        .post(`/api/admin/tenants/${testTenant.id}/generate-invite`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      const newInvite = inviteRes.body.data.inviteCode;
+      const phoneLast4 = testTenant.phone.trim().slice(-4);
+      const testLineUserId = `U_test_profile_extract_${Date.now()}`;
+
+      const response = await request(app)
+        .post('/api/v1/liff/auth/link-account')
+        .send({
+          inviteCode: newInvite,
+          phoneLast4,
+          lineUserId: testLineUserId,
+          lineDisplayName: 'Somchai LINE Display Name',
+          linePictureUrl: 'https://profile.line-scdn.net/sample_avatar.jpg',
+          lineStatusMessage: 'Hello LINE'
+        });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.data.tenant.lineDisplayName).toBe('Somchai LINE Display Name');
+      expect(response.body.data.tenant.linePictureUrl).toBe('https://profile.line-scdn.net/sample_avatar.jpg');
+    });
+  });
+
+  describe('PATCH /api/v1/liff/auth/sync-profile', () => {
+    test('อัปเดตซิงค์ข้อมูลโปรไฟล์ LINE ของลูกบ้านสำเร็จ (200 OK)', async () => {
+      const tenantWithLine = await billingService.prisma.tenant.findFirst({
+        where: { lineUserId: { not: null } }
+      });
+      if (!tenantWithLine) return;
+
+      const response = await request(app)
+        .patch('/api/v1/liff/auth/sync-profile')
+        .send({
+          lineUserId: tenantWithLine.lineUserId,
+          lineDisplayName: 'Updated LINE Display Name',
+          linePictureUrl: 'https://profile.line-scdn.net/updated_avatar.jpg'
+        });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.lineDisplayName).toBe('Updated LINE Display Name');
+      expect(response.body.data.linePictureUrl).toBe('https://profile.line-scdn.net/updated_avatar.jpg');
     });
   });
 });

@@ -16,6 +16,9 @@ describe('Maintenance & Ticketing System Integration Tests', () => {
     adminToken = authService.generateAccessToken(adminUser);
 
     testRoom = await billingService.prisma.room.findFirst({ where: { status: 'occupied' } });
+    if (!testRoom) {
+      testRoom = await billingService.prisma.room.findFirst();
+    }
     testTenant = await billingService.prisma.tenant.findFirst();
   });
 
