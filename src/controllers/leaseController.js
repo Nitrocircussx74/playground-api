@@ -3,6 +3,35 @@ const auditService = require('../services/auditService');
 
 class LeaseController {
   /**
+   * ดึงรายการสัญญาเช่าทั้งหมดในระบบ / กรองตามตึก (GET /api/admin/leases)
+   */
+  async getAllLeases(req, res, next) {
+    try {
+      const { buildingId } = req.query;
+
+      const where = buildingId ? { buildingId } : {};
+
+      const leases = await billingService.prisma.leaseContract.findMany({
+        where,
+        orderBy: { startDate: 'desc' },
+        include: {
+          tenant: true,
+          room: true,
+          building: true,
+          moveOutRecord: true
+        }
+      });
+
+      return res.status(200).json({
+        success: true,
+        data: leases
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * ดึงประวัติการเข้าอยู่และสัญญาเช่าทั้งหมดของห้องพักนี้ (GET /api/admin/rooms/:roomId/history)
    */
   async getRoomTenancyHistory(req, res, next) {
