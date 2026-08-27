@@ -152,7 +152,7 @@ model Room {
   building Building? @relation(fields: [buildingId], references: [id], onDelete: Cascade)
 
   /// หมายเลขห้องพัก (เช่น A101, B202)
-  roomNumber String @unique @map("room_number")
+  roomNumber String @map("room_number")
 
   /// ชั้นที่ห้องพักตั้งอยู่
   floor Int
@@ -180,6 +180,7 @@ model Room {
   roomInvites RoomInvite[]
 
   // แมปชื่อตารางในฐานข้อมูลเป็น snake_case และพหูพจน์
+  @@unique([roomNumber, buildingId])
   @@map("rooms")
 }
 

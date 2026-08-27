@@ -97,14 +97,17 @@ class RoomController {
         }
       }
 
-      const existingRoom = await billingService.prisma.room.findUnique({
-        where: { roomNumber: String(roomNumber) }
+      const existingRoom = await billingService.prisma.room.findFirst({
+        where: {
+          roomNumber: String(roomNumber),
+          buildingId: targetBuildingId
+        }
       });
 
       if (existingRoom) {
         return res.status(400).json({
           success: false,
-          message: `Room ${roomNumber} already exists in the system`
+          message: `ห้องพักหมายเลข ${roomNumber} มีอยู่ในตึกนี้แล้ว`
         });
       }
 
