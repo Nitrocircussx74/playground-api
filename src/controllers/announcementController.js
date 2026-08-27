@@ -136,6 +136,30 @@ class AnnouncementController {
       next(error);
     }
   }
+
+  /**
+   * แอดมินลบประกาศข่าวสาร (Delete Announcement)
+   */
+  async deleteAnnouncement(req, res, next) {
+    try {
+      const { id } = req.params;
+      const announcement = await billingService.prisma.announcement.findUnique({ where: { id } });
+
+      if (!announcement) {
+        return res.status(404).json({ success: false, message: 'ไม่พบประกาศที่ต้องการลบ' });
+      }
+
+      await billingService.prisma.announcement.delete({ where: { id } });
+
+      return res.status(200).json({
+        success: true,
+        message: `ลบประกาศ "${announcement.title}" เรียบร้อยแล้ว`
+      });
+    } catch (error) {
+      console.error('Error deleting announcement:', error);
+      next(error);
+    }
+  }
 }
 
 module.exports = new AnnouncementController();

@@ -183,6 +183,64 @@ class RoomController {
   }
 
   /**
+   * แก้ไขข้อมูลห้องพัก (Update Room)
+   */
+  async updateRoom(req, res, next) {
+    try {
+      const { id } = req.params;
+      const { roomNumber, floor, price, status, buildingId } = req.body;
+
+      const room = await billingService.prisma.room.findUnique({ where: { id } });
+      if (!room) {
+        return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลห้องพัก' });
+      }
+
+      const updatedRoom = await billingService.prisma.room.update({
+        where: { id },
+        data: {
+          roomNumber: roomNumber !== undefined ? String(roomNumber) : room.roomNumber,
+          floor: floor !== undefined ? Number(floor) : room.floor,
+          price: price !== undefined ? Number(price) : room.price,
+          status: status || room.status,
+          buildingId: buildingId !== undefined ? buildingId : room.buildingId
+        },
+        include: { building: true, tenant: true }
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: `อัปเดตข้อมูลห้อง ${updatedRoom.roomNumber} เรียบร้อยแล้ว`,
+        data: updatedRoom
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * ลบห้องพัก (Delete Room)
+   */
+  async deleteRoom(req, res, next) {
+    try {
+      const { id } = req.params;
+      const room = await billingService.prisma.room.findUnique({ where: { id } });
+
+      if (!room) {
+        return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลห้องพัก' });
+      }
+
+      await billingService.prisma.room.delete({ where: { id } });
+
+      return res.status(200).json({
+        success: true,
+        message: `ลบห้องพัก ${room.roomNumber} เรียบร้อยแล้ว`
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * ยกเลิก/เพิกถอน Invite Code ที่ยังไม่ได้ใช้งาน
    */
   async revokeRoomInvite(req, res, next) {

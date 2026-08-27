@@ -169,6 +169,29 @@ class MaintenanceController {
       next(error);
     }
   }
+
+  /**
+   * แอดมินลบรายการแจ้งซ่อม (Delete Maintenance Request)
+   */
+  async deleteMaintenanceRequest(req, res, next) {
+    try {
+      const { id } = req.params;
+      const request = await billingService.prisma.maintenanceRequest.findUnique({ where: { id } });
+
+      if (!request) {
+        return res.status(404).json({ success: false, message: 'ไม่พบรายการแจ้งซ่อมที่ต้องการลบ' });
+      }
+
+      await billingService.prisma.maintenanceRequest.delete({ where: { id } });
+
+      return res.status(200).json({
+        success: true,
+        message: 'ลบรายการแจ้งซ่อมเรียบร้อยแล้ว'
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 module.exports = new MaintenanceController();

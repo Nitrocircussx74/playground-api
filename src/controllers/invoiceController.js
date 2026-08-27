@@ -447,6 +447,29 @@ class InvoiceController {
       next(error);
     }
   }
+
+  /**
+   * ลบใบแจ้งหนี้ (Delete Invoice)
+   */
+  async deleteInvoice(req, res, next) {
+    try {
+      const { id } = req.params;
+      const invoice = await billingService.prisma.invoice.findUnique({ where: { id } });
+
+      if (!invoice) {
+        return res.status(404).json({ success: false, message: 'ไม่พบใบแจ้งหนี้ที่ต้องการลบ' });
+      }
+
+      await billingService.prisma.invoice.delete({ where: { id } });
+
+      return res.status(200).json({
+        success: true,
+        message: `ลบใบแจ้งหนี้ ${invoice.invoiceNumber} เรียบร้อยแล้ว`
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 module.exports = new InvoiceController();
