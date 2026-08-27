@@ -114,19 +114,44 @@ class BuildingController {
   }
 
   /**
-   * อัปเดตการตั้งค่าและ PromptPay QR Code ประจำตึก
+   * อัปเดตการตั้งค่าของตึกทั้ง 4 หมวดหมู่ (General, Payment, Billing, Rules)
    */
   async updateBuildingSetting(req, res, next) {
     try {
-      const { id } = req.params; // buildingId
-      const { promptpayNum, paymentQrUrl, name, address } = req.body;
+      const id = req.params.id || req.params.buildingId;
+      const {
+        // 1. General Info
+        name,
+        address,
+        phone,
+        coverImageUrl,
+
+        // 2. Payment Options
+        paymentQrUrl,
+        promptpayNum,
+        bankName,
+        bankAccountName,
+        bankAccountNo,
+        paymentNote,
+
+        // 3. Billing & Utilities
+        waterRate,
+        electricRate,
+        dueDateDay,
+        latePenalty,
+
+        // 4. Rules & Contracts
+        depositMonths,
+        advanceMonths,
+        termsAndConditions
+      } = req.body;
 
       const building = await billingService.prisma.building.findUnique({ where: { id } });
       if (!building) {
         return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลอาคาร' });
       }
 
-      // 1. อัปเดตข้อมูลตึก (ถ้ามี)
+      // 1. อัปเดตข้อมูลทั่วไปของตึก (Building)
       if (name || address !== undefined) {
         await billingService.prisma.building.update({
           where: { id },
@@ -138,27 +163,57 @@ class BuildingController {
       }
 
       // 2. อัปเดตหรือสร้าง BuildingSetting
+      const settingData = {
+        ...(phone !== undefined && { phone }),
+        ...(coverImageUrl !== undefined && { coverImageUrl }),
+        ...(paymentQrUrl !== undefined && { paymentQrUrl }),
+        ...(promptpayNum !== undefined && { promptpayNum }),
+        ...(bankName !== undefined && { bankName }),
+        ...(bankAccountName !== undefined && { bankAccountName }),
+        ...(bankAccountNo !== undefined && { bankAccountNo }),
+        ...(paymentNote !== undefined && { paymentNote }),
+        ...(waterRate !== undefined && { waterRate }),
+        ...(electricRate !== undefined && { electricRate }),
+        ...(dueDateDay !== undefined && { dueDateDay: parseInt(dueDateDay, 10) }),
+        ...(latePenalty !== undefined && { latePenalty }),
+        ...(depositMonths !== undefined && { depositMonths: parseInt(depositMonths, 10) }),
+        ...(advanceMonths !== undefined && { advanceMonths: parseInt(advanceMonths, 10) }),
+        ...(termsAndConditions !== undefined && { termsAndConditions })
+      };
+
       const setting = await billingService.prisma.buildingSetting.upsert({
         where: { buildingId: id },
-        update: {
-          ...(promptpayNum !== undefined && { promptpayNum }),
-          ...(paymentQrUrl !== undefined && { paymentQrUrl })
-        },
+        update: settingData,
         create: {
           buildingId: id,
-          promptpayNum: promptpayNum || null,
-          paymentQrUrl: paymentQrUrl || null
+          ...settingData
         }
+      });
+
+      const updatedBuilding = await billingService.prisma.building.findUnique({
+        where: { id },
+        include: { setting: true }
       });
 
       return res.status(200).json({
         success: true,
-        message: `อัปเดตการตั้งค่าของอาคารเรียบร้อยแล้ว`,
-        data: setting
+        message: 'อัปเดตข้อมูลการตั้งค่าตึกสำเร็จ',
+        data: {
+          ...updatedBuilding,
+          ...setting
+        }
       });
     } catch (error) {
       next(error);
     }
+  }
+
+  /**
+   * Alias สำหรับ GET /api/v1/buildings/:buildingId/settings หรือ /api/admin/buildings/:buildingId/settings
+   */
+  async getBuildingSettings(req, res, next) {
+    req.params.id = req.params.buildingId || req.params.id;
+    return this.getBuildingById(req, res, next);
   }
 }
 

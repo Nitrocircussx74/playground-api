@@ -37,6 +37,7 @@ router.use('/api/v1/features', featureRoutes);
 // Protected RESTful Modules (Plural & Kebab-case API Endpoints)
 router.use('/api', apiRoutes);
 router.use('/api/v1/buildings', authenticateJWT, buildingRoutes);
+router.use('/api/admin/buildings', authenticateJWT, buildingRoutes);
 router.use('/api/v1/rooms', authenticateJWT, roomRoutes);
 router.use('/api/v1/meter-records', authenticateJWT, meterRoutes);
 router.use('/api/v1/invoices', authenticateJWT, invoiceRoutes);

@@ -94,15 +94,46 @@ model BuildingSetting {
   buildingId String @unique @map("building_id") @db.Uuid
   building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
 
+  // 1. General Settings (ข้อมูลทั่วไป)
+  /// เบอร์โทรศัพท์ติดต่อประจำตึก
+  phone String?
+  /// รูปภาพหน้าปกตึก (URL/Path)
+  coverImageUrl String? @map("cover_image_url")
+
+  // 2. Payment Settings (การชำระเงิน)
   /// รูปภาพ PromptPay QR Code ชำระเงินประจำตึก (URL/Path)
   paymentQrUrl String? @map("payment_qr_url")
-
   /// หมายเลข PromptPay ประจำตึก (เช่น เบอร์โทรศัพท์ หรือ เลขประจำตัวผู้เสียภาษี)
   promptpayNum String? @map("promptpay_num")
+  /// ชื่อธนาคารผู้รับชำระเงิน
+  bankName String? @map("bank_name")
+  /// ชื่อบัญชีธนาคาร
+  bankAccountName String? @map("bank_account_name")
+  /// เลขที่บัญชีธนาคาร
+  bankAccountNo String? @map("bank_account_no")
+  /// หมายเหตุเพิ่มเติมสำหรับการชำระเงิน
+  paymentNote String? @map("payment_note") @db.Text
+
+  // 3. Billing & Utility Rates (ค่าบริการและรอบบิล)
+  /// อัตราค่าน้ำต่อหน่วย (Decimal)
+  waterRate Decimal @default(18.00) @map("water_rate") @db.Decimal(10, 2)
+  /// อัตราค่าไฟต่อหน่วย (Decimal)
+  electricRate Decimal @default(7.00) @map("electric_rate") @db.Decimal(10, 2)
+  /// วันกำหนดชำระเงินของทุกเดือน (เช่น วันที่ 5)
+  dueDateDay Int @default(5) @map("due_date_day")
+  /// ค่าปรับชำระเกินกำหนด (Decimal)
+  latePenalty Decimal @default(50.00) @map("late_penalty") @db.Decimal(10, 2)
+
+  // 4. Rules & Contract Terms (กฎระเบียบและข้อตกลง)
+  /// จำนวนเดือนเงินประกัน/มัดจำ (Int)
+  depositMonths Int @default(2) @map("deposit_months")
+  /// จำนวนเดือนเงินค่าเช่าล่วงหน้า (Int)
+  advanceMonths Int @default(1) @map("advance_months")
+  /// กฎระเบียบและข้อตกลงสัญญาเช่า (Text)
+  termsAndConditions String? @map("terms_and_conditions") @db.Text
 
   /// วันเวลาที่สร้างเรคคอร์ด
   createdAt DateTime @default(now()) @map("created_at")
-
   /// วันเวลาที่อัปเดตเรคคอร์ดล่าสุด
   updatedAt DateTime @updatedAt @map("updated_at")
 

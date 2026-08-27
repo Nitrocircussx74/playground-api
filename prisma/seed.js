@@ -40,8 +40,21 @@ async function main() {
     update: {},
     create: {
       buildingId: buildingA.id,
+      phone: '02-123-4567',
+      coverImageUrl: 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=1200&q=80',
       promptpayNum: '0812345678',
-      paymentQrUrl: 'https://images.unsplash.com/photo-1559526324-4b87b5e36e44?auto=format&fit=crop&w=600&q=80'
+      paymentQrUrl: 'https://images.unsplash.com/photo-1559526324-4b87b5e36e44?auto=format&fit=crop&w=600&q=80',
+      bankName: 'ธนาคารกสิกรไทย (KBANK)',
+      bankAccountName: 'หอพักอาคาร A จำกัด',
+      bankAccountNo: '123-4-56789-0',
+      paymentNote: 'ชำระภายในวันที่ 5 ของทุกเดือน กรุณาแนบสลิปผ่านทางระบบ LIFF',
+      waterRate: 18.00,
+      electricRate: 7.00,
+      dueDateDay: 5,
+      latePenalty: 50.00,
+      depositMonths: 2,
+      advanceMonths: 1,
+      termsAndConditions: '1. ห้ามส่งเสียงดังหลังเวลา 22:00 น.\n2. ห้ามเลี้ยงสัตว์เลี้ยงทุกชนิด\n3. ห้ามสูบบุหรี่ภายในห้องพักและระเบียง'
     }
   });
 
@@ -50,11 +63,24 @@ async function main() {
     update: {},
     create: {
       buildingId: buildingB.id,
+      phone: '02-987-6543',
+      coverImageUrl: 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?auto=format&fit=crop&w=1200&q=80',
       promptpayNum: '0899998888',
-      paymentQrUrl: 'https://images.unsplash.com/photo-1559526324-4b87b5e36e44?auto=format&fit=crop&w=600&q=80'
+      paymentQrUrl: 'https://images.unsplash.com/photo-1559526324-4b87b5e36e44?auto=format&fit=crop&w=600&q=80',
+      bankName: 'ธนาคารไทยพาณิชย์ (SCB)',
+      bankAccountName: 'หอพักอาคาร B จำกัด',
+      bankAccountNo: '987-6-54321-0',
+      paymentNote: 'โอนชำระเงินตามยอดสุทธิในใบแจ้งหนี้',
+      waterRate: 20.00,
+      electricRate: 8.00,
+      dueDateDay: 5,
+      latePenalty: 100.00,
+      depositMonths: 2,
+      advanceMonths: 1,
+      termsAndConditions: '1. ห้ามดัดแปลงโครงสร้างห้องพัก\n2. รักษาความสะอาดพื้นที่ส่วนกลาง'
     }
   });
-  console.log('⚙️ Building Settings seeded per building');
+  console.log('⚙️ Building Settings seeded per building with 4 categories');
 
   // 3. Seed Users & Building Permissions
   const defaultPassword = hashPassword('password123');
