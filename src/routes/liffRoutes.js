@@ -23,9 +23,10 @@ router.get('/invoices/:id/receipt-pdf', (req, res, next) => invoiceController.ex
 router.get('/invoices/:id', (req, res, next) => liffController.getInvoiceForLiff(req, res, next));
 router.post('/invoices/:id/slip', upload.single('file'), (req, res, next) => liffController.uploadSlipFromLiff(req, res, next));
 
-// LIFF Tenant Registration
+// LIFF Tenant Registration & Account Linking
 router.get('/invites/verify/:code', (req, res, next) => liffController.verifyInviteCode(req, res, next));
 router.post('/register/invite', (req, res, next) => liffController.registerTenantWithInvite(req, res, next));
+router.post('/auth/link-account', (req, res, next) => liffController.linkTenantAccount(req, res, next));
 
 // LIFF Announcements
 router.get('/announcements', (req, res, next) => announcementController.getAnnouncementsForLiff(req, res, next));

@@ -736,6 +736,49 @@ class LineService {
       return false;
     }
   }
+
+  /**
+   * ส่ง LINE Flex Message ต้อนรับผู้เช่าเมื่อผูกบัญชีลูกบ้านสำเร็จ
+   */
+  async sendWelcomeFlexMessage(lineUserId, tenant) {
+    if (!lineUserId) return false;
+    try {
+      const flexMessage = {
+        type: 'flex',
+        altText: '🎉 ยินดีต้อนรับสู่ระบบจัดการหอพัก ผูกบัญชีสำเร็จเรียบร้อยแล้ว',
+        contents: {
+          type: 'bubble',
+          header: {
+            type: 'box',
+            layout: 'vertical',
+            backgroundColor: '#16a34a',
+            contents: [
+              { type: 'text', text: '🎉 ผูกบัญชีลูกบ้านสำเร็จ', weight: 'bold', color: '#ffffff', size: 'md' },
+              { type: 'text', text: 'ยินดีต้อนรับสู่ระบบหอพัก', color: '#dcfce7', size: 'xs', margin: 'xs' }
+            ]
+          },
+          body: {
+            type: 'box',
+            layout: 'vertical',
+            contents: [
+              { type: 'text', text: `คุณ ${tenant.firstName} ${tenant.lastName}`, weight: 'bold', size: 'md', color: '#1e293b' },
+              { type: 'text', text: 'บัญชี LINE ของคุณได้รับการเชื่อมต่อกับห้องพักเรียบร้อยแล้ว ท่านสามารถตรวจสอบบิล ชำระเงิน แจ้งซ่อม และเช็คพัสดุได้ทันที', wrap: true, size: 'xs', color: '#64748b', margin: 'md' }
+            ]
+          }
+        }
+      };
+
+      await client.pushMessage({
+        to: lineUserId,
+        messages: [flexMessage]
+      });
+      console.log(`✅ ส่ง LINE Welcome Push Notification หา ${lineUserId} สำเร็จ`);
+      return true;
+    } catch (error) {
+      console.warn(`⚠️ ไม่สามารถส่ง LINE Welcome Notification ได้: ${error.message}`);
+      return false;
+    }
+  }
 }
 
 module.exports = new LineService();

@@ -1,11 +1,15 @@
 const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/adminController');
+const liffController = require('../controllers/liffController');
 const requireRole = require('../middlewares/roleMiddleware');
 
 // Profile Endpoints (Accessible by all logged-in admins)
 router.get('/me', (req, res, next) => adminController.getMe(req, res, next));
 router.put('/me/password', (req, res, next) => adminController.updatePassword(req, res, next));
+
+// Tenant Invite Generator
+router.post('/tenants/:id/generate-invite', (req, res, next) => liffController.generateTenantInvite(req, res, next));
 
 // Admin User & Permission Management (Restricted to OWNER / super_admin)
 router.get('/users', requireRole('OWNER', 'super_admin', 'superadmin'), (req, res, next) =>

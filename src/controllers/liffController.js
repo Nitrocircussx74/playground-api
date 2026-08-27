@@ -56,6 +56,131 @@ class LiffController {
   }
 
   /**
+   * สร้างรหัสเชิญ (Invite Code) 6 หลักสำหรับผู้เช่า (Admin API)
+   */
+  async generateTenantInvite(req, res, next) {
+    try {
+      const { id } = req.params;
+
+      const tenant = await billingService.prisma.tenant.findUnique({
+        where: { id }
+      });
+
+      if (!tenant) {
+        return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลผู้เช่ารายนี้' });
+      }
+
+      const characters = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      let inviteCode = '';
+      for (let i = 0; i < 6; i++) {
+        inviteCode += characters.charAt(Math.floor(Math.random() * characters.length));
+      }
+
+      const inviteExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+      const updatedTenant = await billingService.prisma.tenant.update({
+        where: { id },
+        data: {
+          inviteCode,
+          inviteExpiresAt
+        }
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: 'สร้างรหัสเชิญสำเร็จ',
+        data: {
+          tenantId: updatedTenant.id,
+          inviteCode: updatedTenant.inviteCode,
+          inviteExpiresAt: updatedTenant.inviteExpiresAt
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * ผูกบัญชี LINE ลูกบ้านผ่าน Invite Code 6 หลัก และเบอร์โทร 4 ตัวท้าย (LIFF API)
+   */
+  async linkTenantAccount(req, res, next) {
+    try {
+      const { lineUserId, inviteCode, phoneLast4 } = req.body;
+
+      if (!inviteCode || !phoneLast4) {
+        return res.status(400).json({
+          success: false,
+          message: 'กรุณาระบุรหัสเชิญ 6 หลัก และเบอร์โทรศัพท์ 4 ตัวท้าย'
+        });
+      }
+
+      const cleanInviteCode = String(inviteCode).trim().toUpperCase();
+      const cleanPhoneLast4 = String(phoneLast4).trim();
+
+      const tenant = await billingService.prisma.tenant.findFirst({
+        where: { inviteCode: cleanInviteCode },
+        include: { rooms: true }
+      });
+
+      if (!tenant) {
+        return res.status(400).json({
+          success: false,
+          message: 'รหัสเชิญไม่ถูกต้อง หรือถูกใช้งานไปแล้ว'
+        });
+      }
+
+      if (tenant.inviteExpiresAt && new Date() > new Date(tenant.inviteExpiresAt)) {
+        return res.status(400).json({
+          success: false,
+          message: 'รหัสเชิญนี้หมดอายุแล้ว กรุณาติดต่อแอดมินเพื่อขอรหัสใหม่'
+        });
+      }
+
+      const tenantPhone = tenant.phone ? tenant.phone.trim() : '';
+      const actualLast4 = tenantPhone.slice(-4);
+      if (actualLast4 !== cleanPhoneLast4) {
+        return res.status(400).json({
+          success: false,
+          message: 'เบอร์โทรศัพท์ 4 ตัวท้ายไม่ตรงกับข้อมูลในระบบ'
+        });
+      }
+
+      const updatedTenant = await billingService.prisma.tenant.update({
+        where: { id: tenant.id },
+        data: {
+          lineUserId: lineUserId || tenant.lineUserId,
+          inviteCode: null,
+          inviteExpiresAt: null
+        },
+        include: { rooms: true }
+      });
+
+      if (lineUserId) {
+        lineService.sendWelcomeFlexMessage(lineUserId, updatedTenant).catch(() => {});
+      }
+
+      const room = updatedTenant.rooms && updatedTenant.rooms.length > 0 ? updatedTenant.rooms[0] : null;
+
+      return res.status(200).json({
+        success: true,
+        message: 'ผูกบัญชีลูกบ้านสำเร็จเรียบร้อยแล้ว',
+        data: {
+          tenant: {
+            id: updatedTenant.id,
+            firstName: updatedTenant.firstName,
+            lastName: updatedTenant.lastName,
+            phone: updatedTenant.phone,
+            lineUserId: updatedTenant.lineUserId
+          },
+          room: room ? { id: room.id, roomNumber: room.roomNumber } : null
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * ดึงข้อมูลโปรไฟล์ผู้เช่าสำหรับ LIFF App
    */
   async getTenantProfile(req, res, next) {
