@@ -34,16 +34,24 @@ async function main() {
   }
   console.log('🏢 Buildings seeded:', buildingA.name, buildingB.name);
 
-  // 2. Seed Building Settings
+  // 2. Seed Building Settings with Real PromptPay QR Codes
+  const generatePayload = require('promptpay-qr');
+  const QRCode = require('qrcode');
+
+  const qrA = await QRCode.toDataURL(generatePayload('0812345678', { amount: 0 }), { width: 400, margin: 2 });
+  const qrB = await QRCode.toDataURL(generatePayload('0899998888', { amount: 0 }), { width: 400, margin: 2 });
+
   await prisma.buildingSetting.upsert({
     where: { buildingId: buildingA.id },
-    update: {},
+    update: {
+      paymentQrUrl: qrA
+    },
     create: {
       buildingId: buildingA.id,
       phone: '02-123-4567',
       coverImageUrl: 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=1200&q=80',
       promptpayNum: '0812345678',
-      paymentQrUrl: 'https://images.unsplash.com/photo-1559526324-4b87b5e36e44?auto=format&fit=crop&w=600&q=80',
+      paymentQrUrl: qrA,
       bankName: 'ธนาคารกสิกรไทย (KBANK)',
       bankAccountName: 'หอพักอาคาร A จำกัด',
       bankAccountNo: '123-4-56789-0',
@@ -60,13 +68,15 @@ async function main() {
 
   await prisma.buildingSetting.upsert({
     where: { buildingId: buildingB.id },
-    update: {},
+    update: {
+      paymentQrUrl: qrB
+    },
     create: {
       buildingId: buildingB.id,
       phone: '02-987-6543',
       coverImageUrl: 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?auto=format&fit=crop&w=1200&q=80',
       promptpayNum: '0899998888',
-      paymentQrUrl: 'https://images.unsplash.com/photo-1559526324-4b87b5e36e44?auto=format&fit=crop&w=600&q=80',
+      paymentQrUrl: qrB,
       bankName: 'ธนาคารไทยพาณิชย์ (SCB)',
       bankAccountName: 'หอพักอาคาร B จำกัด',
       bankAccountNo: '987-6-54321-0',
@@ -80,7 +90,7 @@ async function main() {
       termsAndConditions: '1. ห้ามดัดแปลงโครงสร้างห้องพัก\n2. รักษาความสะอาดพื้นที่ส่วนกลาง'
     }
   });
-  console.log('⚙️ Building Settings seeded per building with 4 categories');
+  console.log('⚙️ Building Settings seeded per building with real PromptPay QR Codes');
 
   // 3. Seed Users & Building Permissions
   const defaultPassword = hashPassword('password123');
