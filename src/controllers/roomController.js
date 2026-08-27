@@ -8,10 +8,11 @@ class RoomController {
       const userRole = (req.user?.role || '').toLowerCase();
       const userId = req.user?.id;
 
+      const isFullAdmin = ['super_admin', 'superadmin', 'owner'].includes(userRole);
       let where = {};
 
       if (buildingId) {
-        if (userRole !== 'super_admin' && userId) {
+        if (!isFullAdmin && userId) {
           const perm = await billingService.prisma.userBuildingPermission.findUnique({
             where: { userId_buildingId: { userId, buildingId } }
           });
@@ -23,7 +24,7 @@ class RoomController {
           }
         }
         where.buildingId = buildingId;
-      } else if (userRole !== 'super_admin' && userId) {
+      } else if (!isFullAdmin && userId) {
         const permissions = await billingService.prisma.userBuildingPermission.findMany({
           where: { userId },
           select: { buildingId: true }

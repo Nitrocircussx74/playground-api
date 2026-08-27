@@ -9,9 +9,10 @@ class BuildingController {
       const userRole = (req.user?.role || '').toLowerCase();
       const userId = req.user?.id;
 
+      const isSuperAdmin = ['super_admin', 'superadmin', 'owner'].includes(userRole);
       let where = {};
 
-      if (userRole !== 'super_admin' && userId) {
+      if (!isSuperAdmin && userId) {
         const permissions = await billingService.prisma.userBuildingPermission.findMany({
           where: { userId },
           select: { buildingId: true }
