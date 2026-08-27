@@ -285,10 +285,27 @@ class InvoiceController {
       ];
 
       if (Number(invoice.otherFee) > 0) {
-        items.push({
-          desc: invoice.otherFeeNote ? `Other Service Fee (${invoice.otherFeeNote})` : 'Other Service Fee',
-          amount: Number(invoice.otherFee)
-        });
+        if (invoice.otherFeeNote && invoice.otherFeeNote.startsWith('[')) {
+          try {
+            const parsedItems = JSON.parse(invoice.otherFeeNote);
+            parsedItems.forEach((item) => {
+              items.push({
+                desc: item.note ? `Other Fee: ${item.note}` : 'Other Service Fee',
+                amount: Number(item.amount) || 0
+              });
+            });
+          } catch {
+            items.push({
+              desc: invoice.otherFeeNote ? `Other Service Fee (${invoice.otherFeeNote})` : 'Other Service Fee',
+              amount: Number(invoice.otherFee)
+            });
+          }
+        } else {
+          items.push({
+            desc: invoice.otherFeeNote ? `Other Service Fee (${invoice.otherFeeNote})` : 'Other Service Fee',
+            amount: Number(invoice.otherFee)
+          });
+        }
       }
 
       items.forEach((item) => {
@@ -381,10 +398,27 @@ class InvoiceController {
       ];
 
       if (Number(invoice.otherFee) > 0) {
-        items.push({
-          desc: invoice.otherFeeNote ? `Other Service Fee (${invoice.otherFeeNote})` : 'Other Service Fee',
-          amount: Number(invoice.otherFee)
-        });
+        if (invoice.otherFeeNote && invoice.otherFeeNote.startsWith('[')) {
+          try {
+            const parsedItems = JSON.parse(invoice.otherFeeNote);
+            parsedItems.forEach((item) => {
+              items.push({
+                desc: item.note ? `Other Fee: ${item.note}` : 'Other Service Fee',
+                amount: Number(item.amount) || 0
+              });
+            });
+          } catch {
+            items.push({
+              desc: invoice.otherFeeNote ? `Other Service Fee (${invoice.otherFeeNote})` : 'Other Service Fee',
+              amount: Number(invoice.otherFee)
+            });
+          }
+        } else {
+          items.push({
+            desc: invoice.otherFeeNote ? `Other Service Fee (${invoice.otherFeeNote})` : 'Other Service Fee',
+            amount: Number(invoice.otherFee)
+          });
+        }
       }
 
       items.forEach((item) => {

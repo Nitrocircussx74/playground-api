@@ -87,17 +87,43 @@ class LineService {
                 }
               ]
             },
-            ...(Number(invoice.otherFee) > 0 ? [
-              {
-                type: 'box',
-                layout: 'horizontal',
-                margin: 'md',
-                contents: [
-                  { type: 'text', text: invoice.otherFeeNote ? `ค่าอื่นๆ (${invoice.otherFeeNote})` : 'ค่าบริการอื่นๆ', size: 'sm', color: '#64748b', wrap: true },
-                  { type: 'text', text: `฿${Number(invoice.otherFee).toLocaleString()}`, size: 'sm', color: '#0f172a', align: 'end' }
-                ]
-              }
-            ] : []),
+            ...(Number(invoice.otherFee) > 0 ? (
+              (() => {
+                if (invoice.otherFeeNote && invoice.otherFeeNote.startsWith('[')) {
+                  try {
+                    const parsed = JSON.parse(invoice.otherFeeNote);
+                    return parsed.map((item) => ({
+                      type: 'box',
+                      layout: 'horizontal',
+                      margin: 'md',
+                      contents: [
+                        { type: 'text', text: item.note ? `ค่าอื่นๆ (${item.note})` : 'ค่าบริการอื่นๆ', size: 'sm', color: '#64748b', wrap: true },
+                        { type: 'text', text: `฿${Number(item.amount || 0).toLocaleString()}`, size: 'sm', color: '#0f172a', align: 'end' }
+                      ]
+                    }));
+                  } catch {
+                    return [{
+                      type: 'box',
+                      layout: 'horizontal',
+                      margin: 'md',
+                      contents: [
+                        { type: 'text', text: invoice.otherFeeNote ? `ค่าอื่นๆ (${invoice.otherFeeNote})` : 'ค่าบริการอื่นๆ', size: 'sm', color: '#64748b', wrap: true },
+                        { type: 'text', text: `฿${Number(invoice.otherFee).toLocaleString()}`, size: 'sm', color: '#0f172a', align: 'end' }
+                      ]
+                    }];
+                  }
+                }
+                return [{
+                  type: 'box',
+                  layout: 'horizontal',
+                  margin: 'md',
+                  contents: [
+                    { type: 'text', text: invoice.otherFeeNote ? `ค่าอื่นๆ (${invoice.otherFeeNote})` : 'ค่าบริการอื่นๆ', size: 'sm', color: '#64748b', wrap: true },
+                    { type: 'text', text: `฿${Number(invoice.otherFee).toLocaleString()}`, size: 'sm', color: '#0f172a', align: 'end' }
+                  ]
+                }];
+              })()
+            ) : []),
             { type: 'separator', margin: 'lg' },
             {
               type: 'box',

@@ -101,5 +101,28 @@ describe('Advanced Invoice Customization & Editing Integration Tests', () => {
       // 4500 (roomPrice) + 250 + 750 + 100 + 300 = 5900 THB
       expect(Number(updated.grandTotal)).toBe(5900);
     });
+
+    test('PUT /api/v1/invoices/:id - แก้ไขบิลระบุค่าบริการอื่นๆ หลายรายการ (JSON Array Format)', async () => {
+      const multipleOtherFees = [
+        { note: 'ค่าที่จอดรถยนต์', amount: 500 },
+        { note: 'ค่าคีย์การ์ดสำรอง', amount: 200 }
+      ];
+
+      const response = await request(app)
+        .put(`/api/v1/invoices/${createdInvoice.id}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          otherFee: 700,
+          otherFeeNote: JSON.stringify(multipleOtherFees)
+        });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+
+      const updated = response.body.data;
+      expect(Number(updated.otherFee)).toBe(700);
+      expect(updated.otherFeeNote).toContain('ค่าที่จอดรถยนต์');
+      expect(updated.otherFeeNote).toContain('ค่าคีย์การ์ดสำรอง');
+    });
   });
 });
