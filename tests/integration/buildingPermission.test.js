@@ -77,5 +77,33 @@ describe('Fine-Grained Building Access Control Integration Tests', () => {
       expect(response.body.success).toBe(true);
       expect(response.body.data.every(r => r.buildingId === buildingA.id)).toBe(true);
     });
+
+    test('POST /api/v1/rooms - อนุญาตให้สร้างเลขห้องเดียวกันได้หากอยู่คนละตึก (Same room number in Building A and Building B)', async () => {
+      const roomNum = 'DUP101';
+
+      // Clean up if exists
+      await billingService.prisma.room.deleteMany({ where: { roomNumber: roomNum } });
+
+      // Create room in Building A
+      const resA = await request(app)
+        .post('/api/v1/rooms')
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .send({ roomNumber: roomNum, floor: 1, price: 4000, buildingId: buildingA.id });
+
+      expect(resA.statusCode).toBe(201);
+      expect(resA.body.data.buildingId).toBe(buildingA.id);
+
+      // Create room with SAME number DUP101 in Building B
+      const resB = await request(app)
+        .post('/api/v1/rooms')
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .send({ roomNumber: roomNum, floor: 1, price: 5000, buildingId: buildingB.id });
+
+      expect(resB.statusCode).toBe(201);
+      expect(resB.body.data.buildingId).toBe(buildingB.id);
+
+      // Clean up after test
+      await billingService.prisma.room.deleteMany({ where: { roomNumber: roomNum } });
+    });
   });
 });
