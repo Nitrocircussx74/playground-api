@@ -43,6 +43,7 @@ router.use('/api/admin/buildings', authenticateJWT, buildingRoutes);
 router.use('/api/v1/rooms', authenticateJWT, roomRoutes);
 router.use('/api/v1/meter-records', authenticateJWT, meterRoutes);
 router.use('/api/v1/invoices', authenticateJWT, invoiceRoutes);
+router.use('/api/admin/invoices', authenticateJWT, invoiceRoutes);
 router.use('/api/v1/uploads', authenticateJWT, uploadRoutes);
 router.use('/api/v1/maintenance-requests', authenticateJWT, maintenanceRoutes);
 router.use('/api/v1/announcements', authenticateJWT, announcementRoutes);

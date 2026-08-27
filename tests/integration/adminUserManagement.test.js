@@ -11,11 +11,11 @@ describe('Admin User & Profile Management Integration Tests (/api/admin)', () =>
   let targetBuilding;
 
   beforeAll(async () => {
-    superAdminUser = await billingService.prisma.user.findUnique({
-      where: { email: 'superadmin@dorm.com' }
+    superAdminUser = await billingService.prisma.user.findFirst({
+      where: { role: { in: ['SUPERADMIN', 'OWNER', 'ADMIN', 'super_admin', 'owner', 'admin'] } }
     });
-    managerUser = await billingService.prisma.user.findUnique({
-      where: { email: 'manager@dorm.com' }
+    managerUser = await billingService.prisma.user.findFirst({
+      where: { role: { in: ['MANAGER', 'manager', 'TENANT', 'tenant'] } }
     });
     targetBuilding = await billingService.prisma.building.findFirst();
 

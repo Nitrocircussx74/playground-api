@@ -11,12 +11,10 @@ describe('Multi-Building Architecture Integration Tests', () => {
   let testTenant;
 
   beforeAll(async () => {
-    adminToken = authService.generateAccessToken({
-      id: '00000000-0000-0000-0000-000000000001',
-      email: 'admin@test.com',
-      name: 'Admin User',
-      role: 'super_admin'
+    const superAdmin = await billingService.prisma.user.findFirst({
+      where: { role: { in: ['SUPERADMIN', 'OWNER', 'ADMIN', 'super_admin', 'owner', 'admin'] } }
     });
+    adminToken = authService.generateAccessToken(superAdmin);
 
     tenantToken = authService.generateAccessToken({
       id: '00000000-0000-0000-0000-000000000002',

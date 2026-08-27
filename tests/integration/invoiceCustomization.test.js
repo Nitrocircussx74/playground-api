@@ -10,12 +10,10 @@ describe('Advanced Invoice Customization & Editing Integration Tests', () => {
   let createdInvoice;
 
   beforeAll(async () => {
-    adminToken = authService.generateAccessToken({
-      id: '00000000-0000-0000-0000-000000000001',
-      email: 'admin@test.com',
-      name: 'Admin User',
-      role: 'admin'
+    const superAdmin = await billingService.prisma.user.findFirst({
+      where: { role: { in: ['SUPERADMIN', 'OWNER', 'ADMIN', 'super_admin', 'owner', 'admin'] } }
     });
+    adminToken = authService.generateAccessToken(superAdmin);
 
     testTenant = await billingService.prisma.tenant.create({
       data: {
@@ -123,6 +121,25 @@ describe('Advanced Invoice Customization & Editing Integration Tests', () => {
       expect(Number(updated.otherFee)).toBe(700);
       expect(updated.otherFeeNote).toContain('ค่าที่จอดรถยนต์');
       expect(updated.otherFeeNote).toContain('ค่าคีย์การ์ดสำรอง');
+    });
+
+    test('POST /api/v1/invoices/:id/pay-manual - รับชำระเงินสดผ่านเคาน์เตอร์สำเร็จ (200 OK)', async () => {
+      const response = await request(app)
+        .post(`/api/v1/invoices/${createdInvoice.id}/pay-manual`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          paymentMethod: 'CASH',
+          note: 'รับเงินสด 6,000 บาท ทอน 100 บาท'
+        });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+
+      const paidInv = response.body.data;
+      expect(paidInv.status).toBe('paid');
+      expect(paidInv.paymentMethod).toBe('CASH');
+      expect(paidInv.paymentNote).toBe('รับเงินสด 6,000 บาท ทอน 100 บาท');
+      expect(paidInv.paidAt).not.toBeNull();
     });
   });
 });

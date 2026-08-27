@@ -479,6 +479,73 @@ class InvoiceController {
       next(error);
     }
   }
+
+  /**
+   * บันทึกรับชำระเงินสด/โอนเงินผ่านเคาน์เตอร์โดยแอดมิน (Manual Payment)
+   * POST /api/admin/invoices/:id/pay-manual
+   */
+  async recordManualPayment(req, res, next) {
+    try {
+      const { id } = req.params;
+      const { paymentMethod, note } = req.body;
+
+      const invoice = await billingService.prisma.invoice.findUnique({
+        where: { id },
+        include: { room: true, tenant: true }
+      });
+
+      if (!invoice) {
+        return res.status(404).json({ success: false, message: 'ไม่พบใบแจ้งหนี้ที่ต้องการชำระ' });
+      }
+
+      if (invoice.status === 'paid') {
+        return res.status(400).json({ success: false, message: 'ใบแจ้งหนี้นี้ได้รับการชำระเงินเรียบร้อยแล้ว' });
+      }
+
+      const method = (paymentMethod || 'CASH').toUpperCase();
+      const paidAt = new Date();
+
+      const updatedInvoice = await billingService.prisma.invoice.update({
+        where: { id },
+        data: {
+          status: 'paid',
+          paymentMethod: method,
+          paymentNote: note ? note.trim() : null,
+          paidAt
+        },
+        include: { room: true, tenant: true }
+      });
+
+      // Record Audit Log
+      const auditService = require('../services/auditService');
+      await auditService.logAction({
+        adminId: req.user?.id,
+        action: 'UPDATE',
+        entity: 'INVOICE',
+        entityId: id,
+        oldValues: {
+          status: invoice.status,
+          paidAt: invoice.paidAt,
+          paymentMethod: invoice.paymentMethod,
+          paymentNote: invoice.paymentNote
+        },
+        newValues: {
+          status: updatedInvoice.status,
+          paidAt: updatedInvoice.paidAt,
+          paymentMethod: updatedInvoice.paymentMethod,
+          paymentNote: updatedInvoice.paymentNote
+        }
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: `บันทึกรับชำระเงินบิล ${invoice.invoiceNumber} (ยอด ฿${Number(invoice.grandTotal).toLocaleString()}) เรียบร้อยแล้ว`,
+        data: updatedInvoice
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 module.exports = new InvoiceController();

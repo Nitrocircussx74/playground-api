@@ -306,6 +306,12 @@ model Invoice {
   /// วันเวลาที่ชำระเงินเสร็จสิ้น
   paidAt DateTime? @map("paid_at")
 
+  /// ช่องทางการชำระเงิน (CASH = เงินสด, PROMPTPAY = พร้อมเพย์, BANK_TRANSFER = โอนเงิน)
+  paymentMethod String? @map("payment_method")
+
+  /// หมายเหตุการชำระเงิน (เช่น เงินสดรับ 5000 ทอน 200)
+  paymentNote String? @map("payment_note")
+
   /// วันเวลาที่สร้างเรคคอร์ด
   createdAt DateTime @default(now()) @map("created_at")
 
