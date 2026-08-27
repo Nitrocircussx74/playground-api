@@ -69,7 +69,17 @@ class InvoiceController {
 
   async createInvoice(req, res, next) {
     try {
-      const { roomId, billingCycle, dueDate } = req.body;
+      const {
+        roomId,
+        billingCycle,
+        dueDate,
+        customWaterTotal,
+        customElectricTotal,
+        waiveCommonFee,
+        commonFee,
+        otherFee,
+        otherFeeNote
+      } = req.body;
 
       if (!roomId || !billingCycle) {
         return res.status(400).json({
@@ -81,7 +91,13 @@ class InvoiceController {
       const invoice = await billingService.generateInvoice({
         roomId,
         billingCycle,
-        dueDate
+        dueDate,
+        customWaterTotal,
+        customElectricTotal,
+        waiveCommonFee,
+        commonFee,
+        otherFee,
+        otherFeeNote
       });
 
       if (invoice.tenant?.lineUserId) {
@@ -91,6 +107,49 @@ class InvoiceController {
       return res.status(201).json({
         success: true,
         message: `Invoice ${invoice.invoiceNumber} created successfully`,
+        data: invoice
+      });
+    } catch (error) {
+      return res.status(400).json({
+        success: false,
+        message: error.message
+      });
+    }
+  }
+
+  /**
+   * แก้ไขข้อมูลบิลค่าเช่า (ปรับแต่งค่าน้ำ, ค่าไฟ, ค่าส่วนกลาง, ค่าอื่นๆ)
+   */
+  async updateInvoice(req, res, next) {
+    try {
+      const { id } = req.params;
+      const {
+        roomPrice,
+        waterTotal,
+        electricTotal,
+        waiveCommonFee,
+        commonFee,
+        otherFee,
+        otherFeeNote,
+        dueDate,
+        status
+      } = req.body;
+
+      const invoice = await billingService.updateInvoice(id, {
+        roomPrice,
+        waterTotal,
+        electricTotal,
+        waiveCommonFee,
+        commonFee,
+        otherFee,
+        otherFeeNote,
+        dueDate,
+        status
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: `แก้ไขใบแจ้งหนี้ ${invoice.invoiceNumber} เรียบร้อยแล้ว`,
         data: invoice
       });
     } catch (error) {
@@ -219,8 +278,18 @@ class InvoiceController {
         { desc: `Room Rent (Room ${invoice.room?.roomNumber})`, amount: Number(invoice.roomPrice) },
         { desc: 'Water Consumption Fee', amount: Number(invoice.waterTotal) },
         { desc: 'Electricity Consumption Fee', amount: Number(invoice.electricTotal) },
-        { desc: 'Common Service Fee', amount: Number(invoice.commonFee) }
+        {
+          desc: Number(invoice.commonFee) === 0 ? 'Common Service Fee (Waived / Free)' : 'Common Service Fee',
+          amount: Number(invoice.commonFee)
+        }
       ];
+
+      if (Number(invoice.otherFee) > 0) {
+        items.push({
+          desc: invoice.otherFeeNote ? `Other Service Fee (${invoice.otherFeeNote})` : 'Other Service Fee',
+          amount: Number(invoice.otherFee)
+        });
+      }
 
       items.forEach((item) => {
         doc.text(item.desc, 50, y);
@@ -305,8 +374,18 @@ class InvoiceController {
         { desc: `Room Rent (Room ${invoice.room?.roomNumber})`, amount: Number(invoice.roomPrice) },
         { desc: 'Water Consumption Fee', amount: Number(invoice.waterTotal) },
         { desc: 'Electricity Consumption Fee', amount: Number(invoice.electricTotal) },
-        { desc: 'Common Service Fee', amount: Number(invoice.commonFee) }
+        {
+          desc: Number(invoice.commonFee) === 0 ? 'Common Service Fee (Waived / Free)' : 'Common Service Fee',
+          amount: Number(invoice.commonFee)
+        }
       ];
+
+      if (Number(invoice.otherFee) > 0) {
+        items.push({
+          desc: invoice.otherFeeNote ? `Other Service Fee (${invoice.otherFeeNote})` : 'Other Service Fee',
+          amount: Number(invoice.otherFee)
+        });
+      }
 
       items.forEach((item) => {
         doc.text(item.desc, 50, y);

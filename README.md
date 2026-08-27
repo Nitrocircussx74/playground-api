@@ -6,7 +6,7 @@
 - **Access Token (อายุสั้น 15 นาที)**: ส่งคืนใน JSON Payload สำหรับใส่ใน Header `Authorization: Bearer <TOKEN>`
 - **Refresh Token (อายุยาว 7 วัน)**: จัดเก็บอย่างปลอดภัยใน **HTTP-Only, Secure, SameSite Cookie** และเก็บบันทึกลง **PostgreSQL Database**
 - **Token Rotation & Revocation**: ระบบหมุนเวียน Token เมื่อใช้งาน และระบบเพิกถอน Token เมื่อ Logout
-- **Testing Coverage**: **100% Full API Integration Testing** (36/36 Test Cases Passed Across All Endpoints)
+- **Testing Coverage**: **100% Full API Integration Testing** (38/38 Test Cases Passed Across All Endpoints)
 
 ---
 
@@ -14,6 +14,9 @@
 
 - 🏗️ **Clean & Scalable Architecture**: แบ่งแยกเลเยอร์ชัดเจน (`Config`, `Routes`, `Controllers`, `Services`, `Middlewares`, `Validators`, `Prisma Schema`)
 - 🧶 **Yarn Package Manager**: จัดการ Dependencies อย่างรวดเร็ว ปลอดภัยด้วย `yarn.lock`
+- 📝 **Flexible Invoice Customization & Editing**:
+  - สร้างและแก้ไขบิลปรับแต่งค่าน้ำ, ค่าไฟ, สลับสวิตช์ **ละเว้นค่าส่วนกลาง (`commonFee = 0`)** และระบุ **ค่าบริการอื่นๆ (`otherFee`)** พร้อมหมายเหตุ (`otherFeeNote`)
+  - คำนวณยอดสุทธิ `grandTotal` ใหม่โดยอัตโนมัติ พร้อมส่ง LINE Flex Message และสร้าง PDF Invoice/Receipt
 - 💳 **PromptPay QR Code & Auto Slip Verification**:
   - `lineService.js`: สร้าง Dynamic PromptPay QR Code ตามยอดบิลจริงสุทธิ
   - `slipService.js`: Engine ตรวจสอบสลิปอัตโนมัติ (Amount Matching & SHA-256 Replay Protection) ปรับสถานะเป็น `PAID` ทันทีเมื่อยอดเงินตรง
@@ -36,7 +39,7 @@
   - `CSV Export Engine`: ส่งออกรายงานใบแจ้งหนี้เป็น CSV ด้วย UTF-8 BOM (`\uFEFF`) แสดงผลภาษาไทยบน Excel สมบูรณ์แบบ
 - 🔑 **Google OAuth 2.0 Integration**: ยืนยันตัวตนผ่าน Google ด้วย Passport.js พร้อมบันทึกผู้ใช้ลง PostgreSQL
 - 🚨 **Centralized Error Handling**: ระบบจัดการ Error และ 404 Not Found แบบรวมศูนย์
-- 🧪 **100% Full API Integration Tests**: ชุดทดสอบครอบคลุม API Endpoints ทุกตัวในระบบด้วย Jest และ Supertest (36/36 passed)
+- 🧪 **100% Full API Integration Tests**: ชุดทดสอบครอบคลุม API Endpoints ทุกตัวในระบบด้วย Jest และ Supertest (38/38 passed)
 
 ---
 

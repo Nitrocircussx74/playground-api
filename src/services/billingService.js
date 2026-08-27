@@ -84,9 +84,19 @@ class BillingService {
   }
 
   /**
-   * คำนวณและสร้างใบแจ้งหนี้ประจำเดือนสำหรับห้องพัก
+   * คำนวณและสร้างใบแจ้งหนี้ประจำเดือนสำหรับห้องพัก (รองรับ Custom Fees, Waive Common Fee, Other Fees)
    */
-  async generateInvoice({ roomId, billingCycle, dueDate }) {
+  async generateInvoice({
+    roomId,
+    billingCycle,
+    dueDate,
+    customWaterTotal,
+    customElectricTotal,
+    waiveCommonFee = false,
+    commonFee,
+    otherFee = 0,
+    otherFeeNote = ''
+  }) {
     const room = await prisma.room.findUnique({
       where: { id: roomId },
       include: { tenant: true }
@@ -100,26 +110,37 @@ class BillingService {
       throw new Error(`Room ${room.roomNumber} has no active tenant assigned`);
     }
 
-    // ดึงมิเตอร์น้ำและไฟประจำรอบบิล
-    const waterRecord = await prisma.meterRecord.findFirst({
-      where: { roomId, meterType: 'water', billingCycle },
-      orderBy: { createdAt: 'desc' }
-    });
+    let waterTotal = 0;
+    let electricTotal = 0;
 
-    const electricRecord = await prisma.meterRecord.findFirst({
-      where: { roomId, meterType: 'electric', billingCycle },
-      orderBy: { createdAt: 'desc' }
-    });
+    if (customWaterTotal != null) {
+      waterTotal = Number(customWaterTotal);
+    } else {
+      const waterRecord = await prisma.meterRecord.findFirst({
+        where: { roomId, meterType: 'water', billingCycle },
+        orderBy: { createdAt: 'desc' }
+      });
+      if (waterRecord) {
+        waterTotal = this.calculateWaterFee(waterRecord.unitsUsed);
+      }
+    }
 
-    if (!waterRecord || !electricRecord) {
-      throw new Error(`Meter readings for water and electric in billing cycle ${billingCycle} are required before generating invoice`);
+    if (customElectricTotal != null) {
+      electricTotal = Number(customElectricTotal);
+    } else {
+      const electricRecord = await prisma.meterRecord.findFirst({
+        where: { roomId, meterType: 'electric', billingCycle },
+        orderBy: { createdAt: 'desc' }
+      });
+      if (electricRecord) {
+        electricTotal = this.calculateElectricFee(electricRecord.unitsUsed);
+      }
     }
 
     const roomPrice = Number(room.price);
-    const waterTotal = this.calculateWaterFee(waterRecord.unitsUsed);
-    const electricTotal = this.calculateElectricFee(electricRecord.unitsUsed);
-    const commonFee = DEFAULT_COMMON_FEE;
-    const grandTotal = roomPrice + waterTotal + electricTotal + commonFee;
+    const finalCommonFee = waiveCommonFee ? 0 : (commonFee != null ? Number(commonFee) : DEFAULT_COMMON_FEE);
+    const finalOtherFee = Number(otherFee) || 0;
+    const grandTotal = roomPrice + waterTotal + electricTotal + finalCommonFee + finalOtherFee;
 
     const formattedCycle = billingCycle.replace('-', '');
     const invoiceNumber = `INV-${formattedCycle}-${room.roomNumber}`;
@@ -141,10 +162,13 @@ class BillingService {
             roomPrice,
             waterTotal,
             electricTotal,
-            commonFee,
+            commonFee: finalCommonFee,
+            otherFee: finalOtherFee,
+            otherFeeNote: otherFeeNote || null,
             grandTotal,
             dueDate: dueDate ? new Date(dueDate) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-          }
+          },
+          include: { room: true, tenant: true }
         });
       }
 
@@ -157,15 +181,63 @@ class BillingService {
           roomPrice,
           waterTotal,
           electricTotal,
-          commonFee,
+          commonFee: finalCommonFee,
+          otherFee: finalOtherFee,
+          otherFeeNote: otherFeeNote || null,
           grandTotal,
           status: 'pending',
           dueDate: dueDate ? new Date(dueDate) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-        }
+        },
+        include: { room: true, tenant: true }
       });
     });
 
     return invoice;
+  }
+
+  /**
+   * แก้ไขข้อมูลใบแจ้งหนี้เดิมที่ยังไม่ได้ชำระเงิน
+   */
+  async updateInvoice(invoiceId, { roomPrice, waterTotal, electricTotal, waiveCommonFee, commonFee, otherFee, otherFeeNote, dueDate, status }) {
+    const existingInvoice = await prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      include: { room: true, tenant: true }
+    });
+
+    if (!existingInvoice) {
+      throw new Error('Invoice not found');
+    }
+
+    if (existingInvoice.status === 'paid') {
+      throw new Error('บิลนี้ได้รับการชำระเงินเรียบร้อยแล้ว ไม่สามารถแก้ไขได้');
+    }
+
+    const finalRoomPrice = roomPrice != null ? Number(roomPrice) : Number(existingInvoice.roomPrice);
+    const finalWaterTotal = waterTotal != null ? Number(waterTotal) : Number(existingInvoice.waterTotal);
+    const finalElectricTotal = electricTotal != null ? Number(electricTotal) : Number(existingInvoice.electricTotal);
+    const finalCommonFee = waiveCommonFee ? 0 : (commonFee != null ? Number(commonFee) : Number(existingInvoice.commonFee));
+    const finalOtherFee = otherFee != null ? Number(otherFee) : Number(existingInvoice.otherFee);
+    const finalOtherFeeNote = otherFeeNote !== undefined ? otherFeeNote : existingInvoice.otherFeeNote;
+
+    const grandTotal = finalRoomPrice + finalWaterTotal + finalElectricTotal + finalCommonFee + finalOtherFee;
+
+    const updatedInvoice = await prisma.invoice.update({
+      where: { id: invoiceId },
+      data: {
+        roomPrice: finalRoomPrice,
+        waterTotal: finalWaterTotal,
+        electricTotal: finalElectricTotal,
+        commonFee: finalCommonFee,
+        otherFee: finalOtherFee,
+        otherFeeNote: finalOtherFeeNote || null,
+        grandTotal,
+        status: status || existingInvoice.status,
+        dueDate: dueDate ? new Date(dueDate) : existingInvoice.dueDate
+      },
+      include: { room: true, tenant: true }
+    });
+
+    return updatedInvoice;
   }
 }
 

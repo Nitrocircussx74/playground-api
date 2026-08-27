@@ -176,6 +176,12 @@ model Invoice {
   /// ค่าส่วนกลางคงที่
   commonFee Decimal @default(100.00) @map("common_fee") @db.Decimal(10, 2)
 
+  /// ค่าบริการอื่นๆ เพิ่มเติม (เช่น ค่าจอดรถ, ค่าคีย์การ์ด)
+  otherFee Decimal @default(0.00) @map("other_fee") @db.Decimal(10, 2)
+
+  /// หมายเหตุค่าบริการอื่นๆ
+  otherFeeNote String? @map("other_fee_note")
+
   /// ยอดเงินสุทธิที่ต้องชำระ (ค่าห้อง + ค่าน้ำ + ค่าไฟ + ค่าอื่นๆ)
   grandTotal Decimal @map("grand_total") @db.Decimal(10, 2)
 

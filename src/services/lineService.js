@@ -77,9 +77,27 @@ class LineService {
               margin: 'md',
               contents: [
                 { type: 'text', text: 'ค่าส่วนกลาง', size: 'sm', color: '#64748b' },
-                { type: 'text', text: `฿${Number(invoice.commonFee).toLocaleString()}`, size: 'sm', color: '#0f172a', align: 'end' }
+                {
+                  type: 'text',
+                  text: Number(invoice.commonFee) === 0 ? '฿0 (ฟรี/ละเว้น)' : `฿${Number(invoice.commonFee).toLocaleString()}`,
+                  size: 'sm',
+                  color: Number(invoice.commonFee) === 0 ? '#16a34a' : '#0f172a',
+                  weight: Number(invoice.commonFee) === 0 ? 'bold' : 'regular',
+                  align: 'end'
+                }
               ]
             },
+            ...(Number(invoice.otherFee) > 0 ? [
+              {
+                type: 'box',
+                layout: 'horizontal',
+                margin: 'md',
+                contents: [
+                  { type: 'text', text: invoice.otherFeeNote ? `ค่าอื่นๆ (${invoice.otherFeeNote})` : 'ค่าบริการอื่นๆ', size: 'sm', color: '#64748b', wrap: true },
+                  { type: 'text', text: `฿${Number(invoice.otherFee).toLocaleString()}`, size: 'sm', color: '#0f172a', align: 'end' }
+                ]
+              }
+            ] : []),
             { type: 'separator', margin: 'lg' },
             {
               type: 'box',
