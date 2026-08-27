@@ -462,6 +462,15 @@ class InvoiceController {
 
       await billingService.prisma.invoice.delete({ where: { id } });
 
+      const auditService = require('../services/auditService');
+      await auditService.logAction({
+        adminId: req.user?.id,
+        action: 'DELETE',
+        entity: 'INVOICE',
+        entityId: id,
+        oldValues: invoice
+      });
+
       return res.status(200).json({
         success: true,
         message: `ลบใบแจ้งหนี้ ${invoice.invoiceNumber} เรียบร้อยแล้ว`

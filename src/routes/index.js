@@ -15,6 +15,7 @@ const featureRoutes = require('./featureRoutes');
 const liffRoutes = require('./liffRoutes');
 const buildingRoutes = require('./buildingRoutes');
 const adminRoutes = require('./adminRoutes');
+const auditLogRoutes = require('./auditLogRoutes');
 const liffController = require('../controllers/liffController');
 
 // Root Health Check Route
@@ -46,6 +47,7 @@ router.use('/api/v1/uploads', authenticateJWT, uploadRoutes);
 router.use('/api/v1/maintenance-requests', authenticateJWT, maintenanceRoutes);
 router.use('/api/v1/announcements', authenticateJWT, announcementRoutes);
 router.use('/api/admin', authenticateJWT, adminRoutes);
+router.use('/api/admin/audit-logs', authenticateJWT, auditLogRoutes);
 router.use('/api/v1/dashboard', authenticateJWT, dashboardRoutes);
 
 module.exports = router;

@@ -37,6 +37,7 @@ model User {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   buildingPermissions UserBuildingPermission[]
+  auditLogs AuditLog[]
 
   @@map("users")
 }
@@ -433,4 +434,34 @@ model FeatureToggle {
 
   @@unique([key, buildingId])
   @@map("feature_toggles")
+}
+
+/// ตารางบันทึกประวัติการใช้งานระบบ (Audit Logs / Activity History)
+model AuditLog {
+  /// รหัสอ้างอิง Audit Log (PK, UUID)
+  id String @id @default(uuid()) @db.Uuid
+
+  /// รหัสแอดมินผู้ดำเนินการ (Foreign Key)
+  adminId String @map("admin_id") @db.Uuid
+  admin User @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  /// ประเภทการกระทำ (CREATE, UPDATE, DELETE)
+  action String
+
+  /// โมดูลที่ดำเนินการ (เช่น ROOM, INVOICE, TENANT, BUILDING_SETTING, ANNOUNCEMENT, USER)
+  entity String
+
+  /// รหัสอ้างอิงของวัตถุที่ถูกดำเนินการ (เช่น ID ของบิล หรือ ID ของห้อง)
+  entityId String? @map("entity_id")
+
+  /// ค่าข้อมูลก่อนการแก้ไข (JSON)
+  oldValues Json? @map("old_values")
+
+  /// ค่าข้อมูลหลังการแก้ไข (JSON)
+  newValues Json? @map("new_values")
+
+  /// วันเวลาที่บันทึก Log
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("audit_logs")
 }
