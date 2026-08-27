@@ -93,9 +93,47 @@ class DashboardController {
         include: { room: true, tenant: true }
       });
 
+      // 4. Building Breakdown (สำหรับ Consolidated All Buildings Mode)
+      let buildingBreakdown = [];
+      if (!buildingId) {
+        const buildings = await billingService.prisma.building.findMany({
+          include: {
+            rooms: true
+          }
+        });
+
+        buildingBreakdown = await Promise.all(
+          buildings.map(async (b) => {
+            const bTotalRooms = b.rooms.length;
+            const bOccupied = b.rooms.filter((r) => r.status === 'occupied').length;
+            const bRate = bTotalRooms > 0 ? Number(((bOccupied / bTotalRooms) * 100).toFixed(1)) : 0;
+
+            const bRev = await billingService.prisma.invoice.aggregate({
+              where: {
+                status: 'paid',
+                billingCycle: currentCycle,
+                room: { buildingId: b.id }
+              },
+              _sum: { grandTotal: true }
+            });
+
+            return {
+              id: b.id,
+              name: b.name,
+              totalRooms: bTotalRooms,
+              occupiedRooms: bOccupied,
+              occupancyRate: bRate,
+              currentRevenue: Number(bRev._sum.grandTotal || 0)
+            };
+          })
+        );
+      }
+
       return res.status(200).json({
         success: true,
         data: {
+          isConsolidated: !buildingId,
+          buildingBreakdown,
           occupancy: {
             totalRooms,
             availableRooms,
