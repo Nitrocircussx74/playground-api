@@ -6,7 +6,7 @@
 - **Access Token (อายุสั้น 15 นาที)**: ส่งคืนใน JSON Payload สำหรับใส่ใน Header `Authorization: Bearer <TOKEN>`
 - **Refresh Token (อายุยาว 7 วัน)**: จัดเก็บอย่างปลอดภัยใน **HTTP-Only, Secure, SameSite Cookie** และเก็บบันทึกลง **PostgreSQL Database**
 - **Token Rotation & Revocation**: ระบบหมุนเวียน Token เมื่อใช้งาน และระบบเพิกถอน Token เมื่อ Logout
-- **Testing Coverage**: **100% Full API Integration Testing** (19/19 Test Cases Passed Across All Endpoints)
+- **Testing Coverage**: **100% Full API Integration Testing** (24/24 Test Cases Passed Across All Endpoints)
 
 ---
 
@@ -25,9 +25,12 @@
   - `cookie-parser` & `cors`: รองรับ `origin: true` และ `credentials: true` สำหรับ LIFF App และ Cloudflare Tunnels
 - ✅ **Data Validation (Zod)**: ตรวจสอบความถูกต้องของ Request Body ล่วงหน้าก่อนเข้า Controller หากไม่ถูกต้องตอบกลับ `400 Bad Request`
 - 💎 **Prisma ORM Integration**: จัดการ Database Schema, Migrations และ Seeding ข้อมูลผ่าน **Prisma Client** (ใช้ `npx prisma db push` แทน SQL Migration Runner เดิม)
+- 📊 **Business Analytics & CSV/PDF Report Export**: 
+  - `pdfkit`: ส่งออกรายงานสรุปงบการเงินประจำเดือนในรูปแบบ PDF (Monthly Financial & Revenue Summary)
+  - `CSV Export Engine`: ส่งออกรายงานใบแจ้งหนี้เป็น CSV ด้วย UTF-8 BOM (`\uFEFF`) แสดงผลภาษาไทยบน Excel สมบูรณ์แบบ
 - 🔑 **Google OAuth 2.0 Integration**: ยืนยันตัวตนผ่าน Google ด้วย Passport.js พร้อมบันทึกผู้ใช้ลง PostgreSQL
 - 🚨 **Centralized Error Handling**: ระบบจัดการ Error และ 404 Not Found แบบรวมศูนย์
-- 🧪 **100% Full API Integration Tests**: ชุดทดสอบครอบคลุม API Endpoints ทุกตัวในระบบด้วย Jest และ Supertest
+- 🧪 **100% Full API Integration Tests**: ชุดทดสอบครอบคลุม API Endpoints ทุกตัวในระบบด้วย Jest และ Supertest (24/24 passed)
 
 ---
 
@@ -46,7 +49,7 @@ playground-api/
 │   └── seed.js               # สคริปต์สำหรับ Seeding ข้อมูลเริ่มต้นลง PostgreSQL
 ├── src/
 │   ├── config/               # ตั้งค่า App, DB, Passport, Swagger
-│   ├── controllers/          # HTTP Controllers (Auth, Liff, Invoice, Feature, Maintenance, etc.)
+│   ├── controllers/          # HTTP Controllers (Auth, Liff, Invoice, Feature, Dashboard, etc.)
 │   ├── middlewares/          # Security, JWT Verification, Upload Middleware, Error Handlers
 │   ├── routes/               # API Routes (Auth, Liff, Admin Protected Endpoints)
 │   ├── services/             # Business Logic & LINE SDK Services
@@ -109,6 +112,11 @@ yarn test
 | `GET` | `/` | ตรวจสอบสถานะการทำงานของ API (Health Check) | ❌ ไม่ต้องมี | ❌ | ❌ |
 | `GET` | `/api/v1/features` | ดึงรายการ Feature Toggles ทั้งหมด (สำหรับ LIFF & Admin) | ❌ ไม่ต้องมี | ❌ | ❌ |
 | `PUT` | `/api/v1/features/:key` | แอดมินสับสวิตช์เปิด-ปิด Feature Toggle | ✅ ต้องมี JWT Bearer | ❌ | ❌ |
+| `GET` | `/api/v1/dashboard/summary` | ดึงข้อมูลภาพรวมธุรกิจ สถิติห้องพัก ยอดหนี้ รายรับ MoM | ✅ ต้องมี JWT Bearer | ❌ | ❌ |
+| `GET` | `/api/v1/dashboard/trend` | ดึงข้อมูลแนวโน้มรายรับย้อนหลัง 6 เดือน | ✅ ต้องมี JWT Bearer | ❌ | ❌ |
+| `GET` | `/api/v1/dashboard/export/csv` | ส่งออกรายงานใบแจ้งหนี้เป็น CSV (UTF-8 BOM) | ✅ ต้องมี JWT Bearer | ❌ | ❌ |
+| `GET` | `/api/v1/dashboard/export/pdf` | ส่งออกรายงานสรุปงบการเงินเป็น PDF (pdfkit) | ✅ ต้องมี JWT Bearer | ❌ | ❌ |
+| `POST` | `/api/v1/dashboard/remind-debtors` | ส่ง LINE Flex Message ทวงหนี้ผู้เช่าค้างชำระ | ✅ ต้องมี JWT Bearer | ❌ | ❌ |
 | `GET` | `/api/v1/liff/profile` | ดึงข้อมูลโปรไฟล์ผู้เช่าฝั่ง LIFF Portal | ❌ ไม่ต้องมี | ❌ | ❌ |
 | `PUT` | `/api/v1/liff/profile` | อัปเดตเบอร์โทรศัพท์ผู้เช่าฝั่ง LIFF Portal | ❌ ไม่ต้องมี | ✅ Phone Check | ❌ |
 | `GET` | `/api/v1/liff/invoices/history` | ดึงประวัติบิลค้างชำระ & ชำระแล้วของลูกบ้าน | ❌ ไม่ต้องมี | ❌ | ❌ |

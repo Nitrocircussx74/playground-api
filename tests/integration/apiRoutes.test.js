@@ -165,4 +165,50 @@ describe('Full API Integration Tests (ทดสอบ Endpoints ทั้งห�
       expect(response.body.data.phone).toBe('0898765432');
     });
   });
+
+  // -------------------------------------------------------------
+  // 5. Dashboard & Report Export Endpoints (/api/v1/dashboard)
+  // -------------------------------------------------------------
+  describe('Dashboard & Report Export Endpoints (/api/v1/dashboard)', () => {
+    test('GET /api/v1/dashboard/summary - ดึงข้อมูลสรุปภาพรวมธุรกิจ', async () => {
+      const response = await request(app)
+        .get('/api/v1/dashboard/summary')
+        .set('Authorization', `Bearer ${validAccessToken}`);
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.occupancy).toBeDefined();
+      expect(response.body.data.financial).toBeDefined();
+    });
+
+    test('GET /api/v1/dashboard/trend - ดึงข้อมูลแนวโน้มรายรับย้อนหลัง 6 เดือน', async () => {
+      const response = await request(app)
+        .get('/api/v1/dashboard/trend')
+        .set('Authorization', `Bearer ${validAccessToken}`);
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(Array.isArray(response.body.data)).toBe(true);
+      expect(response.body.data.length).toBe(6);
+    });
+
+    test('GET /api/v1/dashboard/export/csv - ส่งออกรายงานเป็นไฟล์ CSV (UTF-8 BOM)', async () => {
+      const response = await request(app)
+        .get('/api/v1/dashboard/export/csv')
+        .set('Authorization', `Bearer ${validAccessToken}`);
+
+      expect(response.statusCode).toBe(200);
+      expect(response.headers['content-type']).toContain('text/csv');
+      expect(response.text).toContain('Invoice Number');
+    });
+
+    test('GET /api/v1/dashboard/export/pdf - ส่งออกรายงานงบการเงินเป็นไฟล์ PDF', async () => {
+      const response = await request(app)
+        .get('/api/v1/dashboard/export/pdf')
+        .set('Authorization', `Bearer ${validAccessToken}`);
+
+      expect(response.statusCode).toBe(200);
+      expect(response.headers['content-type']).toContain('application/pdf');
+    });
+  });
 });
