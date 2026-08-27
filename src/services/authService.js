@@ -29,10 +29,17 @@ class AuthService {
    * @param {Object} userPayload
    * @returns {string} Refresh Token
    */
+  /**
+   * สร้าง (Sign) Refresh Token (อายุยาว เช่น 7d)
+   * @param {Object} userPayload
+   * @returns {string} Refresh Token
+   */
   generateRefreshToken(userPayload) {
     const payload = {
       id: userPayload.id,
-      email: userPayload.email
+      email: userPayload.email,
+      name: userPayload.name || userPayload.displayName,
+      role: userPayload.role || 'admin'
     };
 
     return jwt.sign(payload, config.jwt.refreshSecret, {
@@ -82,7 +89,25 @@ class AuthService {
     // 1. ตรวจสอบความถูกต้องทางไวยากรณ์และลายเซ็นของ Refresh Token
     const decoded = this.verifyRefreshToken(oldRefreshToken);
 
-    // 2. ตรวจสอบกับ Database ว่า Token นี้ยังมีผลใช้งานอยู่หรือไม่ (ไม่ถูก Revoke)
+    // 2. ดึงข้อมูล User ล่าสุดเพื่อถอด role ที่ถูกต้อง
+    let userPayload = { ...decoded };
+    try {
+      const { PrismaClient } = require('@prisma/client');
+      const prisma = new PrismaClient();
+      const dbUser = await prisma.user.findUnique({ where: { email: decoded.email } });
+      if (dbUser) {
+        userPayload = {
+          id: dbUser.id,
+          email: dbUser.email,
+          name: dbUser.name,
+          role: dbUser.role
+        };
+      }
+    } catch (e) {
+      // Fallback กรณีไม่ได้ต่อ DB
+    }
+
+    // 3. ตรวจสอบกับ Database ว่า Token นี้ยังมีผลใช้งานอยู่หรือไม่ (ไม่ถูก Revoke)
     try {
       const tokenInDb = await db.query(
         'SELECT * FROM refresh_tokens WHERE token = $1 AND user_id = $2',
@@ -93,23 +118,23 @@ class AuthService {
         throw new Error('Refresh Token ไม่ถูกต้องหรือถูกเพิกถอนไปแล้ว');
       }
 
-      // 3. เพิกถอน (ลบ) Refresh Token เดิมออกเพื่อป้องกัน Reuse Attack
+      // 4. เพิกถอน (ลบ) Refresh Token เดิมออกเพื่อป้องกัน Reuse Attack
       await db.query('DELETE FROM refresh_tokens WHERE token = $1', [oldRefreshToken]);
     } catch (error) {
       if (error.message.includes('เพิกถอน')) throw error;
     }
 
-    // 4. สร้าง Access Token และ Refresh Token คู่ใหม่ (Token Rotation)
-    const newAccessToken = this.generateAccessToken(decoded);
-    const newRefreshToken = this.generateRefreshToken(decoded);
+    // 5. สร้าง Access Token และ Refresh Token คู่ใหม่ (Token Rotation) พร้อมคงค่า role
+    const newAccessToken = this.generateAccessToken(userPayload);
+    const newRefreshToken = this.generateRefreshToken(userPayload);
 
-    // 5. บันทึก Refresh Token ใหม่ลง DB
-    await this.saveRefreshToken(decoded.id, newRefreshToken);
+    // 6. บันทึก Refresh Token ใหม่ลง DB
+    await this.saveRefreshToken(userPayload.id, newRefreshToken);
 
     return {
       accessToken: newAccessToken,
       refreshToken: newRefreshToken,
-      user: decoded
+      user: userPayload
     };
   }
 
