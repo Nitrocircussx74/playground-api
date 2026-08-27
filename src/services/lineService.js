@@ -373,6 +373,26 @@ class LineService {
   }
 
   /**
+   * ส่ง Flex Message แจ้งเตือนบิลค่าเช่าประจำเดือนไปยังลูกบ้าน
+   */
+  async sendInvoiceNotification(invoice) {
+    if (!invoice.tenant?.lineUserId) return false;
+
+    try {
+      const flexMessage = this.createInvoiceFlexMessage(invoice);
+      await client.pushMessage({
+        to: invoice.tenant.lineUserId,
+        messages: [flexMessage]
+      });
+      console.log(`✅ ส่ง LINE Push Message แจ้งบิลค่าเช่าหา ${invoice.tenant.lineUserId} สำเร็จ`);
+      return true;
+    } catch (error) {
+      console.warn(`⚠️ ไม่สามารถส่ง LINE Invoice Notification ได้: ${error.message}`);
+      return false;
+    }
+  }
+
+  /**
    * ส่ง Flex Message แจ้งเตือนทวงหนี้ไปยังลูกบ้านที่ค้างชำระ
    */
   async sendDebtReminderNotification(invoice) {
