@@ -6,6 +6,10 @@ const announcementController = require('../controllers/announcementController');
 const maintenanceController = require('../controllers/maintenanceController');
 const invoiceController = require('../controllers/invoiceController');
 
+// LIFF Tenant Profile & Contact Update
+router.get('/profile', (req, res, next) => liffController.getTenantProfile(req, res, next));
+router.put('/profile', (req, res, next) => liffController.updateTenantProfile(req, res, next));
+
 // LIFF Invoices & Payment
 router.get('/invoices/history', (req, res, next) => invoiceController.getPaidInvoicesForLiff(req, res, next));
 router.get('/invoices/:id/receipt-pdf', (req, res, next) => invoiceController.exportReceiptPdf(req, res, next));

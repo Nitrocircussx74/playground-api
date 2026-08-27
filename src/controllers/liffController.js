@@ -3,6 +3,105 @@ const lineService = require('../services/lineService');
 
 class LiffController {
   /**
+   * ดึงข้อมูลโปรไฟล์ผู้เช่าสำหรับ LIFF App
+   */
+  async getTenantProfile(req, res, next) {
+    try {
+      const { lineUserId } = req.query;
+
+      let tenant = null;
+      if (lineUserId) {
+        tenant = await billingService.prisma.tenant.findUnique({
+          where: { lineUserId },
+          include: { rooms: true }
+        });
+      }
+
+      if (!tenant) {
+        tenant = await billingService.prisma.tenant.findFirst({
+          include: { rooms: true }
+        });
+      }
+
+      if (!tenant) {
+        return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลผู้เช่า' });
+      }
+
+      const roomNumber = tenant.rooms && tenant.rooms.length > 0 ? tenant.rooms[0].roomNumber : '101';
+
+      return res.status(200).json({
+        success: true,
+        data: {
+          id: tenant.id,
+          firstName: tenant.firstName,
+          lastName: tenant.lastName,
+          phone: tenant.phone,
+          idCard: tenant.idCard,
+          lineUserId: tenant.lineUserId,
+          roomNumber,
+          contractEndDate: '31 ธันวาคม 2026'
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * อัปเดตข้อมูลติดต่อผู้เช่า (เบอร์โทรศัพท์) สำหรับ LIFF App
+   */
+  async updateTenantProfile(req, res, next) {
+    try {
+      const { phone, lineUserId, tenantId } = req.body;
+
+      if (!phone) {
+        return res.status(400).json({ success: false, message: 'กรุณาระบุเบอร์โทรศัพท์' });
+      }
+
+      // Validation เบื้องต้น: เบอร์โทรศัพท์เป็นตัวเลข 9-10 หลัก
+      const phoneRegex = /^[0-9]{9,10}$/;
+      const cleanPhone = String(phone).replace(/[^0-9]/g, '');
+      if (!phoneRegex.test(cleanPhone)) {
+        return res.status(400).json({
+          success: false,
+          message: 'เบอร์โทรศัพท์ไม่ถูกต้อง ต้องเป็นตัวเลขความยาว 9-10 หลัก'
+        });
+      }
+
+      let targetTenantId = tenantId;
+
+      if (!targetTenantId && lineUserId) {
+        const tenant = await billingService.prisma.tenant.findUnique({
+          where: { lineUserId }
+        });
+        if (tenant) targetTenantId = tenant.id;
+      }
+
+      if (!targetTenantId) {
+        const firstTenant = await billingService.prisma.tenant.findFirst();
+        targetTenantId = firstTenant?.id;
+      }
+
+      if (!targetTenantId) {
+        return res.status(404).json({ success: false, message: 'ไม่พบผู้เช่าในระบบ' });
+      }
+
+      const updatedTenant = await billingService.prisma.tenant.update({
+        where: { id: targetTenantId },
+        data: { phone: cleanPhone }
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: 'อัปเดตข้อมูลเบอร์โทรศัพท์เรียบร้อยแล้ว',
+        data: updatedTenant
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * ดึงข้อมูลบิลพร้อม PromptPay QR สำหรับแสดงผลใน LIFF App
    */
   async getInvoiceForLiff(req, res, next) {
@@ -105,7 +204,6 @@ class LiffController {
 
       const normalizedCode = String(inviteCode).trim().toUpperCase();
 
-      // 1. ค้นหาข้อมูล RoomInvite
       const invite = await billingService.prisma.roomInvite.findUnique({
         where: { code: normalizedCode },
         include: { room: true }
@@ -118,7 +216,6 @@ class LiffController {
         });
       }
 
-      // 2. ตรวจสอบเงื่อนไขสถานะรหัสเชิญ
       if (invite.isUsed) {
         return res.status(400).json({
           success: false,
@@ -140,9 +237,7 @@ class LiffController {
         });
       }
 
-      // 3. ทำการบันทึกข้อมูลแบบ Prisma Transaction เพื่อ Atomic Integrity
       const result = await billingService.prisma.$transaction(async (tx) => {
-        // a. สร้างข้อมูล Tenant
         const tenant = await tx.tenant.create({
           data: {
             firstName,
@@ -153,7 +248,6 @@ class LiffController {
           }
         });
 
-        // b. อัปเดตตาราง Room ผูกผู้เช่าและเปลี่ยนสถานะเป็น occupied
         const updatedRoom = await tx.room.update({
           where: { id: invite.roomId },
           data: {
@@ -162,7 +256,6 @@ class LiffController {
           }
         });
 
-        // c. อัปเดตสถานะ RoomInvite ให้เป็น isUsed = true
         await tx.roomInvite.update({
           where: { id: invite.id },
           data: { isUsed: true }
