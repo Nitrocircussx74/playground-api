@@ -40,7 +40,7 @@ app.options('*', cors(corsOptions));
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 200,
+  max: config.nodeEnv === 'production' ? 500 : 10000, // Unrestricted requests during development & Cloudflare Tunnels
   standardHeaders: true,
   legacyHeaders: false,
   message: {
