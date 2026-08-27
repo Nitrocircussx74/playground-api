@@ -5,6 +5,7 @@ const liffController = require('../controllers/liffController');
 const announcementController = require('../controllers/announcementController');
 const maintenanceController = require('../controllers/maintenanceController');
 const invoiceController = require('../controllers/invoiceController');
+const parcelController = require('../controllers/parcelController');
 
 // LIFF Settings & Payment QR per Building
 router.get('/settings', (req, res, next) => liffController.getSettingsForTenant(req, res, next));
@@ -29,5 +30,8 @@ router.get('/announcements', (req, res, next) => announcementController.getAnnou
 // LIFF Maintenance Requests & Status Tracking
 router.get('/maintenance', (req, res, next) => maintenanceController.getMaintenanceRequestsForLiff(req, res, next));
 router.post('/maintenance', upload.single('file'), (req, res, next) => maintenanceController.createMaintenanceRequest(req, res, next));
+
+// LIFF Parcels
+router.get('/parcels', (req, res, next) => parcelController.getParcelsForLiff(req, res, next));
 
 module.exports = router;

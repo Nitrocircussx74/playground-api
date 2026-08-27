@@ -595,10 +595,124 @@ class LineService {
 
     return {
       promptpayNumber: targetPromptPay,
-      amount: numAmount,
+      promptpayName: 'หอพักสมาร์ทโดรม (Dormitory Admin)',
       payload,
       qrDataUrl
     };
+  }
+
+  /**
+   * สร้างและส่ง LINE Flex Message แจ้งเตือนเมื่อมีพัสดุมาส่ง 📦
+   */
+  async pushParcelNotification(lineUserId, parcel) {
+    if (!lineUserId) {
+      console.warn('⚠️ ลูกบ้านไม่มี lineUserId ข้ามการส่ง LINE Parcel Notification');
+      return false;
+    }
+
+    try {
+      const liffId = process.env.LINE_LIFF_ID || '2000000000-mockliffid';
+      const parcelLiffUrl = `https://liff.line.me/${liffId}/parcels`;
+      const receivedDateStr = new Date(parcel.receivedAt || Date.now()).toLocaleString('th-TH');
+
+      const flexMessage = {
+        type: 'flex',
+        altText: `📦 มีพัสดุมาส่งถึงคุณ! (ห้อง ${parcel.room?.roomNumber || ''})`,
+        contents: {
+          type: 'bubble',
+          ...(parcel.photoUrl ? {
+            hero: {
+              type: 'image',
+              url: parcel.photoUrl,
+              size: 'full',
+              aspectRatio: '20:13',
+              aspectMode: 'cover'
+            }
+          } : {}),
+          header: {
+            type: 'box',
+            layout: 'vertical',
+            contents: [
+              {
+                type: 'text',
+                text: '📦 มีพัสดุมาส่งถึงคุณ!',
+                weight: 'bold',
+                size: 'lg',
+                color: '#ffffff'
+              },
+              {
+                type: 'text',
+                text: `ห้อง ${parcel.room?.roomNumber || 'N/A'} | ${parcel.building?.name || 'หอพัก'}`,
+                size: 'xs',
+                color: '#fed7aa',
+                margin: 'xs'
+              }
+            ],
+            backgroundColor: '#f97316',
+            paddingAll: '15px'
+          },
+          body: {
+            type: 'box',
+            layout: 'vertical',
+            contents: [
+              {
+                type: 'box',
+                layout: 'baseline',
+                margin: 'md',
+                contents: [
+                  { type: 'text', text: '🚚 ขนส่ง:', size: 'xs', color: '#64748b', flex: 2 },
+                  { type: 'text', text: parcel.courier, size: 'xs', color: '#0f172a', weight: 'bold', flex: 4 }
+                ]
+              },
+              {
+                type: 'box',
+                layout: 'baseline',
+                margin: 'md',
+                contents: [
+                  { type: 'text', text: '🏷️ เลขพัสดุ:', size: 'xs', color: '#64748b', flex: 2 },
+                  { type: 'text', text: parcel.trackingNumber || '-', size: 'xs', color: '#4338ca', weight: 'bold', flex: 4 }
+                ]
+              },
+              {
+                type: 'box',
+                layout: 'baseline',
+                margin: 'md',
+                contents: [
+                  { type: 'text', text: '🕒 เวลาที่รับ:', size: 'xs', color: '#64748b', flex: 2 },
+                  { type: 'text', text: receivedDateStr, size: 'xs', color: '#334155', flex: 4 }
+                ]
+              }
+            ]
+          },
+          footer: {
+            type: 'box',
+            layout: 'vertical',
+            contents: [
+              {
+                type: 'button',
+                action: {
+                  type: 'uri',
+                  label: '📲 เปิดแอป LIFF เพื่อดูพัสดุ',
+                  uri: parcelLiffUrl
+                },
+                style: 'primary',
+                color: '#f97316'
+              }
+            ]
+          }
+        }
+      };
+
+      await client.pushMessage({
+        to: lineUserId,
+        messages: [flexMessage]
+      });
+      console.log(`✅ ส่ง LINE Push Notification พัสดุหา ${lineUserId} สำเร็จ`);
+      return true;
+    } catch (error) {
+      console.warn(`⚠️ ไม่สามารถส่ง LINE Parcel Notification ได้: ${error.message}`);
+      return false;
+    }
   }
 }
 

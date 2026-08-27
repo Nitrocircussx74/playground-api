@@ -84,6 +84,7 @@ model Building {
   userPermissions UserBuildingPermission[]
   featureToggles FeatureToggle[]
   announcements Announcement[]
+  parcels Parcel[]
 
   @@map("buildings")
 }
@@ -179,6 +180,7 @@ model Room {
   invoices Invoice[]
   maintenanceRequests MaintenanceRequest[]
   roomInvites RoomInvite[]
+  parcels Parcel[]
 
   // แมปชื่อตารางในฐานข้อมูลเป็น snake_case และพหูพจน์
   @@unique([roomNumber, buildingId])
@@ -214,6 +216,7 @@ model Tenant {
   // ความสัมพันธ์ (Relations)
   rooms Room[]
   invoices Invoice[]
+  parcels Parcel[]
 
   @@map("tenants")
 }
@@ -473,4 +476,48 @@ model AuditLog {
   createdAt DateTime @default(now()) @map("created_at")
 
   @@map("audit_logs")
+}
+
+/// ตารางจัดการพัสดุสำหรับลูกบ้าน (Smart Parcel Management)
+model Parcel {
+  /// รหัสอ้างอิงพัสดุ (PK, UUID)
+  id String @id @default(uuid()) @db.Uuid
+
+  /// รหัสอ้างอิงห้องพัก (Foreign Key)
+  roomId String @map("room_id") @db.Uuid
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  /// รหัสอ้างอิงตึก (Foreign Key)
+  buildingId String @map("building_id") @db.Uuid
+  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  /// รหัสอ้างอิงผู้เช่า (Foreign Key, Optional)
+  tenantId String? @map("tenant_id") @db.Uuid
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+
+  /// หมายเลขพัสดุ / Tracking Number
+  trackingNumber String? @map("tracking_number")
+
+  /// บริษัทขนส่ง (เช่น Shopee Express, Kerry, Flash, J&T, ไปรษณีย์ไทย)
+  courier String
+
+  /// รูปภาพหน้ากล่องพัสดุ (URL/Path)
+  photoUrl String? @map("photo_url")
+
+  /// สถานะพัสดุ (PENDING = รอรับ, PICKED_UP = รับแล้ว)
+  status String @default("PENDING")
+
+  /// วันเวลาที่รับพัสดุเข้าออฟฟิศ
+  receivedAt DateTime @default(now()) @map("received_at")
+
+  /// วันเวลาที่ลูกบ้านมารับพัสดุไป
+  pickedUpAt DateTime? @map("picked_up_at")
+
+  /// วันเวลาที่สร้างเรคคอร์ด
+  createdAt DateTime @default(now()) @map("created_at")
+
+  /// วันเวลาที่อัปเดตเรคคอร์ดล่าสุด
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("parcels")
 }
