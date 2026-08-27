@@ -6,11 +6,12 @@ class MeterController {
    */
   async getMeterRecords(req, res, next) {
     try {
-      const { roomId, billingCycle } = req.query;
+      const { roomId, billingCycle, buildingId } = req.query;
 
       const where = {};
       if (roomId) where.roomId = roomId;
       if (billingCycle) where.billingCycle = billingCycle;
+      if (buildingId) where.room = { buildingId };
 
       const records = await billingService.prisma.meterRecord.findMany({
         where,

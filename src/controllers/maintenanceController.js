@@ -7,11 +7,12 @@ class MaintenanceController {
    */
   async getMaintenanceRequests(req, res, next) {
     try {
-      const { status, roomId } = req.query;
+      const { status, roomId, buildingId } = req.query;
 
       const where = {};
       if (status) where.status = status;
       if (roomId) where.roomId = roomId;
+      if (buildingId) where.room = { buildingId };
 
       const requests = await billingService.prisma.maintenanceRequest.findMany({
         where,

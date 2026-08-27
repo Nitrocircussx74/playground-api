@@ -7,9 +7,13 @@ class DashboardController {
    */
   async getSummary(req, res, next) {
     try {
+      const { buildingId } = req.query;
+
       // 1. Occupancy Rate (คำนวณอัตราการครองห้องด้วย Prisma groupBy)
+      const roomWhere = buildingId ? { buildingId } : {};
       const roomStats = await billingService.prisma.room.groupBy({
         by: ['status'],
+        where: roomWhere,
         _count: { id: true }
       });
 
@@ -35,8 +39,20 @@ class DashboardController {
       const prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
       const prevCycle = `${String(prevDate.getMonth() + 1).padStart(2, '0')}-${prevDate.getFullYear()}`;
 
+      const currentInvoiceWhere = {
+        status: 'paid',
+        billingCycle: currentCycle,
+        ...(buildingId && { room: { buildingId } })
+      };
+
+      const prevInvoiceWhere = {
+        status: 'paid',
+        billingCycle: prevCycle,
+        ...(buildingId && { room: { buildingId } })
+      };
+
       const currentRevenue = await billingService.prisma.invoice.aggregate({
-        where: { status: 'paid', billingCycle: currentCycle },
+        where: currentInvoiceWhere,
         _sum: {
           grandTotal: true,
           roomPrice: true,
@@ -47,7 +63,7 @@ class DashboardController {
       });
 
       const prevRevenue = await billingService.prisma.invoice.aggregate({
-        where: { status: 'paid', billingCycle: prevCycle },
+        where: prevInvoiceWhere,
         _sum: { grandTotal: true }
       });
 
@@ -60,18 +76,19 @@ class DashboardController {
       }
 
       // 3. Debt Tracking (ยอดหนี้ค้างชำระและรายการลูกหนี้ด้วย Prisma aggregate)
+      const debtInvoiceWhere = {
+        status: { in: ['pending', 'overdue', 'reviewing'] },
+        ...(buildingId && { room: { buildingId } })
+      };
+
       const debtStats = await billingService.prisma.invoice.aggregate({
-        where: {
-          status: { in: ['pending', 'overdue', 'reviewing'] }
-        },
+        where: debtInvoiceWhere,
         _sum: { grandTotal: true },
         _count: { id: true }
       });
 
       const debtors = await billingService.prisma.invoice.findMany({
-        where: {
-          status: { in: ['pending', 'overdue', 'reviewing'] }
-        },
+        where: debtInvoiceWhere,
         orderBy: { dueDate: 'asc' },
         include: { room: true, tenant: true }
       });
@@ -153,6 +170,7 @@ class DashboardController {
    */
   async getRevenueTrend(req, res, next) {
     try {
+      const { buildingId } = req.query;
       const now = new Date();
       const trends = [];
 
@@ -161,7 +179,11 @@ class DashboardController {
         const cycle = `${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`;
 
         const aggregate = await billingService.prisma.invoice.aggregate({
-          where: { status: 'paid', billingCycle: cycle },
+          where: {
+            status: 'paid',
+            billingCycle: cycle,
+            ...(buildingId && { room: { buildingId } })
+          },
           _sum: {
             grandTotal: true,
             roomPrice: true,
