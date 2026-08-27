@@ -28,6 +28,16 @@ app.use(
   })
 );
 
+// 1. Completely Unrestricted CORS for Development & Cloudflare Tunnels / LINE LIFF (Must be first!)
+const corsOptions = {
+  origin: true, // Automatically reflects request origin to allow any domain (trycloudflare.com, liff.line.me, localhost, etc.)
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'x-csrf-token', 'Origin']
+};
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 200,
@@ -39,16 +49,6 @@ const limiter = rateLimit({
   }
 });
 app.use(limiter);
-
-// Completely Unrestricted CORS for Development & Cloudflare Tunnels / LINE LIFF
-app.use(
-  cors({
-    origin: true, // Automatically reflects request origin to allow any domain (trycloudflare.com, liff.line.me, localhost, etc.)
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'x-csrf-token']
-  })
-);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
