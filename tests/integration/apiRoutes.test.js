@@ -11,7 +11,7 @@ describe('Full API Integration Tests (ทดสอบ Endpoints ทั้งห�
       id: 1,
       email: 'integration@test.com',
       name: 'Integration Test User',
-      role: 'tester'
+      role: 'admin'
     };
     validAccessToken = authService.generateAccessToken(mockUser);
   });
@@ -127,6 +127,7 @@ describe('Full API Integration Tests (ทดสอบ Endpoints ทั้งห�
     test('PUT /api/v1/features/:key - อัปเดตสถานะ Feature Toggle', async () => {
       const response = await request(app)
         .put('/api/v1/features/ENABLE_LINE_PAYMENT')
+        .set('Authorization', `Bearer ${validAccessToken}`)
         .send({ isActive: true });
 
       expect(response.statusCode).toBe(200);

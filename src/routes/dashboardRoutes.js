@@ -1,6 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const dashboardController = require('../controllers/dashboardController');
+const requireRole = require('../middlewares/roleMiddleware');
+
+router.use(requireRole('admin'));
 
 router.get('/summary', (req, res, next) => dashboardController.getSummary(req, res, next));
 router.get('/trend', (req, res, next) => dashboardController.getRevenueTrend(req, res, next));
