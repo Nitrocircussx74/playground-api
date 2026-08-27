@@ -135,6 +135,89 @@ class RoomController {
   }
 
   /**
+   * นำเข้าห้องพักจำนวนมาก (Bulk Room Import)
+   */
+  async importRooms(req, res, next) {
+    try {
+      const { buildingId, rooms } = req.body;
+
+      if (!rooms || !Array.isArray(rooms) || rooms.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'กรุณาระบุข้อมูลห้องพักที่ต้องการนำเข้า (Array)'
+        });
+      }
+
+      // If buildingId not provided, fallback to first building
+      let targetBuildingId = buildingId;
+      if (!targetBuildingId) {
+        const firstBuilding = await billingService.prisma.building.findFirst();
+        if (firstBuilding) {
+          targetBuildingId = firstBuilding.id;
+        }
+      }
+
+      // Fetch existing rooms in this building
+      const existingRooms = await billingService.prisma.room.findMany({
+        where: { buildingId: targetBuildingId },
+        select: { roomNumber: true }
+      });
+      const existingSet = new Set(existingRooms.map((r) => String(r.roomNumber)));
+
+      const createdRooms = [];
+      const skippedRooms = [];
+      const failedRooms = [];
+
+      for (const item of rooms) {
+        const roomNum = item.roomNumber ? String(item.roomNumber).trim() : '';
+        const floor = Number(item.floor);
+        const price = Number(item.price);
+        const status = item.status || 'available';
+
+        if (!roomNum || isNaN(floor) || isNaN(price)) {
+          failedRooms.push({ roomNumber: roomNum || 'N/A', reason: 'ข้อมูลไม่สมบูรณ์' });
+          continue;
+        }
+
+        if (existingSet.has(roomNum)) {
+          skippedRooms.push({ roomNumber: roomNum, reason: 'เลขห้องมีในตึกนี้แล้ว' });
+          continue;
+        }
+
+        // Add to batch create list
+        createdRooms.push({
+          roomNumber: roomNum,
+          floor,
+          price,
+          status,
+          buildingId: targetBuildingId
+        });
+        existingSet.add(roomNum); // Prevent duplicates inside the input batch itself
+      }
+
+      if (createdRooms.length > 0) {
+        await billingService.prisma.room.createMany({
+          data: createdRooms
+        });
+      }
+
+      return res.status(201).json({
+        success: true,
+        message: `นำเข้าห้องพักเรียบร้อยแล้ว สำเร็จ: ${createdRooms.length} ห้อง, ข้าม: ${skippedRooms.length} ห้อง`,
+        data: {
+          createdCount: createdRooms.length,
+          skippedCount: skippedRooms.length,
+          failedCount: failedRooms.length,
+          skippedRooms,
+          failedRooms
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * สร้างรหัสเชิญ (Invite Code) 6 หลักสำหรับห้องพักที่ว่างอยู่ (48 ชั่วโมงหมดอายุ)
    */
   async createRoomInvite(req, res, next) {
