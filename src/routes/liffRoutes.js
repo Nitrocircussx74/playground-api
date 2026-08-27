@@ -10,6 +10,9 @@ const parcelController = require('../controllers/parcelController');
 // LIFF Settings & Payment QR per Building
 router.get('/settings', (req, res, next) => liffController.getSettingsForTenant(req, res, next));
 
+// LIFF Tenant Check Status (Smart Entry Gateway Router)
+router.get('/check-status', (req, res, next) => liffController.checkTenantStatus(req, res, next));
+
 // LIFF Tenant Profile & Contact Update
 router.get('/profile', (req, res, next) => liffController.getTenantProfile(req, res, next));
 router.put('/profile', (req, res, next) => liffController.updateTenantProfile(req, res, next));

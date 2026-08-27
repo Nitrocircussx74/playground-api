@@ -4,6 +4,58 @@ const slipService = require('../services/slipService');
 
 class LiffController {
   /**
+   * ตรวจสอบสถานะการเป็นลูกบ้านผ่าน lineUserId สำหรับ Smart Entry Gateway Router
+   */
+  async checkTenantStatus(req, res, next) {
+    try {
+      const { lineUserId } = req.query;
+
+      if (!lineUserId) {
+        return res.status(200).json({
+          success: true,
+          isRegistered: false,
+          data: null
+        });
+      }
+
+      const tenant = await billingService.prisma.tenant.findFirst({
+        where: { lineUserId },
+        include: { rooms: { include: { building: true } } }
+      });
+
+      if (!tenant) {
+        return res.status(200).json({
+          success: true,
+          isRegistered: false,
+          data: null
+        });
+      }
+
+      const room = tenant.rooms && tenant.rooms.length > 0 ? tenant.rooms[0] : null;
+      const building = room && room.building ? room.building : null;
+
+      return res.status(200).json({
+        success: true,
+        isRegistered: true,
+        data: {
+          tenant: {
+            id: tenant.id,
+            firstName: tenant.firstName,
+            lastName: tenant.lastName,
+            phone: tenant.phone,
+            lineUserId: tenant.lineUserId
+          },
+          room: room ? { id: room.id, roomNumber: room.roomNumber, price: room.price } : null,
+          building: building ? { id: building.id, name: building.name } : null
+        }
+      });
+    } catch (error) {
+      console.error('checkTenantStatus error:', error);
+      next(error);
+    }
+  }
+
+  /**
    * ดึงข้อมูลโปรไฟล์ผู้เช่าสำหรับ LIFF App
    */
   async getTenantProfile(req, res, next) {
