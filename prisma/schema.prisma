@@ -86,6 +86,7 @@ model Building {
   announcements Announcement[]
   parcels Parcel[]
   leaseContracts LeaseContract[]
+  maintenanceRequests MaintenanceRequest[]
 
   @@map("buildings")
 }
@@ -220,6 +221,7 @@ model Tenant {
   invoices Invoice[]
   parcels Parcel[]
   leaseContracts LeaseContract[]
+  maintenanceRequests MaintenanceRequest[]
 
   @@map("tenants")
 }
@@ -336,6 +338,14 @@ model MaintenanceRequest {
   roomId String @map("room_id") @db.Uuid
   room Room @relation(fields: [roomId], references: [id])
 
+  /// รหัสอ้างอิงผู้เช่า (Foreign Key)
+  tenantId String? @map("tenant_id") @db.Uuid
+  tenant Tenant? @relation(fields: [tenantId], references: [id])
+
+  /// รหัสอ้างอิงอาคาร/ตึก (Foreign Key)
+  buildingId String? @map("building_id") @db.Uuid
+  building Building? @relation(fields: [buildingId], references: [id])
+
   /// หัวข้อเรื่องที่แจ้งซ่อม
   title String
 
@@ -344,12 +354,22 @@ model MaintenanceRequest {
 
   /// รูปภาพประกอบการแจ้งซ่อม (URL/Path)
   imageUrl String? @map("image_url")
+  photoUrl String? @map("photo_url")
+
+  /// ชื่อช่างผู้รับผิดชอบงานซ่อม
+  technicianName String? @map("technician_name")
+
+  /// ค่าซ่อมแซม/ค่าอะไหล่เพิ่มเติม
+  repairCost Decimal @default(0) @map("repair_cost") @db.Decimal(10, 2)
 
   /// ข้อความตอบกลับ/บันทึกจากแอดมินหรือช่างซ่อม
   adminNote String? @map("admin_note") @db.Text
 
   /// สถานะการดำเนินการ (pending = รอดำเนินการ, in_progress = กำลังซ่อม, resolved = ซ่อมเสร็จสิ้น, cancelled = ยกเลิก)
   status String @default("pending")
+
+  /// วันเวลาที่ปิดงานซ่อมเสร็จสิ้น
+  resolvedAt DateTime? @map("resolved_at")
 
   /// วันเวลาที่สร้างเรคคอร์ด
   createdAt DateTime @default(now()) @map("created_at")

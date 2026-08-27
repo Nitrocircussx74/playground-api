@@ -234,11 +234,33 @@ class LineService {
                 { type: 'text', text: statusLabel, size: 'xs', weight: 'bold', color: headerBg, align: 'end' }
               ]
             },
+            ...(request.technicianName ? [
+              {
+                type: 'box',
+                layout: 'horizontal',
+                margin: 'sm',
+                contents: [
+                  { type: 'text', text: 'ช่างผู้รับผิดชอบ', size: 'xs', color: '#64748b' },
+                  { type: 'text', text: request.technicianName, size: 'xs', weight: 'bold', color: '#0f172a', align: 'end' }
+                ]
+              }
+            ] : []),
+            ...(Number(request.repairCost || 0) > 0 ? [
+              {
+                type: 'box',
+                layout: 'horizontal',
+                margin: 'sm',
+                contents: [
+                  { type: 'text', text: 'ค่าซ่อม/อะไหล่', size: 'xs', color: '#64748b' },
+                  { type: 'text', text: `฿${Number(request.repairCost).toLocaleString()}`, size: 'xs', weight: 'bold', color: '#059669', align: 'end' }
+                ]
+              }
+            ] : []),
             ...(request.adminNote ? [
               { type: 'separator', margin: 'md' },
               {
                 type: 'text',
-                text: `💬 หมายเหตุจากช่าง/แอดมิน: ${request.adminNote}`,
+                text: `💬 หมายเหตุ: ${request.adminNote}`,
                 size: 'xs',
                 color: '#334155',
                 margin: 'md',

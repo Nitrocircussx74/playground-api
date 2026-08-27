@@ -3,7 +3,7 @@ const lineService = require('../services/lineService');
 
 class MaintenanceController {
   /**
-   * ดึงรายการแจ้งซ่อมทั้งหมดสำหรับ Admin
+   * ดึงรายการแจ้งซ่อมทั้งหมดสำหรับ Admin (GET /api/admin/buildings/:buildingId/maintenance & GET /api/v1/maintenance-requests)
    */
   async getMaintenanceRequests(req, res, next) {
     try {
@@ -12,12 +12,23 @@ class MaintenanceController {
       const where = {};
       if (status) where.status = status;
       if (roomId) where.roomId = roomId;
-      if (buildingId) where.room = { buildingId };
+
+      const targetBuildingId = buildingId || req.params.buildingId;
+      if (targetBuildingId) {
+        where.OR = [
+          { buildingId: targetBuildingId },
+          { room: { buildingId: targetBuildingId } }
+        ];
+      }
 
       const requests = await billingService.prisma.maintenanceRequest.findMany({
         where,
         orderBy: { createdAt: 'desc' },
-        include: { room: true }
+        include: {
+          room: true,
+          tenant: true,
+          building: true
+        }
       });
 
       return res.status(200).json({
@@ -37,23 +48,33 @@ class MaintenanceController {
       const { lineUserId, roomId } = req.query;
 
       let tenantRoomId = roomId;
+      let tenantRecord = null;
 
-      if (!tenantRoomId && lineUserId) {
-        const tenant = await billingService.prisma.tenant.findUnique({
+      if (lineUserId) {
+        tenantRecord = await billingService.prisma.tenant.findUnique({
           where: { lineUserId },
           include: { rooms: true }
         });
-        if (tenant?.rooms?.length > 0) {
-          tenantRoomId = tenant.rooms[0].id;
+        if (!tenantRoomId && tenantRecord?.rooms?.length > 0) {
+          tenantRoomId = tenantRecord.rooms[0].id;
         }
       }
 
-      const where = tenantRoomId ? { roomId: tenantRoomId } : {};
+      const where = {};
+      if (tenantRoomId) {
+        where.roomId = tenantRoomId;
+      } else if (tenantRecord?.id) {
+        where.tenantId = tenantRecord.id;
+      }
 
       const requests = await billingService.prisma.maintenanceRequest.findMany({
         where,
         orderBy: { createdAt: 'desc' },
-        include: { room: true }
+        include: {
+          room: true,
+          tenant: true,
+          building: true
+        }
       });
 
       return res.status(200).json({
@@ -66,11 +87,11 @@ class MaintenanceController {
   }
 
   /**
-   * บันทึกรายการแจ้งซ่อมใหม่ (รองรับการอัปโหลดไฟล์รูปภาพ)
+   * บันทึกรายการแจ้งซ่อมใหม่ (POST /api/liff/maintenance & POST /api/v1/maintenance-requests)
    */
   async createMaintenanceRequest(req, res, next) {
     try {
-      const { title, description, roomId, lineUserId } = req.body;
+      const { title, description, roomId, lineUserId, technicianName, repairCost } = req.body;
 
       if (!title || !description) {
         return res.status(400).json({
@@ -80,25 +101,36 @@ class MaintenanceController {
       }
 
       let targetRoomId = roomId;
+      let tenantId = req.body.tenantId || null;
+      let buildingId = req.body.buildingId || null;
 
-      // หากไม่ได้ระบุ roomId ให้ค้นหาจาก lineUserId ของผู้เช่า
-      if (!targetRoomId && lineUserId) {
+      if (lineUserId) {
         const tenant = await billingService.prisma.tenant.findUnique({
           where: { lineUserId },
           include: { rooms: true }
         });
-        if (tenant?.rooms?.length > 0) {
-          targetRoomId = tenant.rooms[0].id;
+        if (tenant) {
+          tenantId = tenant.id;
+          if (!targetRoomId && tenant.rooms?.length > 0) {
+            targetRoomId = tenant.rooms[0].id;
+          }
         }
       }
 
       if (!targetRoomId) {
-        // Fallback หาห้องแรกถ้าทดสอบในระบบ
         const firstRoom = await billingService.prisma.room.findFirst({ where: { status: 'occupied' } });
         targetRoomId = firstRoom?.id;
       }
 
-      let imageUrl = req.body.imageUrl || null;
+      if (targetRoomId && !buildingId) {
+        const roomObj = await billingService.prisma.room.findUnique({ where: { id: targetRoomId } });
+        buildingId = roomObj?.buildingId;
+        if (!tenantId && roomObj?.tenantId) {
+          tenantId = roomObj.tenantId;
+        }
+      }
+
+      let imageUrl = req.body.photoUrl || req.body.imageUrl || null;
       if (req.file) {
         const protocol = req.protocol;
         const host = req.get('host');
@@ -108,12 +140,21 @@ class MaintenanceController {
       const newRequest = await billingService.prisma.maintenanceRequest.create({
         data: {
           roomId: targetRoomId,
+          tenantId,
+          buildingId,
           title,
           description,
           imageUrl,
+          photoUrl: imageUrl,
+          technicianName: technicianName || null,
+          repairCost: repairCost ? Number(repairCost) : 0,
           status: 'pending'
         },
-        include: { room: true }
+        include: {
+          room: true,
+          tenant: true,
+          building: true
+        }
       });
 
       return res.status(201).json({
@@ -127,35 +168,56 @@ class MaintenanceController {
   }
 
   /**
-   * แอดมินอัปเดตสถานะการแจ้งซ่อม (pending -> in_progress -> resolved) พร้อมหมายเหตุ และยิง LINE Push Notification
+   * แอดมินอัปเดตสถานะการแจ้งซ่อม (PATCH /api/admin/maintenance/:id & PUT /api/v1/maintenance-requests/:id)
+   * รองรับการใส่ชื่อช่าง ค่าซ่อม หมายเหตุ และส่ง LINE Push Notification แจ้งเตือนลูกบ้านทันที
    */
   async updateMaintenanceStatus(req, res, next) {
     try {
       const { id } = req.params;
-      const { status, adminNote } = req.body;
+      const { status, adminNote, technicianName, repairCost } = req.body;
 
       const request = await billingService.prisma.maintenanceRequest.findUnique({
         where: { id },
-        include: { room: { include: { tenant: true } } }
+        include: {
+          room: { include: { tenant: true } },
+          tenant: true
+        }
       });
 
       if (!request) {
         return res.status(404).json({ success: false, message: 'Maintenance request not found' });
       }
 
+      const nextStatus = status || request.status;
+      let resolvedAt = request.resolvedAt;
+
+      if (nextStatus.toLowerCase() === 'resolved' || nextStatus.toLowerCase() === 'completed') {
+        resolvedAt = new Date();
+      } else if (nextStatus.toLowerCase() === 'pending' || nextStatus.toLowerCase() === 'in_progress') {
+        resolvedAt = null;
+      }
+
       const updatedRequest = await billingService.prisma.maintenanceRequest.update({
         where: { id },
         data: {
-          status: status || request.status,
-          adminNote: adminNote !== undefined ? adminNote : request.adminNote
+          status: nextStatus,
+          adminNote: adminNote !== undefined ? adminNote : request.adminNote,
+          technicianName: technicianName !== undefined ? technicianName : request.technicianName,
+          repairCost: repairCost !== undefined ? Number(repairCost) : request.repairCost,
+          resolvedAt
         },
-        include: { room: { include: { tenant: true } } }
+        include: {
+          room: { include: { tenant: true } },
+          tenant: true,
+          building: true
+        }
       });
 
-      // ยิง LINE Push Notification แจ้งเตือนลูกบ้านเมื่อสถานะเปลี่ยน
-      if (updatedRequest.room?.tenant?.lineUserId) {
+      // ยิง LINE Push Notification แจ้งเตือนลูกบ้านเมื่อมีการอัปเดตสถานะ
+      const recipientLineId = updatedRequest.tenant?.lineUserId || updatedRequest.room?.tenant?.lineUserId;
+      if (recipientLineId) {
         await lineService.sendMaintenanceStatusNotification(
-          updatedRequest.room.tenant.lineUserId,
+          recipientLineId,
           updatedRequest
         );
       }
@@ -171,7 +233,7 @@ class MaintenanceController {
   }
 
   /**
-   * แอดมินลบรายการแจ้งซ่อม (Delete Maintenance Request)
+   * แอดมินลบรายการแจ้งซ่อม (DELETE /api/admin/maintenance/:id)
    */
   async deleteMaintenanceRequest(req, res, next) {
     try {
