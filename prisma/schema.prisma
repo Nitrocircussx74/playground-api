@@ -85,6 +85,7 @@ model Building {
   featureToggles FeatureToggle[]
   announcements Announcement[]
   parcels Parcel[]
+  leaseContracts LeaseContract[]
 
   @@map("buildings")
 }
@@ -181,6 +182,7 @@ model Room {
   maintenanceRequests MaintenanceRequest[]
   roomInvites RoomInvite[]
   parcels Parcel[]
+  leaseContracts LeaseContract[]
 
   // แมปชื่อตารางในฐานข้อมูลเป็น snake_case และพหูพจน์
   @@unique([roomNumber, buildingId])
@@ -217,6 +219,7 @@ model Tenant {
   rooms Room[]
   invoices Invoice[]
   parcels Parcel[]
+  leaseContracts LeaseContract[]
 
   @@map("tenants")
 }
@@ -520,4 +523,51 @@ model Parcel {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("parcels")
+}
+
+/// ตารางสัญญาเช่าและประวัติการเข้าอยู่ของผู้เช่า (Contract-Based Tenancy History)
+model LeaseContract {
+  /// รหัสอ้างอิงสัญญาเช่า (PK, UUID)
+  id String @id @default(uuid()) @db.Uuid
+
+  /// รหัสอ้างอิงห้องพัก (Foreign Key)
+  roomId String @map("room_id") @db.Uuid
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  /// รหัสอ้างอิงผู้เช่า (Foreign Key)
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// รหัสอ้างอิงตึก (Foreign Key, Optional)
+  buildingId String? @map("building_id") @db.Uuid
+  building Building? @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  /// วันที่เริ่มสัญญา / เข้าอยู่จริง
+  startDate DateTime @map("start_date")
+
+  /// วันที่สิ้นสุดสัญญาตามกำหนด
+  expectedEndDate DateTime @map("expected_end_date")
+
+  /// วันที่ย้ายออกจริง (Nullable)
+  actualEndDate DateTime? @map("actual_end_date")
+
+  /// จำนวนเงินประกัน/มัดจำ (Decimal)
+  depositAmount Decimal @default(0.00) @map("deposit_amount") @db.Decimal(10, 2)
+
+  /// สถานะสัญญา (ACTIVE = กำลังเช่าอยู่, ENDED = สิ้นสุดสัญญา/ย้ายออกแล้ว, CANCELLED = ยกเลิกสัญญา)
+  status String @default("ACTIVE")
+
+  /// เหตุผลที่ย้ายออก (Nullable)
+  moveOutReason String? @map("move_out_reason")
+
+  /// บันทึกหมายเหตุภายในสำหรับแอดมิน (เช่น Blacklist / หมายเหตุเพิ่มเติม)
+  adminNote String? @map("admin_note") @db.Text
+
+  /// วันเวลาที่สร้างเรคคอร์ด
+  createdAt DateTime @default(now()) @map("created_at")
+
+  /// วันเวลาที่อัปเดตเรคคอร์ดล่าสุด
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("lease_contracts")
 }

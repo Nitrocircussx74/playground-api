@@ -18,6 +18,7 @@ const adminRoutes = require('./adminRoutes');
 const auditLogRoutes = require('./auditLogRoutes');
 const parcelRoutes = require('./parcelRoutes');
 const meterImportRoutes = require('./meterImportRoutes');
+const leaseRoutes = require('./leaseRoutes');
 const liffController = require('../controllers/liffController');
 
 // Root Health Check Route
@@ -53,6 +54,8 @@ router.use('/api/admin/broadcasts', authenticateJWT, announcementRoutes);
 router.use('/api/admin', authenticateJWT, adminRoutes);
 router.use('/api/admin', authenticateJWT, parcelRoutes);
 router.use('/api/admin', authenticateJWT, meterImportRoutes);
+router.use('/api/admin', authenticateJWT, leaseRoutes);
+router.use('/api/v1', authenticateJWT, leaseRoutes);
 router.use('/api/v1', authenticateJWT, parcelRoutes);
 router.use('/api/admin/audit-logs', authenticateJWT, auditLogRoutes);
 router.use('/api/v1/dashboard', authenticateJWT, dashboardRoutes);
