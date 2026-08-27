@@ -36,7 +36,7 @@ describe('Full API Integration Tests (ทดสอบ Endpoints ทั้งห�
     test('POST /auth/login - กรณีส่งข้อมูลไม่ครบถ้วน ต้องปฏิเสธด้วย HTTP 400 (Zod Validation Failed)', async () => {
       const response = await request(app)
         .post('/auth/login')
-        .send({ email: 'invalid-email' }); // ไม่มี password และ email ผิดรูป
+        .send({ email: 'invalid-email' });
 
       expect(response.statusCode).toBe(400);
       expect(response.body.success).toBe(false);
@@ -55,7 +55,6 @@ describe('Full API Integration Tests (ทดสอบ Endpoints ทั้งห�
       expect(response.body.success).toBe(true);
       expect(response.body.accessToken).toBeDefined();
 
-      // ดึง Cookie ล่าสุดเก็บไว้ใช้ทดสอบ /auth/refresh และ /auth/logout
       const cookies = response.headers['set-cookie'];
       expect(cookies).toBeDefined();
       refreshTokenCookie = cookies.find((c) => c.startsWith('refreshToken='));
@@ -86,7 +85,7 @@ describe('Full API Integration Tests (ทดสอบ Endpoints ทั้งห�
       expect(response.body.success).toBe(false);
     });
 
-    test('POST /auth/refresh - กรณีแนบ Refresh Token Cookie ที่ถูกต้อง ต้องออก Access Token ใหม่ (Token Rotation)', async () => {
+    test('POST /auth/refresh - กรณีแนบ Refresh Token Cookie ที่ถูกต้อง ต้องออก Access Token ใหม่', async () => {
       if (!refreshTokenCookie) return;
 
       const response = await request(app)
@@ -97,7 +96,6 @@ describe('Full API Integration Tests (ทดสอบ Endpoints ทั้งห�
       expect(response.body.success).toBe(true);
       expect(response.body.accessToken).toBeDefined();
 
-      // อัปเดต Refresh Token Cookie อันใหม่
       const cookies = response.headers['set-cookie'];
       if (cookies) {
         refreshTokenCookie = cookies.find((c) => c.startsWith('refreshToken='));
@@ -115,53 +113,56 @@ describe('Full API Integration Tests (ทดสอบ Endpoints ทั้งห�
   });
 
   // -------------------------------------------------------------
-  // 3. Protected Main API Endpoints (/api)
+  // 3. Feature Flag Endpoints (/api/v1/features)
   // -------------------------------------------------------------
-  describe('Protected API Endpoints (/api)', () => {
-    test('GET /api - แบบไม่แนบ Access Token ต้องปฏิเสธ 401 Unauthorized', async () => {
-      const response = await request(app).get('/api');
-
-      expect(response.statusCode).toBe(401);
-      expect(response.body.success).toBe(false);
-    });
-
-    test('GET /api - แนบ Access Token ที่ถูกต้อง ต้องได้ HTTP 200 OK และส่งคืน Dashboard', async () => {
-      const response = await request(app)
-        .get('/api')
-        .set('Authorization', `Bearer ${validAccessToken}`);
+  describe('Feature Flag Toggles (/api/v1/features)', () => {
+    test('GET /api/v1/features - ดึงรายการ Feature Toggles ทั้งหมด', async () => {
+      const response = await request(app).get('/api/v1/features');
 
       expect(response.statusCode).toBe(200);
       expect(response.body.success).toBe(true);
-      expect(response.body.data.authenticatedUser).toBeDefined();
+      expect(response.body.data.featureMap).toBeDefined();
     });
 
-    test('POST /api - กรณีส่ง Body ไม่ผ่าน Zod Schema ต้องตอบกลับ HTTP 400 Bad Request', async () => {
+    test('PUT /api/v1/features/:key - อัปเดตสถานะ Feature Toggle', async () => {
       const response = await request(app)
-        .post('/api')
-        .set('Authorization', `Bearer ${validAccessToken}`)
-        .send({
-          title: 'a', // สั้นเกินไป (Zod ต้องการอย่างน้อย 3)
-          description: '123' // สั้นเกินไป (Zod ต้องการอย่างน้อย 5)
-        });
+        .put('/api/v1/features/ENABLE_LINE_PAYMENT')
+        .send({ isActive: true });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+    });
+  });
+
+  // -------------------------------------------------------------
+  // 4. LIFF Tenant Profile Endpoints (/api/v1/liff/profile)
+  // -------------------------------------------------------------
+  describe('LIFF Tenant Profile Endpoints (/api/v1/liff/profile)', () => {
+    test('GET /api/v1/liff/profile - ดึงโปรไฟล์ลูกบ้าน', async () => {
+      const response = await request(app).get('/api/v1/liff/profile');
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.firstName).toBeDefined();
+    });
+
+    test('PUT /api/v1/liff/profile - อัปเดตเบอร์โทรศัพท์ผิดรูปแบบ (ต้องปฏิเสธ 400)', async () => {
+      const response = await request(app)
+        .put('/api/v1/liff/profile')
+        .send({ phone: '123' });
 
       expect(response.statusCode).toBe(400);
       expect(response.body.success).toBe(false);
-      expect(response.body.errors).toBeDefined();
     });
 
-    test('POST /api - กรณีแนบ Token และส่ง Body ถูกต้องตาม Zod Schema ต้องได้ HTTP 201 Created', async () => {
+    test('PUT /api/v1/liff/profile - อัปเดตเบอร์โทรศัพท์ถูกต้อง (ต้องสำเร็จ 200)', async () => {
       const response = await request(app)
-        .post('/api')
-        .set('Authorization', `Bearer ${validAccessToken}`)
-        .send({
-          title: 'Valid Project Title',
-          description: 'Valid description with enough characters',
-          category: 'technology'
-        });
+        .put('/api/v1/liff/profile')
+        .send({ phone: '0898765432' });
 
-      expect(response.statusCode).toBe(201);
+      expect(response.statusCode).toBe(200);
       expect(response.body.success).toBe(true);
-      expect(response.body.data.receivedData.title).toBe('Valid Project Title');
+      expect(response.body.data.phone).toBe('0898765432');
     });
   });
 });
