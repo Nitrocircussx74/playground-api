@@ -569,5 +569,58 @@ model LeaseContract {
   /// วันเวลาที่อัปเดตเรคคอร์ดล่าสุด
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  moveOutRecord MoveOutRecord?
+
   @@map("lease_contracts")
+}
+
+/// ตารางบันทึกการแจ้งย้ายออกและคำนวณคืนเงินมัดจำ (Move-out & Deposit Refund Record)
+model MoveOutRecord {
+  /// รหัสอ้างอิง MoveOutRecord (PK, UUID)
+  id String @id @default(uuid()) @db.Uuid
+
+  /// รหัสสัญญาเช่า (Foreign Key, Unique 1-to-1)
+  leaseId String @unique @map("lease_id") @db.Uuid
+  lease LeaseContract @relation(fields: [leaseId], references: [id], onDelete: Cascade)
+
+  /// วันที่ย้ายออกจริง
+  moveOutDate DateTime @map("move_out_date")
+
+  /// เลขมิเตอร์น้ำวันย้ายออก
+  finalWaterMeter Int @default(0) @map("final_water_meter")
+
+  /// เลขมิเตอร์ไฟวันย้ายออก
+  finalElectricMeter Int @default(0) @map("final_electric_meter")
+
+  /// ยอดค่าน้ำรอบสุดท้าย (Decimal)
+  finalWaterTotal Decimal @default(0.00) @map("final_water_total") @db.Decimal(10, 2)
+
+  /// ยอดค่าไฟรอบสุดท้าย (Decimal)
+  finalElectricTotal Decimal @default(0.00) @map("final_electric_total") @db.Decimal(10, 2)
+
+  /// ยอดบิลค้างชำระเดิม (Decimal)
+  unpaidInvoicesTotal Decimal @default(0.00) @map("unpaid_invoices_total") @db.Decimal(10, 2)
+
+  /// รายการค่าปรับ/ค่าทำความสะอาด/ค่าเสียหาย (JSON Array)
+  damageCharges Json? @map("damage_charges")
+
+  /// รวมยอดหักทั้งหมด (Decimal)
+  totalDeductions Decimal @default(0.00) @map("total_deductions") @db.Decimal(10, 2)
+
+  /// ยอดเงินมัดจำเดิม (Decimal)
+  depositAmount Decimal @default(0.00) @map("deposit_amount") @db.Decimal(10, 2)
+
+  /// ยอดเงินคืนมัดจำสุทธิ (Decimal)
+  netRefund Decimal @default(0.00) @map("net_refund") @db.Decimal(10, 2)
+
+  /// สถานะการคืนเงิน (PENDING = รอคืน/รอชำระ, PAID = จบงานคืนเงิน/รับเงินแล้ว)
+  refundStatus String @default("PENDING") @map("refund_status")
+
+  /// วันเวลาที่สร้างเรคคอร์ด
+  createdAt DateTime @default(now()) @map("created_at")
+
+  /// วันเวลาที่อัปเดตเรคคอร์ดล่าสุด
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("move_out_records")
 }
