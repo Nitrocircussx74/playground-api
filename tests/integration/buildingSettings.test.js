@@ -13,8 +13,8 @@ describe('Building Settings & RBAC Integration Tests (OWNER vs MANAGER)', () => 
     testBuilding = await billingService.prisma.building.findFirst({ where: { name: { contains: 'อาคาร A' } } });
 
     // 2. Fetch test users
-    const ownerUser = await billingService.prisma.user.findUnique({ where: { email: 'superadmin@dorm.com' } });
-    const managerUser = await billingService.prisma.user.findUnique({ where: { email: 'admin_building_a@dorm.com' } });
+    const ownerUser = await billingService.prisma.user.findUnique({ where: { email: 'owner@dorm.com' } });
+    const managerUser = await billingService.prisma.user.findUnique({ where: { email: 'manager@dorm.com' } });
 
     ownerToken = authService.generateAccessToken(ownerUser);
     managerToken = authService.generateAccessToken(managerUser);

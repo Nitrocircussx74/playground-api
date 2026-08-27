@@ -14,7 +14,17 @@ const requireRole = (...allowedRoles) => {
     const userRole = (req.user.role || 'tenant').toLowerCase();
     const normalizedAllowed = allowedRoles.map((r) => r.toLowerCase());
 
-    if (userRole === 'super_admin' || normalizedAllowed.includes(userRole)) {
+    const isSuperOrOwner = ['super_admin', 'superadmin', 'owner', 'admin'].includes(userRole);
+
+    // Block explicit manager or tenant from owner endpoints if allowedRoles contains 'owner' or 'super_admin'
+    if (normalizedAllowed.includes('owner') && (userRole === 'manager' || userRole === 'tenant')) {
+      return res.status(403).json({
+        success: false,
+        message: `ปฏิเสธการเข้าถึง: คุณไม่มีสิทธิ์ใช้งานส่วนนี้ (Required role: [${allowedRoles.join(', ')}], Current role: [${userRole}])`
+      });
+    }
+
+    if (isSuperOrOwner || normalizedAllowed.includes(userRole)) {
       return next();
     }
 

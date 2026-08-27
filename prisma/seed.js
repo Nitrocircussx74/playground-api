@@ -110,6 +110,41 @@ async function main() {
     }
   });
 
+  // 3.2 Owner User (Full Edit Rights)
+  const ownerUser = await prisma.user.upsert({
+    where: { email: 'owner@dorm.com' },
+    update: { role: 'OWNER' },
+    create: {
+      email: 'owner@dorm.com',
+      passwordHash: defaultPassword,
+      name: 'Owner User',
+      role: 'OWNER',
+      phone: '0888888888'
+    }
+  });
+
+  // 3.3 Manager User (Read-only Rights)
+  const managerUser = await prisma.user.upsert({
+    where: { email: 'manager@dorm.com' },
+    update: { role: 'MANAGER' },
+    create: {
+      email: 'manager@dorm.com',
+      passwordHash: defaultPassword,
+      name: 'Manager User',
+      role: 'MANAGER',
+      phone: '0877777777'
+    }
+  });
+
+  await prisma.userBuildingPermission.upsert({
+    where: { userId_buildingId: { userId: managerUser.id, buildingId: buildingA.id } },
+    update: {},
+    create: {
+      userId: managerUser.id,
+      buildingId: buildingA.id
+    }
+  });
+
   // 3.2 Admin for Building A Only
   const adminA = await prisma.user.upsert({
     where: { email: 'admin_building_a@dorm.com' },
