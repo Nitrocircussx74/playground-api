@@ -3,11 +3,11 @@ const lineService = require('../services/lineService');
 
 class AnnouncementController {
   /**
-   * แอดมินสร้างและบรอดแคสต์ประกาศข่าวสาร
+   * แอดมินสร้างและบรอดแคสต์ประกาศข่าวสารประจำตึก
    */
   async createAnnouncement(req, res, next) {
     try {
-      const { title, content, targetType, targetValue } = req.body;
+      const { title, content, targetType, targetValue, buildingId } = req.body;
 
       if (!title || !content || !targetType) {
         return res.status(400).json({
@@ -16,23 +16,41 @@ class AnnouncementController {
         });
       }
 
-      // 1. บันทึกข้อมูลประกาศลง Database
+      // If buildingId not provided, fallback to first building in system
+      let targetBuildingId = buildingId;
+      if (!targetBuildingId) {
+        const firstBuilding = await billingService.prisma.building.findFirst();
+        if (firstBuilding) {
+          targetBuildingId = firstBuilding.id;
+        }
+      }
+
+      // 1. บันทึกข้อมูลประกาศลง Database พร้อมผูก buildingId
       const announcement = await billingService.prisma.announcement.create({
         data: {
           title,
           content,
           targetType,
           targetValue: targetValue ? String(targetValue) : null,
-          createdBy: req.user?.name || 'Dormitory Admin'
+          createdBy: req.user?.name || 'Dormitory Admin',
+          buildingId: targetBuildingId
+        },
+        include: {
+          building: true
         }
       });
 
-      // 2. Logic การค้นหาเป้าหมายผู้เช่าเพื่อดึง lineUserId
+      // 2. Logic การค้นหาเป้าหมายผู้เช่าประจำตึกเพื่อดึง lineUserId
       let userIds = [];
 
       if (targetType === 'all') {
         const tenants = await billingService.prisma.tenant.findMany({
-          where: { lineUserId: { not: null } },
+          where: {
+            lineUserId: { not: null },
+            rooms: {
+              some: targetBuildingId ? { buildingId: targetBuildingId } : {}
+            }
+          },
           select: { lineUserId: true }
         });
         userIds = tenants.map((t) => t.lineUserId);
@@ -41,7 +59,12 @@ class AnnouncementController {
         const tenants = await billingService.prisma.tenant.findMany({
           where: {
             lineUserId: { not: null },
-            rooms: { some: { floor: floorNum } }
+            rooms: {
+              some: {
+                floor: floorNum,
+                ...(targetBuildingId ? { buildingId: targetBuildingId } : {})
+              }
+            }
           },
           select: { lineUserId: true }
         });
@@ -73,12 +96,17 @@ class AnnouncementController {
   }
 
   /**
-   * ดึงรายการประกาศข่าวสารทั้งหมดสำหรับ Admin
+   * ดึงรายการประกาศข่าวสารสำหรับ Admin (กรองตาม buildingId)
    */
   async getAnnouncementsForAdmin(req, res, next) {
     try {
+      const { buildingId } = req.query;
+      const where = buildingId ? { OR: [{ buildingId }, { buildingId: null }] } : {};
+
       const announcements = await billingService.prisma.announcement.findMany({
-        orderBy: { createdAt: 'desc' }
+        where,
+        orderBy: { createdAt: 'desc' },
+        include: { building: true }
       });
 
       return res.status(200).json({
@@ -116,8 +144,8 @@ class AnnouncementController {
       if (tenantRoom) {
         whereCondition = {
           OR: [
-            { targetType: 'all' },
-            { targetType: 'floor', targetValue: String(tenantRoom.floor) },
+            { targetType: 'all', OR: [{ buildingId: tenantRoom.buildingId }, { buildingId: null }] },
+            { targetType: 'floor', targetValue: String(tenantRoom.floor), OR: [{ buildingId: tenantRoom.buildingId }, { buildingId: null }] },
             { targetType: 'room', targetValue: tenantRoom.id }
           ]
         };
@@ -125,7 +153,8 @@ class AnnouncementController {
 
       const announcements = await billingService.prisma.announcement.findMany({
         where: whereCondition,
-        orderBy: { createdAt: 'desc' }
+        orderBy: { createdAt: 'desc' },
+        include: { building: true }
       });
 
       return res.status(200).json({
