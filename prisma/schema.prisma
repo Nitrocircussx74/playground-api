@@ -24,7 +24,7 @@ model User {
   /// ชื่อจริง-นามสกุล
   name String
 
-  /// สิทธิ์ผู้ใช้งาน (admin = ผู้ดูแลระบบ, tenant = ผู้เช่า)
+  /// สิทธิ์ผู้ใช้งาน (super_admin = ผู้ดูแลใหญ่, admin = ผู้ดูแลตึก, tenant = ผู้เช่า)
   role String @default("tenant")
 
   /// เบอร์โทรศัพท์ติดต่อ
@@ -36,7 +36,29 @@ model User {
   /// วันเวลาที่อัปเดตเรคคอร์ดล่าสุด
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  buildingPermissions UserBuildingPermission[]
+
   @@map("users")
+}
+
+/// ตารางสิทธิ์การเข้าถึงตึกของผู้ดูแลระบบ (Admin Building Permissions)
+model UserBuildingPermission {
+  /// รหัสอ้างอิงสิทธิ์ (PK, UUID)
+  id String @id @default(uuid()) @db.Uuid
+
+  /// รหัสอ้างอิงผู้ใช้งาน (Foreign Key)
+  userId String @map("user_id") @db.Uuid
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// รหัสอ้างอิงตึก (Foreign Key)
+  buildingId String @map("building_id") @db.Uuid
+  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  /// วันเวลาที่สร้างเรคคอร์ด
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, buildingId])
+  @@map("user_building_permissions")
 }
 
 /// ตารางอาคาร/ตึก (Building)
@@ -58,6 +80,7 @@ model Building {
 
   rooms Room[]
   setting BuildingSetting?
+  userPermissions UserBuildingPermission[]
 
   @@map("buildings")
 }

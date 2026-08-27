@@ -5,7 +5,32 @@ class RoomController {
   async getRooms(req, res, next) {
     try {
       const { buildingId } = req.query;
-      const where = buildingId ? { buildingId } : {};
+      const userRole = (req.user?.role || '').toLowerCase();
+      const userId = req.user?.id;
+
+      let where = {};
+
+      if (buildingId) {
+        if (userRole !== 'super_admin' && userId) {
+          const perm = await billingService.prisma.userBuildingPermission.findUnique({
+            where: { userId_buildingId: { userId, buildingId } }
+          });
+          if (!perm) {
+            return res.status(403).json({
+              success: false,
+              message: 'คุณไม่มีสิทธิ์เข้าถึงข้อมูลของอาคาร/ตึกนี้'
+            });
+          }
+        }
+        where.buildingId = buildingId;
+      } else if (userRole !== 'super_admin' && userId) {
+        const permissions = await billingService.prisma.userBuildingPermission.findMany({
+          where: { userId },
+          select: { buildingId: true }
+        });
+        const allowedBuildingIds = permissions.map((p) => p.buildingId);
+        where.buildingId = { in: allowedBuildingIds };
+      }
 
       const rooms = await billingService.prisma.room.findMany({
         where,

@@ -10,7 +10,7 @@ function hashPassword(password) {
 }
 
 async function main() {
-  console.log('🌱 Seeding database according to strict Naming Conventions...');
+  console.log('🌱 Seeding database with Multi-Building & Fine-Grained Permissions...');
 
   // 1. Seed Buildings
   let buildingA = await prisma.building.findFirst({ where: { name: 'อาคาร A (Main Building)' } });
@@ -34,7 +34,7 @@ async function main() {
   }
   console.log('🏢 Buildings seeded:', buildingA.name, buildingB.name);
 
-  // 2. Seed Building Settings (PromptPay QR & Account per Building)
+  // 2. Seed Building Settings
   await prisma.buildingSetting.upsert({
     where: { buildingId: buildingA.id },
     update: {},
@@ -56,20 +56,83 @@ async function main() {
   });
   console.log('⚙️ Building Settings seeded per building');
 
-  // 3. Create Admin User
-  const adminPassword = hashPassword('password123');
-  const admin = await prisma.user.upsert({
-    where: { email: 'admin@dorm.com' },
-    update: {},
+  // 3. Seed Users & Building Permissions
+  const defaultPassword = hashPassword('password123');
+
+  // 3.1 Super Admin (Full Access to all buildings)
+  const superAdmin = await prisma.user.upsert({
+    where: { email: 'superadmin@dorm.com' },
+    update: { role: 'super_admin' },
     create: {
-      email: 'admin@dorm.com',
-      passwordHash: adminPassword,
-      name: 'Admin Manager',
-      role: 'admin',
+      email: 'superadmin@dorm.com',
+      passwordHash: defaultPassword,
+      name: 'Super Admin',
+      role: 'super_admin',
       phone: '0899999999'
     }
   });
-  console.log('👤 Admin user seeded:', admin.email);
+
+  const mainAdmin = await prisma.user.upsert({
+    where: { email: 'admin@dorm.com' },
+    update: { role: 'super_admin' },
+    create: {
+      email: 'admin@dorm.com',
+      passwordHash: defaultPassword,
+      name: 'Admin Manager',
+      role: 'super_admin',
+      phone: '0899999999'
+    }
+  });
+
+  // 3.2 Admin for Building A Only
+  const adminA = await prisma.user.upsert({
+    where: { email: 'admin_building_a@dorm.com' },
+    update: { role: 'admin' },
+    create: {
+      email: 'admin_building_a@dorm.com',
+      passwordHash: defaultPassword,
+      name: 'Admin Building A',
+      role: 'admin',
+      phone: '0811111111'
+    }
+  });
+
+  await prisma.userBuildingPermission.upsert({
+    where: { userId_buildingId: { userId: adminA.id, buildingId: buildingA.id } },
+    update: {},
+    create: {
+      userId: adminA.id,
+      buildingId: buildingA.id
+    }
+  });
+
+  // 3.3 Admin for Building B Only
+  const adminB = await prisma.user.upsert({
+    where: { email: 'admin_building_b@dorm.com' },
+    update: { role: 'admin' },
+    create: {
+      email: 'admin_building_b@dorm.com',
+      passwordHash: defaultPassword,
+      name: 'Admin Building B',
+      role: 'admin',
+      phone: '0822222222'
+    }
+  });
+
+  await prisma.userBuildingPermission.upsert({
+    where: { userId_buildingId: { userId: adminB.id, buildingId: buildingB.id } },
+    update: {},
+    create: {
+      userId: adminB.id,
+      buildingId: buildingB.id
+    }
+  });
+
+  console.log('👤 Test Admin Users & Permissions seeded:');
+  console.log('   - superadmin@dorm.com (Super Admin -> All Buildings)');
+  console.log('   - admin@dorm.com (Super Admin -> All Buildings)');
+  console.log('   - admin_building_a@dorm.com (Admin -> Building A Only)');
+  console.log('   - admin_building_b@dorm.com (Admin -> Building B Only)');
 
   // 4. Create Sample Tenant
   let tenant = await prisma.tenant.findFirst({ where: { firstName: 'Somchai', lastName: 'Jaidee' } });
@@ -83,9 +146,8 @@ async function main() {
       }
     });
   }
-  console.log('👤 Tenant record seeded:', tenant.firstName, tenant.lastName);
 
-  // 5. Create Sample Rooms (Linked to Building A & Building B)
+  // 5. Create Sample Rooms
   const room101 = await prisma.room.upsert({
     where: { roomNumber: '101' },
     update: { buildingId: buildingA.id, tenantId: tenant.id, status: 'occupied' },

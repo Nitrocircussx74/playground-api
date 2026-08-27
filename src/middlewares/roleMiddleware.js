@@ -11,16 +11,17 @@ const requireRole = (...allowedRoles) => {
       });
     }
 
-    const userRole = req.user.role || 'tenant';
+    const userRole = (req.user.role || 'tenant').toLowerCase();
+    const normalizedAllowed = allowedRoles.map((r) => r.toLowerCase());
 
-    if (!allowedRoles.includes(userRole)) {
-      return res.status(403).json({
-        success: false,
-        message: `ปฏิเสธการเข้าถึง: คุณไม่มีสิทธิ์ใช้งานส่วนนี้ (Required role: [${allowedRoles.join(', ')}], Current role: [${userRole}])`
-      });
+    if (userRole === 'super_admin' || normalizedAllowed.includes(userRole)) {
+      return next();
     }
 
-    next();
+    return res.status(403).json({
+      success: false,
+      message: `ปฏิเสธการเข้าถึง: คุณไม่มีสิทธิ์ใช้งานส่วนนี้ (Required role: [${allowedRoles.join(', ')}], Current role: [${userRole}])`
+    });
   };
 };
 

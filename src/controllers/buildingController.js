@@ -6,7 +6,22 @@ class BuildingController {
    */
   async getBuildings(req, res, next) {
     try {
+      const userRole = (req.user?.role || '').toLowerCase();
+      const userId = req.user?.id;
+
+      let where = {};
+
+      if (userRole !== 'super_admin' && userId) {
+        const permissions = await billingService.prisma.userBuildingPermission.findMany({
+          where: { userId },
+          select: { buildingId: true }
+        });
+        const allowedBuildingIds = permissions.map((p) => p.buildingId);
+        where = { id: { in: allowedBuildingIds } };
+      }
+
       const buildings = await billingService.prisma.building.findMany({
+        where,
         orderBy: { createdAt: 'asc' },
         include: {
           setting: true,
