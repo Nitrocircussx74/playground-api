@@ -392,6 +392,9 @@ model Announcement {
   /// รายละเอียดประกาศ
   content String @db.Text
 
+  /// รูปภาพประกอบประกาศ (URL/Path)
+  imageUrl String? @map("image_url")
+
   /// ประเภทเป้าหมาย (all = ผู้เช่าทั้งหมด, floor = ระบุชั้น, room = ระบุห้อง)
   targetType String @map("target_type")
 

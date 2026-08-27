@@ -47,6 +47,7 @@ router.use('/api/admin/invoices', authenticateJWT, invoiceRoutes);
 router.use('/api/v1/uploads', authenticateJWT, uploadRoutes);
 router.use('/api/v1/maintenance-requests', authenticateJWT, maintenanceRoutes);
 router.use('/api/v1/announcements', authenticateJWT, announcementRoutes);
+router.use('/api/admin/broadcasts', authenticateJWT, announcementRoutes);
 router.use('/api/admin', authenticateJWT, adminRoutes);
 router.use('/api/admin/audit-logs', authenticateJWT, auditLogRoutes);
 router.use('/api/v1/dashboard', authenticateJWT, dashboardRoutes);

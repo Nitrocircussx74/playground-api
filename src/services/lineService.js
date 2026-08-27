@@ -425,6 +425,15 @@ class LineService {
       altText: `📢 ประกาศข่าวสาร: ${announcement.title}`,
       contents: {
         type: 'bubble',
+        ...(announcement.imageUrl ? {
+          hero: {
+            type: 'image',
+            url: announcement.imageUrl,
+            size: 'full',
+            aspectRatio: '20:13',
+            aspectMode: 'cover'
+          }
+        } : {}),
         header: {
           type: 'box',
           layout: 'vertical',
