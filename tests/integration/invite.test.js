@@ -63,28 +63,46 @@ describe('Room Invite Code & Registration Integration Tests', () => {
 
   describe('LIFF Invite Verification & Registration Endpoints', () => {
     test('GET /api/v1/liff/invites/verify/:code - ตรวจสอบรหัสเชิญล่วงหน้า (200 OK)', async () => {
-      const response = await request(app).get(`/api/v1/liff/invites/verify/${inviteCode}`);
+      const response = await request(app)
+        .get(`/api/v1/liff/invites/verify/${inviteCode}`)
+        .set('X-Line-Id-Token', 'U1234567890abcdef');
 
       expect(response.statusCode).toBe(200);
       expect(response.body.success).toBe(true);
       expect(response.body.data.roomNumber).toBe('TEST999');
     });
 
+    test('POST /api/v1/liff/register/invite - เบอร์โทรผิดรูปแบบ ต้องปฏิเสธ 400 (Zod Validation)', async () => {
+      const response = await request(app)
+        .post('/api/v1/liff/register/invite')
+        .set('X-Line-Id-Token', 'U1234567890abcdef')
+        .send({
+          inviteCode,
+          firstName: 'สมชาย',
+          lastName: 'สายลม',
+          phone: '123' // ผิดรูปแบบ (ต้อง 9-10 หลัก)
+        });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.body.success).toBe(false);
+    });
+
     test('POST /api/v1/liff/register/invite - ลงทะเบียนผู้เช่าและผูกเข้ากับห้องพัก (Prisma Transaction)', async () => {
       const response = await request(app)
         .post('/api/v1/liff/register/invite')
+        .set('X-Line-Id-Token', 'U1234567890abcdef')
         .send({
           inviteCode,
           firstName: 'สมชาย',
           lastName: 'สายลม',
           phone: '0887776655',
-          idCard: '1100200300405',
-          lineUserId: 'U1234567890abcdef'
+          idCard: '1100200300405'
         });
 
       expect(response.statusCode).toBe(201);
       expect(response.body.success).toBe(true);
       expect(response.body.data.room.status).toBe('occupied');
+      expect(response.body.data.tenant.lineUserId).toBe('U1234567890abcdef');
 
       // Clean up created tenant
       if (response.body.data.tenant?.id) {
@@ -93,7 +111,9 @@ describe('Room Invite Code & Registration Integration Tests', () => {
     });
 
     test('GET /api/v1/liff/invites/verify/:code - กรณีใช้รหัสเชิญเดิมซ้ำ ต้องปฏิเสธ 400 (IsUsed = true)', async () => {
-      const response = await request(app).get(`/api/v1/liff/invites/verify/${inviteCode}`);
+      const response = await request(app)
+        .get(`/api/v1/liff/invites/verify/${inviteCode}`)
+        .set('X-Line-Id-Token', 'U1234567890abcdef');
 
       expect(response.statusCode).toBe(400);
       expect(response.body.success).toBe(false);

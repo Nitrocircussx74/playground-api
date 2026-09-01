@@ -38,22 +38,21 @@ class InvoiceController {
    */
   async getPaidInvoicesForLiff(req, res, next) {
     try {
-      const { lineUserId, roomId } = req.query;
+      // ห้ามรับ roomId จาก Client ตรง ๆ (IDOR) ต้อง derive จาก req.lineUserId ที่ verify แล้วเท่านั้น
+      const lineUserId = req.lineUserId;
 
-      let tenantRoomId = roomId;
+      const tenant = await billingService.prisma.tenant.findUnique({
+        where: { lineUserId },
+        include: { rooms: true }
+      });
+      const tenantRoomId = tenant?.rooms?.length > 0 ? tenant.rooms[0].id : null;
 
-      if (!tenantRoomId && lineUserId) {
-        const tenant = await billingService.prisma.tenant.findUnique({
-          where: { lineUserId },
-          include: { rooms: true }
-        });
-        if (tenant?.rooms?.length > 0) {
-          tenantRoomId = tenant.rooms[0].id;
-        }
+      if (!tenantRoomId) {
+        // ไม่พบห้องของผู้เช่ารายนี้ -> ห้าม fallback ไปดึงบิล paid ของทุกคนในระบบ
+        return res.status(200).json({ success: true, data: [] });
       }
 
-      const where = { status: 'paid' };
-      if (tenantRoomId) where.roomId = tenantRoomId;
+      const where = { status: 'paid', roomId: tenantRoomId };
 
       const invoices = await billingService.prisma.invoice.findMany({
         where,
@@ -344,6 +343,13 @@ class InvoiceController {
 
       if (!invoice) {
         return res.status(404).json({ success: false, message: 'Invoice not found' });
+      }
+
+      if (invoice.tenant?.lineUserId !== req.lineUserId) {
+        return res.status(403).json({
+          success: false,
+          message: 'ปฏิเสธการเข้าถึง: คุณไม่มีสิทธิ์ดาวน์โหลดใบเสร็จของผู้อื่น'
+        });
       }
 
       const receiptNo = `REC-${invoice.invoiceNumber}`;

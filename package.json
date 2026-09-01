@@ -6,9 +6,10 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "tunnel": "cloudflared tunnel --url http://localhost:3000",
-    "dev:tunnel": "concurrently -n \"API,TUNNEL\" -c \"blue,magenta\" \"nodemon src/server.js\" \"cloudflared tunnel --url http://localhost:3000\"",
+    "tunnel": "node scripts/tunnel.js 3000",
+    "dev:tunnel": "concurrently -n \"API,TUNNEL\" -c \"blue,magenta\" \"nodemon src/server.js\" \"node scripts/tunnel.js 3000\"",
     "migrate": "node src/migrations/migrate.js",
+    "seed": "node prisma/seed.js",
     "test": "jest --detectOpenHandles --forceExit",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage"

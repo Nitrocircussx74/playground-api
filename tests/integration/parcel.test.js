@@ -115,7 +115,8 @@ describe('Smart Parcel Management Integration Tests', () => {
   describe('GET /api/v1/liff/parcels', () => {
     test('ควรดึงรายการพัสดุสำหรับฝั่ง LIFF สำเร็จ (200 OK)', async () => {
       const response = await request(app)
-        .get(`/api/v1/liff/parcels?lineUserId=U_TEST_PARCEL_TENANT_999`);
+        .get(`/api/v1/liff/parcels?lineUserId=U_TEST_PARCEL_TENANT_999`)
+        .set('X-Line-Id-Token', 'U_TEST_PARCEL_TENANT_999');
 
       expect(response.statusCode).toBe(200);
       expect(response.body.success).toBe(true);

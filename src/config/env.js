@@ -25,5 +25,20 @@ module.exports = {
     clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
     callbackUrl: process.env.GOOGLE_CALLBACK_URL || 'http://localhost:3000/auth/google/callback'
   },
-  clientUrl: process.env.CLIENT_URL || 'http://localhost:5173'
+  clientUrl: process.env.CLIENT_URL || 'http://localhost:5173',
+  // รายชื่อ Origin ที่อนุญาตให้เรียก API ได้ตอน Production (คั่นด้วย , เช่น "https://myapp.com,https://liff.line.me")
+  allowedOrigins: (process.env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+  line: {
+    // Channel Access Token สำหรับส่ง Push Message และดึง Profile
+    channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN || '',
+    // LIFF ID เต็ม (เช่น 2011289517-SB8YziXL)
+    liffId: process.env.LINE_LIFF_ID || '',
+    // Channel ID ของ LIFF App (ตัวเลขส่วนหน้าของ LIFF ID ก่อนขีด) ใช้ตรวจสอบ aud ของ LINE ID Token
+    liffChannelId: process.env.LINE_LIFF_CHANNEL_ID || '',
+    // เปิดโหมด Mock การตรวจสอบ LINE ID Token สำหรับ Local Dev
+    mockMode: process.env.LINE_AUTH_MOCK_MODE === 'true'
+  }
 };

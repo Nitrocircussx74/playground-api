@@ -8,7 +8,7 @@ class LiffController {
    */
   async checkTenantStatus(req, res, next) {
     try {
-      const { lineUserId } = req.query;
+      const lineUserId = req.lineUserId;
 
       if (!lineUserId) {
         return res.status(200).json({
@@ -108,7 +108,8 @@ class LiffController {
    */
   async linkTenantAccount(req, res, next) {
     try {
-      const { lineUserId, inviteCode, phoneLast4, lineDisplayName, linePictureUrl, lineStatusMessage } = req.body;
+      const { inviteCode, phoneLast4, lineDisplayName, linePictureUrl, lineStatusMessage } = req.body;
+      const lineUserId = req.lineUserId;
 
       if (!inviteCode || !phoneLast4) {
         return res.status(400).json({
@@ -160,13 +161,31 @@ class LiffController {
         }
       }
 
+      // ดึงข้อมูลโปรไฟล์ LINE จริง (จาก Verified Token Payload หรือ LINE Messaging API)
+      let realDisplayName = req.lineUser?.displayName || lineDisplayName || tenant.lineDisplayName;
+      let realPictureUrl = req.lineUser?.pictureUrl || linePictureUrl || tenant.linePictureUrl;
+      let realStatusMessage = lineStatusMessage || tenant.lineStatusMessage;
+
+      if (lineUserId) {
+        try {
+          const liveProfile = await lineService.getUserProfile(lineUserId);
+          if (liveProfile) {
+            realDisplayName = liveProfile.displayName || realDisplayName;
+            realPictureUrl = liveProfile.pictureUrl || realPictureUrl;
+            realStatusMessage = liveProfile.statusMessage || realStatusMessage;
+          }
+        } catch (err) {
+          console.warn('Could not fetch live LINE profile:', err.message);
+        }
+      }
+
       const updatedTenant = await billingService.prisma.tenant.update({
         where: { id: tenant.id },
         data: {
           lineUserId: lineUserId || tenant.lineUserId,
-          lineDisplayName: lineDisplayName || tenant.lineDisplayName,
-          linePictureUrl: linePictureUrl || tenant.linePictureUrl,
-          lineStatusMessage: lineStatusMessage || tenant.lineStatusMessage,
+          lineDisplayName: realDisplayName || null,
+          linePictureUrl: realPictureUrl || null,
+          lineStatusMessage: realStatusMessage || null,
           inviteCode: null,
           inviteExpiresAt: null
         },
@@ -206,11 +225,8 @@ class LiffController {
    */
   async syncLineProfile(req, res, next) {
     try {
-      const { lineUserId, lineDisplayName, linePictureUrl, lineStatusMessage } = req.body;
-
-      if (!lineUserId) {
-        return res.status(400).json({ success: false, message: 'กรุณาระบุ lineUserId' });
-      }
+      const { lineDisplayName, linePictureUrl, lineStatusMessage } = req.body;
+      const lineUserId = req.lineUserId;
 
       const tenant = await billingService.prisma.tenant.findUnique({
         where: { lineUserId }
@@ -220,12 +236,29 @@ class LiffController {
         return res.status(404).json({ success: false, message: 'ไม่พบผู้เช่าที่ผูกกับบัญชี LINE นี้' });
       }
 
+      let realDisplayName = lineDisplayName !== undefined ? lineDisplayName : (req.lineUser?.displayName || tenant.lineDisplayName);
+      let realPictureUrl = linePictureUrl !== undefined ? linePictureUrl : (req.lineUser?.pictureUrl || tenant.linePictureUrl);
+      let realStatusMessage = lineStatusMessage !== undefined ? lineStatusMessage : tenant.lineStatusMessage;
+
+      if (lineUserId) {
+        try {
+          const liveProfile = await lineService.getUserProfile(lineUserId);
+          if (liveProfile) {
+            realDisplayName = liveProfile.displayName || realDisplayName;
+            realPictureUrl = liveProfile.pictureUrl || realPictureUrl;
+            realStatusMessage = liveProfile.statusMessage || realStatusMessage;
+          }
+        } catch (err) {
+          console.warn('Could not fetch live LINE profile:', err.message);
+        }
+      }
+
       const updatedTenant = await billingService.prisma.tenant.update({
         where: { id: tenant.id },
         data: {
-          lineDisplayName: lineDisplayName !== undefined ? lineDisplayName : tenant.lineDisplayName,
-          linePictureUrl: linePictureUrl !== undefined ? linePictureUrl : tenant.linePictureUrl,
-          lineStatusMessage: lineStatusMessage !== undefined ? lineStatusMessage : tenant.lineStatusMessage
+          lineDisplayName: realDisplayName || null,
+          linePictureUrl: realPictureUrl || null,
+          lineStatusMessage: realStatusMessage || null
         }
       });
 
@@ -351,7 +384,11 @@ class LiffController {
    */
   async getSettingsForTenant(req, res, next) {
     try {
-      const { lineUserId, tenantId, roomId } = req.query;
+      // Endpoint นี้ถูกเรียกจาก 2 เส้นทาง: /api/v1/liff/settings (ผ่าน liffAuthMiddleware มี req.lineUserId ที่ verify แล้ว)
+      // และ /api/settings แบบ Public เดิม (ไม่มี req.lineUserId) — ถ้ามี req.lineUserId ที่ verify แล้ว ต้องยึดค่านั้นเป็นหลัก
+      // ห้ามให้ roomId/tenantId ที่ Client ส่งมาเอง Override เพื่อไปดูตึก/ห้องของคนอื่น (IDOR)
+      const lineUserId = req.lineUserId || req.query.lineUserId;
+      const { tenantId, roomId } = req.lineUserId ? {} : req.query;
 
       let targetRoom = null;
 
@@ -433,6 +470,13 @@ class LiffController {
         return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลใบแจ้งหนี้' });
       }
 
+      if (invoice.tenant?.lineUserId !== req.lineUserId) {
+        return res.status(403).json({
+          success: false,
+          message: 'ปฏิเสธการเข้าถึง: คุณไม่มีสิทธิ์ดูใบแจ้งหนี้ของผู้อื่น'
+        });
+      }
+
       const qrData = await lineService.generatePromptPayQr(invoice.grandTotal);
 
       return res.status(200).json({
@@ -453,7 +497,7 @@ class LiffController {
   async uploadSlipFromLiff(req, res, next) {
     try {
       const { id } = req.params;
-      const { lineUserId } = req.body;
+      const lineUserId = req.lineUserId;
 
       if (!req.file) {
         return res.status(400).json({ success: false, message: 'กรุณาแนบไฟล์รูปภาพสลิปโอนเงิน' });
@@ -468,7 +512,7 @@ class LiffController {
         return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลใบแจ้งหนี้' });
       }
 
-      if (lineUserId && invoice.tenant?.lineUserId && invoice.tenant.lineUserId !== lineUserId) {
+      if (invoice.tenant?.lineUserId !== lineUserId) {
         return res.status(403).json({
           success: false,
           message: 'ปฏิเสธการเข้าถึง: คุณไม่มีสิทธิ์แนบสลิปสำหรับบิลของผู้อื่น'
@@ -484,6 +528,7 @@ class LiffController {
 
       const updateData = {
         slipUrl,
+        slipHash: verification.fileHash,
         status: verification.status
       };
 
@@ -524,7 +569,8 @@ class LiffController {
    */
   async registerTenantWithInvite(req, res, next) {
     try {
-      const { inviteCode, firstName, lastName, phone, idCard, lineUserId } = req.body;
+      const { inviteCode, firstName, lastName, phone, idCard, lineDisplayName, linePictureUrl, lineStatusMessage } = req.body;
+      const lineUserId = req.lineUserId;
 
       if (!inviteCode || !firstName || !lastName || !phone) {
         return res.status(400).json({
@@ -537,7 +583,15 @@ class LiffController {
 
       const invite = await billingService.prisma.roomInvite.findUnique({
         where: { code: normalizedCode },
-        include: { room: true }
+        include: {
+          room: {
+            include: {
+              building: {
+                include: { setting: true }
+              }
+            }
+          }
+        }
       });
 
       if (!invite) {
@@ -568,6 +622,24 @@ class LiffController {
         });
       }
 
+      // ดึงข้อมูลโปรไฟล์ LINE จริง (จาก Verified Token Payload หรือ LINE Messaging API)
+      let realDisplayName = req.lineUser?.displayName || lineDisplayName || null;
+      let realPictureUrl = req.lineUser?.pictureUrl || linePictureUrl || null;
+      let realStatusMessage = lineStatusMessage || null;
+
+      if (lineUserId) {
+        try {
+          const liveProfile = await lineService.getUserProfile(lineUserId);
+          if (liveProfile) {
+            realDisplayName = liveProfile.displayName || realDisplayName;
+            realPictureUrl = liveProfile.pictureUrl || realPictureUrl;
+            realStatusMessage = liveProfile.statusMessage || realStatusMessage;
+          }
+        } catch (err) {
+          console.warn('Could not fetch live LINE profile:', err.message);
+        }
+      }
+
       const result = await billingService.prisma.$transaction(async (tx) => {
         const tenant = await tx.tenant.create({
           data: {
@@ -575,7 +647,10 @@ class LiffController {
             lastName,
             phone,
             idCard: idCard || null,
-            lineUserId: lineUserId || null
+            lineUserId: lineUserId || null,
+            lineDisplayName: realDisplayName || null,
+            linePictureUrl: realPictureUrl || null,
+            lineStatusMessage: realStatusMessage || null
           }
         });
 
@@ -592,8 +667,36 @@ class LiffController {
           data: { isUsed: true }
         });
 
-        return { tenant, room: updatedRoom };
+        // 📝 คำนวณเงินประกันจาก Building Setting หากมี
+        const depositMonths = invite.room.building?.setting?.depositMonths || 0;
+        const roomPrice = Number(invite.room.price) || 0;
+        const depositAmount = depositMonths > 0 ? depositMonths * roomPrice : 0;
+
+        // 📝 สร้างสัญญาเช่าเริ่มต้น (Active Lease Contract) เพื่อให้บันทึกประวัติการเข้าอยู่และแสดงในหน้าประวัติ
+        const startDate = new Date();
+        const expectedEndDate = new Date(startDate);
+        expectedEndDate.setFullYear(expectedEndDate.getFullYear() + 1);
+
+        const lease = await tx.leaseContract.create({
+          data: {
+            roomId: invite.roomId,
+            tenantId: tenant.id,
+            buildingId: invite.room.buildingId || null,
+            startDate,
+            expectedEndDate,
+            depositAmount,
+            status: 'ACTIVE',
+            adminNote: 'ลงทะเบียนเข้าพักผ่านระบบ LINE LIFF (Invite Code)'
+          }
+        });
+
+        return { tenant, room: updatedRoom, lease };
       });
+
+      // 📲 ส่ง LINE Welcome Flex Message หากมี LINE User ID
+      if (lineUserId) {
+        lineService.sendWelcomeFlexMessage(lineUserId, result.tenant).catch(() => {});
+      }
 
       return res.status(201).json({
         success: true,

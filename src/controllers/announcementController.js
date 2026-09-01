@@ -184,20 +184,16 @@ class AnnouncementController {
    */
   async getAnnouncementsForLiff(req, res, next) {
     try {
-      const { lineUserId, roomId } = req.query;
+      // ห้ามรับ roomId จาก Client ตรง ๆ (IDOR) ต้อง derive จาก req.lineUserId ที่ verify แล้วเท่านั้น
+      const lineUserId = req.lineUserId;
 
       let tenantRoom = null;
-
-      if (roomId) {
-        tenantRoom = await billingService.prisma.room.findUnique({ where: { id: roomId } });
-      } else if (lineUserId) {
-        const tenant = await billingService.prisma.tenant.findUnique({
-          where: { lineUserId },
-          include: { rooms: true }
-        });
-        if (tenant?.rooms?.length > 0) {
-          tenantRoom = tenant.rooms[0];
-        }
+      const tenant = await billingService.prisma.tenant.findUnique({
+        where: { lineUserId },
+        include: { rooms: true }
+      });
+      if (tenant?.rooms?.length > 0) {
+        tenantRoom = tenant.rooms[0];
       }
 
       let whereCondition = {

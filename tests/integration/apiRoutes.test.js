@@ -2,11 +2,13 @@ const request = require('supertest');
 const app = require('../../src/app');
 const authService = require('../../src/services/authService');
 
+const billingService = require('../../src/services/billingService');
+
 describe('Full API Integration Tests (ทดสอบ Endpoints ทั้งหมดในระบบ)', () => {
   let validAccessToken;
   let refreshTokenCookie;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     const mockUser = {
       id: 1,
       email: 'integration@test.com',
@@ -14,6 +16,23 @@ describe('Full API Integration Tests (ทดสอบ Endpoints ทั้งห�
       role: 'admin'
     };
     validAccessToken = authService.generateAccessToken(mockUser);
+
+    await billingService.prisma.tenant.upsert({
+      where: { lineUserId: 'U_test_apiroutes_profile' },
+      update: { phone: '0812345678' },
+      create: {
+        firstName: 'ทดสอบ',
+        lastName: 'โปรไฟล์',
+        phone: '0812345678',
+        lineUserId: 'U_test_apiroutes_profile'
+      }
+    });
+  });
+
+  afterAll(async () => {
+    await billingService.prisma.tenant.deleteMany({
+      where: { lineUserId: 'U_test_apiroutes_profile' }
+    });
   });
 
   // -------------------------------------------------------------
@@ -140,7 +159,9 @@ describe('Full API Integration Tests (ทดสอบ Endpoints ทั้งห�
   // -------------------------------------------------------------
   describe('LIFF Tenant Profile Endpoints (/api/v1/liff/profile)', () => {
     test('GET /api/v1/liff/profile - ดึงโปรไฟล์ลูกบ้าน', async () => {
-      const response = await request(app).get('/api/v1/liff/profile');
+      const response = await request(app)
+        .get('/api/v1/liff/profile')
+        .set('X-Line-Id-Token', 'U_test_apiroutes_profile');
 
       expect(response.statusCode).toBe(200);
       expect(response.body.success).toBe(true);
@@ -150,6 +171,7 @@ describe('Full API Integration Tests (ทดสอบ Endpoints ทั้งห�
     test('PUT /api/v1/liff/profile - อัปเดตเบอร์โทรศัพท์ผิดรูปแบบ (ต้องปฏิเสธ 400)', async () => {
       const response = await request(app)
         .put('/api/v1/liff/profile')
+        .set('X-Line-Id-Token', 'U_test_apiroutes_profile')
         .send({ phone: '123' });
 
       expect(response.statusCode).toBe(400);
@@ -159,6 +181,7 @@ describe('Full API Integration Tests (ทดสอบ Endpoints ทั้งห�
     test('PUT /api/v1/liff/profile - อัปเดตเบอร์โทรศัพท์ถูกต้อง (ต้องสำเร็จ 200)', async () => {
       const response = await request(app)
         .put('/api/v1/liff/profile')
+        .set('X-Line-Id-Token', 'U_test_apiroutes_profile')
         .send({ phone: '0898765432' });
 
       expect(response.statusCode).toBe(200);

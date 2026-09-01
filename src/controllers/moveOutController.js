@@ -182,6 +182,19 @@ class MoveOutController {
           }
         });
 
+        // 4. ปลดผูกบัญชี LINE ของผู้เช่าที่ย้ายออก ป้องกันไม่ให้ยังเข้าใช้งาน LIFF Portal ได้ต่อหลังย้ายออกไปแล้ว
+        await tx.tenant.update({
+          where: { id: lease.tenantId },
+          data: {
+            lineUserId: null,
+            lineDisplayName: null,
+            linePictureUrl: null,
+            lineStatusMessage: null,
+            inviteCode: null,
+            inviteExpiresAt: null
+          }
+        });
+
         return [lease, record, room];
       });
 

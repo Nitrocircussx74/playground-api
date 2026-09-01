@@ -16,6 +16,9 @@ const { notFoundHandler, errorHandler } = require('./middlewares/errorMiddleware
 
 const app = express();
 
+// Enable trust proxy for Cloudflare Tunnel & reverse proxies to correctly detect HTTPS / Client IP
+app.set('trust proxy', 1);
+
 if (config.nodeEnv !== 'test') {
   app.use(morgan('dev'));
 }
@@ -28,12 +31,22 @@ app.use(
   })
 );
 
-// 1. Completely Unrestricted CORS for Development & Cloudflare Tunnels / LINE LIFF (Must be first!)
+// 1. CORS: Production ต้องระบุ Whitelist Origin ชัดเจนใน ALLOWED_ORIGINS (เช่น Frontend Domain จริง + https://liff.line.me)
+// ส่วน Dev/Test ยัง Reflect ทุก Origin ได้ตามเดิม เพื่อรองรับ Cloudflare Tunnel ที่ Subdomain เปลี่ยนทุกครั้งตอนทดสอบ LIFF จริง
 const corsOptions = {
-  origin: true, // Automatically reflects request origin to allow any domain (trycloudflare.com, liff.line.me, localhost, etc.)
+  origin:
+    config.nodeEnv === 'production'
+      ? (origin, callback) => {
+          // อนุญาต request ที่ไม่มี Origin (เช่น server-to-server, curl, mobile app) และ Origin ที่อยู่ใน Whitelist เท่านั้น
+          if (!origin || config.allowedOrigins.includes(origin)) {
+            return callback(null, true);
+          }
+          return callback(new Error(`CORS: Origin '${origin}' ไม่ได้รับอนุญาต`));
+        }
+      : true,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'x-csrf-token', 'Origin']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'x-csrf-token', 'Origin', 'X-Line-Id-Token']
 };
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));

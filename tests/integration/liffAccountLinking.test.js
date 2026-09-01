@@ -41,9 +41,22 @@ describe('Account Linking & Onboarding Integration Tests', () => {
   });
 
   describe('POST /api/v1/liff/auth/link-account', () => {
+    test('กรณีไม่แนบ LINE ID Token ต้องปฏิเสธ 401 Unauthorized (ป้องกันการปลอมแปลง lineUserId)', async () => {
+      const response = await request(app)
+        .post('/api/v1/liff/auth/link-account')
+        .send({
+          inviteCode: 'ANYCODE',
+          phoneLast4: '1234'
+        });
+
+      expect(response.statusCode).toBe(401);
+      expect(response.body.success).toBe(false);
+    });
+
     test('กรณีใส่รหัสเชิญผิด ต้องปฏิเสธ 400 Bad Request', async () => {
       const response = await request(app)
         .post('/api/v1/liff/auth/link-account')
+        .set('X-Line-Id-Token', 'U_test_wrong_invite')
         .send({
           inviteCode: 'WRONG99',
           phoneLast4: '1234'
@@ -59,6 +72,7 @@ describe('Account Linking & Onboarding Integration Tests', () => {
 
       const response = await request(app)
         .post('/api/v1/liff/auth/link-account')
+        .set('X-Line-Id-Token', 'U_test_wrong_phone')
         .send({
           inviteCode: generatedInviteCode,
           phoneLast4: '0000'
@@ -77,10 +91,10 @@ describe('Account Linking & Onboarding Integration Tests', () => {
 
       const response = await request(app)
         .post('/api/v1/liff/auth/link-account')
+        .set('X-Line-Id-Token', testLineUserId)
         .send({
           inviteCode: generatedInviteCode,
-          phoneLast4,
-          lineUserId: testLineUserId
+          phoneLast4
         });
 
       expect(response.statusCode).toBe(200);
@@ -107,10 +121,10 @@ describe('Account Linking & Onboarding Integration Tests', () => {
 
       const response = await request(app)
         .post('/api/v1/liff/auth/link-account')
+        .set('X-Line-Id-Token', testLineUserId)
         .send({
           inviteCode: newInvite,
           phoneLast4,
-          lineUserId: testLineUserId,
           lineDisplayName: 'Somchai LINE Display Name',
           linePictureUrl: 'https://profile.line-scdn.net/sample_avatar.jpg',
           lineStatusMessage: 'Hello LINE'
@@ -131,8 +145,8 @@ describe('Account Linking & Onboarding Integration Tests', () => {
 
       const response = await request(app)
         .patch('/api/v1/liff/auth/sync-profile')
+        .set('X-Line-Id-Token', tenantWithLine.lineUserId)
         .send({
-          lineUserId: tenantWithLine.lineUserId,
           lineDisplayName: 'Updated LINE Display Name',
           linePictureUrl: 'https://profile.line-scdn.net/updated_avatar.jpg'
         });

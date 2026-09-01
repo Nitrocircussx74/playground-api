@@ -225,6 +225,12 @@ model Tenant {
   /// วันเวลาที่รหัสเชิญจะหมดอายุ
   inviteExpiresAt DateTime? @map("invite_expires_at")
 
+  /// บันทึกภายในสำหรับแอดมิน (Internal Notes)
+  internalNotes String? @map("internal_notes") @db.Text
+
+  /// สถานะ Blacklist (true = ติด Blacklist, false = ปกติ)
+  isBlacklisted Boolean @default(false) @map("is_blacklisted")
+
   /// วันเวลาที่สร้างเรคคอร์ด
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -323,6 +329,9 @@ model Invoice {
   /// สลิปโอนเงิน (URL/Path)
   slipUrl String? @map("slip_url")
 
+  /// SHA-256 Checksum ของไฟล์สลิปที่แนบมา ใช้ตรวจจับการนำสลิปเดิมมาใช้ซ้ำข้ามบิล (Replay Protection)
+  slipHash String? @map("slip_hash")
+
   /// วันครบกำหนดชำระเงิน
   dueDate DateTime @map("due_date")
 
@@ -341,6 +350,7 @@ model Invoice {
   /// วันเวลาที่อัปเดตเรคคอร์ดล่าสุด
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  @@index([slipHash])
   @@map("invoices")
 }
 

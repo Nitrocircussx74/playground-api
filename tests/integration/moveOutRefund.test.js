@@ -22,7 +22,9 @@ describe('Move-out & Deposit Refund System Integration Tests', () => {
       data: {
         firstName: 'ผู้เช่า',
         lastName: 'ย้ายออกคืนมัดจำ',
-        phone: '0899988776'
+        phone: '0899988776',
+        lineUserId: 'U_test_moveout_unlink',
+        lineDisplayName: 'ผู้เช่าย้ายออก LINE'
       }
     });
 
@@ -134,6 +136,15 @@ describe('Move-out & Deposit Refund System Integration Tests', () => {
       expect(response.body.data.moveOutRecord.finalWaterMeter).toBe(160);
       expect(response.body.data.moveOutRecord.finalElectricMeter).toBe(1250);
       expect(Number(response.body.data.moveOutRecord.depositAmount)).toBe(6000);
+    });
+
+    test('ควรปลดผูกบัญชี LINE ของผู้เช่าที่ย้ายออก (lineUserId ต้องถูกล้างเป็น null)', async () => {
+      const recheckedTenant = await billingService.prisma.tenant.findUnique({
+        where: { id: testTenant.id }
+      });
+
+      expect(recheckedTenant.lineUserId).toBeNull();
+      expect(recheckedTenant.lineDisplayName).toBeNull();
     });
   });
 });

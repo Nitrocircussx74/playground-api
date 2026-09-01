@@ -45,26 +45,23 @@ class MaintenanceController {
    */
   async getMaintenanceRequestsForLiff(req, res, next) {
     try {
-      const { lineUserId, roomId } = req.query;
+      // ห้ามรับ roomId จาก Client ตรง ๆ (IDOR) ต้อง derive จาก req.lineUserId ที่ verify แล้วเท่านั้น
+      const lineUserId = req.lineUserId;
 
-      let tenantRoomId = roomId;
-      let tenantRecord = null;
-
-      if (lineUserId) {
-        tenantRecord = await billingService.prisma.tenant.findUnique({
-          where: { lineUserId },
-          include: { rooms: true }
-        });
-        if (!tenantRoomId && tenantRecord?.rooms?.length > 0) {
-          tenantRoomId = tenantRecord.rooms[0].id;
-        }
-      }
+      const tenantRecord = await billingService.prisma.tenant.findUnique({
+        where: { lineUserId },
+        include: { rooms: true }
+      });
+      const tenantRoomId = tenantRecord?.rooms?.length > 0 ? tenantRecord.rooms[0].id : null;
 
       const where = {};
       if (tenantRoomId) {
         where.roomId = tenantRoomId;
       } else if (tenantRecord?.id) {
         where.tenantId = tenantRecord.id;
+      } else {
+        // ไม่พบผู้เช่าที่ผูกกับ lineUserId นี้เลย -> ไม่ส่งข้อมูลของใครทั้งสิ้น
+        return res.status(200).json({ success: true, data: [] });
       }
 
       const requests = await billingService.prisma.maintenanceRequest.findMany({

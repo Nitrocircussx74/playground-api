@@ -2,13 +2,26 @@ const authService = require('../services/authService');
 const userService = require('../services/userService');
 const config = require('../config/env');
 
-const setRefreshTokenCookie = (res, refreshToken) => {
-  res.cookie('refreshToken', refreshToken, {
+const getCookieOptions = (req) => {
+  const isHttps =
+    config.nodeEnv === 'production' ||
+    Boolean(
+      req &&
+      (req.secure ||
+        req.headers['x-forwarded-proto'] === 'https' ||
+        req.headers['x-forwarded-ssl'] === 'on')
+    );
+
+  return {
     httpOnly: true, // ป้องกัน XSS (Client อ่านค่าไม่ได้)
-    secure: config.nodeEnv === 'production', // บังคับใช้ HTTPS ในโหมด Production
-    sameSite: config.nodeEnv === 'production' ? 'strict' : 'lax', // ป้องกัน CSRF Attacks
+    secure: isHttps, // ต้องเป็น true เสมอเมื่อใช้ HTTPS / Cloudflare Tunnel
+    sameSite: isHttps ? 'none' : 'lax', // 'none' รองรับ Cross-Origin Cloudflare Tunnels และ LIFF
     maxAge: 7 * 24 * 60 * 60 * 1000 // 7 วัน
-  });
+  };
+};
+
+const setRefreshTokenCookie = (res, refreshToken, req) => {
+  res.cookie('refreshToken', refreshToken, getCookieOptions(req));
 };
 
 class AuthController {
@@ -23,7 +36,7 @@ class AuthController {
       const refreshToken = authService.generateRefreshToken(user);
 
       await authService.saveRefreshToken(user.id, refreshToken);
-      setRefreshTokenCookie(res, refreshToken);
+      setRefreshTokenCookie(res, refreshToken, req);
 
       return res.status(200).json({
         success: true,
@@ -45,7 +58,7 @@ class AuthController {
       const refreshToken = authService.generateRefreshToken(user);
 
       await authService.saveRefreshToken(user.id, refreshToken);
-      setRefreshTokenCookie(res, refreshToken);
+      setRefreshTokenCookie(res, refreshToken, req);
 
       return res.status(200).json({
         success: true,
@@ -66,7 +79,7 @@ class AuthController {
       }
 
       const result = await authService.rotateRefreshToken(refreshToken);
-      setRefreshTokenCookie(res, result.refreshToken);
+      setRefreshTokenCookie(res, result.refreshToken, req);
 
       return res.status(200).json({
         success: true,
@@ -74,7 +87,9 @@ class AuthController {
         accessToken: result.accessToken
       });
     } catch (error) {
-      res.clearCookie('refreshToken');
+      const cookieOpts = getCookieOptions(req);
+      delete cookieOpts.maxAge;
+      res.clearCookie('refreshToken', cookieOpts);
       return res.status(401).json({ success: false, message: error.message || 'Refresh Token ไม่ถูกต้องหรือหมดอายุ' });
     }
   }
@@ -86,11 +101,9 @@ class AuthController {
         await authService.revokeRefreshToken(refreshToken);
       }
 
-      res.clearCookie('refreshToken', {
-        httpOnly: true,
-        secure: config.nodeEnv === 'production',
-        sameSite: config.nodeEnv === 'production' ? 'strict' : 'lax'
-      });
+      const cookieOpts = getCookieOptions(req);
+      delete cookieOpts.maxAge;
+      res.clearCookie('refreshToken', cookieOpts);
 
       return res.status(200).json({
         success: true,

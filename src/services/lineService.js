@@ -1,16 +1,44 @@
+const dotenv = require('dotenv');
+dotenv.config();
+
 const line = require('@line/bot-sdk');
 const generatePayload = require('promptpay-qr');
 const QRCode = require('qrcode');
+const config = require('../config/env');
 
-const channelAccessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN || 'mock_token';
-const client = new line.messagingApi.MessagingApiClient({ channelAccessToken });
+function getChannelAccessToken() {
+  return process.env.LINE_CHANNEL_ACCESS_TOKEN || config.line?.channelAccessToken || 'mock_token';
+}
+
+function getClient() {
+  const token = getChannelAccessToken();
+  return new line.messagingApi.MessagingApiClient({ channelAccessToken: token });
+}
+
+const client = getClient();
+
+/**
+ * ดึงค่า LIFF ID สำหรับสร้างลิงก์ในข้อความ Flex Message
+ * ตอน Production ถ้าลืมตั้งค่า LINE_LIFF_ID จะ log error ดัง ๆ แทนที่จะเงียบแล้วส่งลิงก์ปลอมไปหาผู้ใช้จริง
+ */
+function getLiffId() {
+  const liffId = process.env.LINE_LIFF_ID || config.line?.liffId;
+
+  if (liffId) return liffId;
+
+  if (process.env.NODE_ENV === 'production') {
+    console.error('❌ ไม่ได้ตั้งค่า LINE_LIFF_ID ใน Environment Variable! ข้อความที่ส่งไปจะมีลิงก์ที่ใช้งานไม่ได้จริง');
+  }
+
+  return '2011289517-SB8YziXL';
+}
 
 class LineService {
   /**
    * สร้าง LINE Flex Message สรุปบิลค่าเช่าหอพัก
    */
   createInvoiceFlexMessage(invoice) {
-    const liffId = process.env.LINE_LIFF_ID || '2000000000-mockliffid';
+    const liffId = getLiffId();
     const payUrl = `https://liff.line.me/${liffId}/pay/${invoice.id}`;
     const dueDateStr = new Date(invoice.dueDate).toLocaleDateString('th-TH');
 
@@ -168,7 +196,7 @@ class LineService {
    * สร้าง Flex Message แจ้งอัปเดตสถานะรายการแจ้งซ่อม
    */
   createMaintenanceFlexMessage(request) {
-    const liffId = process.env.LINE_LIFF_ID || '2000000000-mockliffid';
+    const liffId = getLiffId();
     const trackingUrl = `https://liff.line.me/${liffId}/maintenance`;
 
     const statusTextMap = {
@@ -313,7 +341,7 @@ class LineService {
    * สร้าง Flex Message สำหรับเตือนทวงหนี้แบบสุภาพ
    */
   createDebtReminderFlexMessage(invoice) {
-    const liffId = process.env.LINE_LIFF_ID || '2000000000-mockliffid';
+    const liffId = getLiffId();
     const payUrl = `https://liff.line.me/${liffId}/pay/${invoice.id}`;
     const dueDateStr = new Date(invoice.dueDate).toLocaleDateString('th-TH');
 
@@ -438,7 +466,7 @@ class LineService {
    * สร้าง Flex Message สวยงามสำหรับการประกาศข่าวสาร
    */
   createAnnouncementFlexMessage(announcement) {
-    const liffId = process.env.LINE_LIFF_ID || '2000000000-mockliffid';
+    const liffId = getLiffId();
     const announcementsUrl = `https://liff.line.me/${liffId}/announcements`;
     const createdDateStr = new Date(announcement.createdAt || Date.now()).toLocaleDateString('th-TH');
 
@@ -633,7 +661,7 @@ class LineService {
     }
 
     try {
-      const liffId = process.env.LINE_LIFF_ID || '2000000000-mockliffid';
+      const liffId = getLiffId();
       const parcelLiffUrl = `https://liff.line.me/${liffId}/parcels`;
       const receivedDateStr = new Date(parcel.receivedAt || Date.now()).toLocaleString('th-TH');
 
@@ -777,6 +805,28 @@ class LineService {
     } catch (error) {
       console.warn(`⚠️ ไม่สามารถส่ง LINE Welcome Notification ได้: ${error.message}`);
       return false;
+    }
+  }
+
+  /**
+   * ดึงข้อมูลโปรไฟล์ผู้ใช้จริงจาก LINE Messaging API
+   * @param {string} lineUserId 
+   * @returns {Promise<{ displayName: string, pictureUrl: string, statusMessage: string } | null>}
+   */
+  async getUserProfile(lineUserId) {
+    if (!lineUserId || process.env.NODE_ENV === 'test' || process.env.LINE_AUTH_MOCK_MODE === 'true') {
+      return null;
+    }
+    try {
+      const profile = await client.getProfile(lineUserId);
+      return {
+        displayName: profile.displayName || null,
+        pictureUrl: profile.pictureUrl || null,
+        statusMessage: profile.statusMessage || null
+      };
+    } catch (error) {
+      console.warn(`⚠️ ไม่สามารถดึง Profile จาก LINE Messaging API ได้ (${lineUserId}): ${error.message}`);
+      return null;
     }
   }
 }
