@@ -463,7 +463,16 @@ class LiffController {
 
       const invoice = await billingService.prisma.invoice.findUnique({
         where: { id },
-        include: { room: true, tenant: true }
+        include: {
+          room: {
+            include: {
+              building: {
+                include: { setting: true }
+              }
+            }
+          },
+          tenant: true
+        }
       });
 
       if (!invoice) {
@@ -477,7 +486,8 @@ class LiffController {
         });
       }
 
-      const qrData = await lineService.generatePromptPayQr(invoice.grandTotal);
+      const buildingPromptPay = invoice.room?.building?.setting?.promptpayNum || null;
+      const qrData = await lineService.generatePromptPayQr(invoice.grandTotal, buildingPromptPay);
 
       return res.status(200).json({
         success: true,

@@ -12,7 +12,10 @@ const maintenanceController = require('../controllers/maintenanceController');
 const invoiceController = require('../controllers/invoiceController');
 const parcelController = require('../controllers/parcelController');
 
-// ทุก Route ในไฟล์นี้ต้องมี LINE ID Token ที่ตรวจสอบผ่านแล้วเสมอ (req.lineUserId)
+// Public Invite Code Verification (อนุญาตให้ตรวจสอบความถูกต้องของรหัสเชิญได้ทั้งในและนอก LINE App)
+router.get('/invites/verify/:code', (req, res, next) => liffController.verifyInviteCode(req, res, next));
+
+// ทุก Route ถัดจากนี้ต้องมี LINE ID Token ที่ตรวจสอบผ่านแล้วเสมอ (req.lineUserId)
 router.use(liffAuthMiddleware);
 
 // จำกัดจำนวนครั้งการลองผูกบัญชี เพื่อป้องกัน Brute Force เดา phoneLast4 (10,000 ค่า) เมื่อรู้ inviteCode แล้ว
@@ -44,7 +47,6 @@ router.get('/invoices/:id', (req, res, next) => liffController.getInvoiceForLiff
 router.post('/invoices/:id/slip', upload.single('file'), verifyImageMagicBytes, (req, res, next) => liffController.uploadSlipFromLiff(req, res, next));
 
 // LIFF Tenant Registration & Account Linking
-router.get('/invites/verify/:code', (req, res, next) => liffController.verifyInviteCode(req, res, next));
 router.post('/register/invite', validate(registerInviteSchema), (req, res, next) => liffController.registerTenantWithInvite(req, res, next));
 router.post('/auth/link-account', linkAccountLimiter, validate(linkAccountSchema), (req, res, next) => liffController.linkTenantAccount(req, res, next));
 router.patch('/auth/sync-profile', (req, res, next) => liffController.syncLineProfile(req, res, next));

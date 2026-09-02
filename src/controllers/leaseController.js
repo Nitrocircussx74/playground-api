@@ -191,7 +191,7 @@ class LeaseController {
         billingService.prisma.room.update({
           where: { id: existingLease.roomId },
           data: {
-            status: 'vacant',
+            status: 'available',
             tenantId: null
           }
         })

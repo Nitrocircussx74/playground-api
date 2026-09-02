@@ -636,8 +636,8 @@ class LineService {
   /**
    * สร้าง PromptPay Payload และ Data URL สำหรับ QR Code
    */
-  async generatePromptPayQr(amount) {
-    const targetPromptPay = process.env.PROMPTPAY_NUMBER || '0812345678';
+  async generatePromptPayQr(amount, targetPromptPayNumber = null) {
+    const targetPromptPay = targetPromptPayNumber || process.env.PROMPTPAY_NUMBER || '0812345678';
     const numAmount = Number(amount) || 0;
 
     const payload = generatePayload(targetPromptPay, { amount: numAmount });

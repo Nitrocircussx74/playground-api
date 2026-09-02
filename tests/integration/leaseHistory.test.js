@@ -31,7 +31,7 @@ describe('Contract-Based Tenancy & Lease History Integration Tests', () => {
         roomNumber: 'LEASE_707',
         floor: 7,
         price: 5200,
-        status: 'vacant',
+        status: 'available',
         buildingId: testBuilding.id
       }
     });
@@ -117,9 +117,9 @@ describe('Contract-Based Tenancy & Lease History Integration Tests', () => {
       expect(response.body.data.status).toBe('ENDED');
       expect(response.body.data.moveOutReason).toBe('สิ้นสุดสัญญาตามกำหนด');
 
-      // Verify room status reset to vacant
+      // Verify room status reset to available
       const updatedRoom = await billingService.prisma.room.findUnique({ where: { id: testRoom.id } });
-      expect(updatedRoom.status).toBe('vacant');
+      expect(updatedRoom.status).toBe('available');
       expect(updatedRoom.tenantId).toBeNull();
     });
   });

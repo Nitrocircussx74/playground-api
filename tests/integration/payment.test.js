@@ -78,6 +78,53 @@ describe('PromptPay Payment & Slip Upload Integration Tests', () => {
       expect(response.body.data.qrData.qrDataUrl).toContain('data:image/png;base64');
     });
 
+    test('GET /api/v1/liff/invoices/:id - ใช้เบอร์พร้อมเพย์จาก BuildingSetting ประจำตึกถ้ามี', async () => {
+      const customBuilding = await billingService.prisma.building.create({
+        data: {
+          name: 'ตึกพร้อมเพย์เฉพาะ',
+          setting: {
+            create: { promptpayNum: '0899998877' }
+          }
+        }
+      });
+      const roomWithBuilding = await billingService.prisma.room.create({
+        data: {
+          roomNumber: 'PP_CUSTOM_101',
+          floor: 1,
+          price: 3000,
+          status: 'occupied',
+          buildingId: customBuilding.id,
+          tenantId: testTenant.id
+        }
+      });
+      const invWithBuilding = await billingService.prisma.invoice.create({
+        data: {
+          invoiceNumber: `INV-PP-${Date.now()}`,
+          roomId: roomWithBuilding.id,
+          tenantId: testTenant.id,
+          billingCycle: '08-2026',
+          roomPrice: 3000,
+          waterTotal: 0,
+          electricTotal: 0,
+          grandTotal: 3000,
+          status: 'pending',
+          dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+        }
+      });
+
+      const response = await request(app)
+        .get(`/api/v1/liff/invoices/${invWithBuilding.id}`)
+        .set('X-Line-Id-Token', testLineUserId);
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.data.qrData.promptpayNumber).toBe('0899998877');
+
+      await billingService.prisma.invoice.delete({ where: { id: invWithBuilding.id } });
+      await billingService.prisma.room.delete({ where: { id: roomWithBuilding.id } });
+      await billingService.prisma.buildingSetting.deleteMany({ where: { buildingId: customBuilding.id } });
+      await billingService.prisma.building.delete({ where: { id: customBuilding.id } });
+    });
+
     test('GET /api/v1/liff/invoices/:id - ใช้ LINE ID Token ของคนอื่นที่ไม่ใช่เจ้าของบิล -> ต้องปฏิเสธ 403 (ป้องกัน IDOR)', async () => {
       const response = await request(app)
         .get(`/api/v1/liff/invoices/${testInvoice.id}`)
