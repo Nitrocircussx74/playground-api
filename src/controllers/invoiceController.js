@@ -281,7 +281,10 @@ class InvoiceController {
       const { id } = req.params;
       const { status } = req.body;
 
-      const invoice = await billingService.prisma.invoice.findUnique({ where: { id } });
+      const invoice = await billingService.prisma.invoice.findUnique({
+        where: { id },
+        include: { room: true, tenant: true }
+      });
       if (!invoice) {
         return res.status(404).json({ success: false, message: 'Invoice not found' });
       }
@@ -291,8 +294,16 @@ class InvoiceController {
         data: {
           status,
           paidAt: status === 'paid' ? new Date() : null
-        }
+        },
+        include: { room: true, tenant: true }
       });
+
+      // ส่ง LINE Push Notification แจ้งเตือนลูกบ้านเมื่อบิลเปลี่ยนเป็นชำระแล้ว (paid)
+      if (status === 'paid' && invoice.status !== 'paid' && updatedInvoice.tenant?.lineUserId) {
+        lineService.sendPaymentSuccessNotification(updatedInvoice).catch((err) => {
+          console.warn('⚠️ ไม่สามารถส่ง LINE Payment Success Push Message ได้:', err.message);
+        });
+      }
 
       return res.status(200).json({
         success: true,
@@ -647,6 +658,13 @@ class InvoiceController {
           paymentNote: updatedInvoice.paymentNote
         }
       });
+
+      // ส่ง LINE Push Notification แจ้งเตือนลูกบ้านเมื่อแอดมินบันทึกรับชำระเงินสำเร็จ
+      if (updatedInvoice.tenant?.lineUserId) {
+        lineService.sendPaymentSuccessNotification(updatedInvoice).catch((err) => {
+          console.warn('⚠️ ไม่สามารถส่ง LINE Payment Success Push Message ได้:', err.message);
+        });
+      }
 
       return res.status(200).json({
         success: true,

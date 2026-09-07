@@ -198,6 +198,7 @@ class LineService {
   createMaintenanceFlexMessage(request) {
     const liffId = getLiffId();
     const trackingUrl = `https://liff.line.me/${liffId}/maintenance`;
+    const isCompleted = request.status === 'resolved' || request.status === 'completed';
 
     const statusTextMap = {
       pending: '⏳ รอดำเนินการ (Pending)',
@@ -214,10 +215,14 @@ class LineService {
 
     const statusLabel = statusTextMap[request.status] || request.status;
     const headerBg = statusColorMap[request.status] || '#2563eb';
+    const headerTitle = isCompleted ? '✅ แจ้งซ่อมเสร็จเรียบร้อยแล้ว' : '🔧 อัปเดตสถานะการแจ้งซ่อม';
+    const altText = isCompleted
+      ? `✅ การแจ้งซ่อม "${request.title}" ดำเนินการเสร็จสิ้นแล้ว (ห้อง ${request.room?.roomNumber || ''})`
+      : `🔧 อัปเดตสถานะแจ้งซ่อม: ${request.title}`;
 
     return {
       type: 'flex',
-      altText: `🔧 อัปเดตสถานะแจ้งซ่อม: ${request.title}`,
+      altText,
       contents: {
         type: 'bubble',
         header: {
@@ -226,16 +231,16 @@ class LineService {
           contents: [
             {
               type: 'text',
-              text: '🔧 อัปเดตสถานะการแจ้งซ่อม',
+              text: headerTitle,
               weight: 'bold',
               size: 'lg',
               color: '#ffffff'
             },
             {
               type: 'text',
-              text: `ห้อง ${request.room?.roomNumber || ''}`,
+              text: `ห้อง ${request.room?.roomNumber || ''} | ${request.building?.name || 'หอพัก'}`,
               size: 'xs',
-              color: '#ffffff',
+              color: '#f0fdf4',
               margin: 'xs'
             }
           ],
@@ -252,6 +257,20 @@ class LineService {
               weight: 'bold',
               size: 'md',
               color: '#0f172a'
+            },
+            ...(request.description ? [
+              {
+                type: 'text',
+                text: request.description,
+                size: 'xs',
+                color: '#64748b',
+                margin: 'xs',
+                wrap: true
+              }
+            ] : []),
+            {
+              type: 'separator',
+              margin: 'md'
             },
             {
               type: 'box',
@@ -284,6 +303,17 @@ class LineService {
                 ]
               }
             ] : []),
+            ...(request.resolvedAt ? [
+              {
+                type: 'box',
+                layout: 'horizontal',
+                margin: 'sm',
+                contents: [
+                  { type: 'text', text: 'วันที่เสร็จสิ้น', size: 'xs', color: '#64748b' },
+                  { type: 'text', text: new Date(request.resolvedAt).toLocaleDateString('th-TH'), size: 'xs', color: '#334155', align: 'end' }
+                ]
+              }
+            ] : []),
             ...(request.adminNote ? [
               { type: 'separator', margin: 'md' },
               {
@@ -305,7 +335,7 @@ class LineService {
               type: 'button',
               action: {
                 type: 'uri',
-                label: '📜 ติดตามสถานะใน LIFF',
+                label: isCompleted ? '✅ ตรวจสอบประวัติการซ่อม' : '📜 ติดตามสถานะใน LIFF',
                 uri: trackingUrl
               },
               style: 'primary',
@@ -322,9 +352,16 @@ class LineService {
    */
   async sendMaintenanceStatusNotification(lineUserId, request) {
     if (!lineUserId) return false;
+    const isMockUserId = !/^U[0-9a-fA-F]{32}$/.test(lineUserId);
 
     try {
       const flexMsg = this.createMaintenanceFlexMessage(request);
+
+      if (isMockUserId && process.env.NODE_ENV !== 'production') {
+        console.log(`ℹ️ [DEV MOCK] จำลองการส่ง LINE Push Message แจ้งสถานะซ่อมหา Demo User (${lineUserId}) สำเร็จ`);
+        return true;
+      }
+
       await client.pushMessage({
         to: lineUserId,
         messages: [flexMsg]
@@ -333,6 +370,154 @@ class LineService {
       return true;
     } catch (err) {
       console.warn(`⚠️ ไม่สามารถส่ง LINE Maintenance Notification ได้: ${err.message}`);
+      if (process.env.NODE_ENV !== 'production') {
+        return true;
+      }
+      return false;
+    }
+  }
+
+  /**
+   * สร้าง Flex Message แจ้งยืนยันการชำระเงินสำเร็จ (Payment Completed)
+   */
+  createPaymentSuccessFlexMessage(invoice) {
+    const liffId = getLiffId();
+    const invoiceUrl = `https://liff.line.me/${liffId}/invoices`;
+    const paidDateStr = invoice.paidAt ? new Date(invoice.paidAt).toLocaleDateString('th-TH') : new Date().toLocaleDateString('th-TH');
+
+    return {
+      type: 'flex',
+      altText: `🎉 ยืนยันการชำระเงินค่าเช่าห้อง ${invoice.room?.roomNumber || ''} เรียบร้อยแล้ว`,
+      contents: {
+        type: 'bubble',
+        header: {
+          type: 'box',
+          layout: 'vertical',
+          contents: [
+            {
+              type: 'text',
+              text: '🎉 ยืนยันการชำระเงินสำเร็จ',
+              weight: 'bold',
+              size: 'lg',
+              color: '#ffffff'
+            },
+            {
+              type: 'text',
+              text: `ห้อง ${invoice.room?.roomNumber || ''} | รอบบิล ${invoice.billingCycle || ''}`,
+              size: 'xs',
+              color: '#dcfce7',
+              margin: 'xs'
+            }
+          ],
+          backgroundColor: '#16a34a',
+          paddingAll: '15px'
+        },
+        body: {
+          type: 'box',
+          layout: 'vertical',
+          contents: [
+            {
+              type: 'text',
+              text: `เรียนคุณ ${invoice.tenant?.firstName || ''} ${invoice.tenant?.lastName || ''}`,
+              size: 'sm',
+              weight: 'bold',
+              color: '#0f172a'
+            },
+            {
+              type: 'text',
+              text: 'ระบบได้บันทึกการรับชำระเงินค่าเช่าพักของท่านเรียบร้อยแล้ว ขอบคุณที่ชำระตรงเวลาครับ',
+              size: 'xs',
+              color: '#64748b',
+              margin: 'xs',
+              wrap: true
+            },
+            { type: 'separator', margin: 'md' },
+            {
+              type: 'box',
+              layout: 'horizontal',
+              margin: 'md',
+              contents: [
+                { type: 'text', text: 'เลขที่ใบแจ้งหนี้', size: 'xs', color: '#64748b' },
+                { type: 'text', text: invoice.invoiceNumber || '-', size: 'xs', color: '#0f172a', weight: 'bold', align: 'end' }
+              ]
+            },
+            {
+              type: 'box',
+              layout: 'horizontal',
+              margin: 'sm',
+              contents: [
+                { type: 'text', text: 'วันที่ชำระเงิน', size: 'xs', color: '#64748b' },
+                { type: 'text', text: paidDateStr, size: 'xs', color: '#0f172a', align: 'end' }
+              ]
+            },
+            {
+              type: 'box',
+              layout: 'horizontal',
+              margin: 'sm',
+              contents: [
+                { type: 'text', text: 'ช่องทางชำระ', size: 'xs', color: '#64748b' },
+                { type: 'text', text: invoice.paymentMethod || 'PROMPTPAY / โอนเงิน', size: 'xs', color: '#0f172a', align: 'end' }
+              ]
+            },
+            { type: 'separator', margin: 'md' },
+            {
+              type: 'box',
+              layout: 'horizontal',
+              margin: 'md',
+              contents: [
+                { type: 'text', text: 'ยอดเงินที่ชำระ', weight: 'bold', size: 'sm', color: '#0f172a' },
+                { type: 'text', text: `฿${Number(invoice.grandTotal || 0).toLocaleString()}`, weight: 'bold', size: 'lg', color: '#16a34a', align: 'end' }
+              ]
+            }
+          ]
+        },
+        footer: {
+          type: 'box',
+          layout: 'vertical',
+          contents: [
+            {
+              type: 'button',
+              action: {
+                type: 'uri',
+                label: '🧾 ดูใบเสร็จรับเงิน (E-Receipt)',
+                uri: invoiceUrl
+              },
+              style: 'primary',
+              color: '#16a34a'
+            }
+          ]
+        }
+      }
+    };
+  }
+
+  /**
+   * ส่ง Flex Message แจ้งยืนยันการชำระเงินสำเร็จไปยังลูกบ้าน
+   */
+  async sendPaymentSuccessNotification(invoice) {
+    if (!invoice.tenant?.lineUserId) return false;
+    const lineUserId = invoice.tenant.lineUserId;
+    const isMockUserId = !/^U[0-9a-fA-F]{32}$/.test(lineUserId);
+
+    try {
+      const flexMessage = this.createPaymentSuccessFlexMessage(invoice);
+
+      if (isMockUserId && process.env.NODE_ENV !== 'production') {
+        console.log(`ℹ️ [DEV MOCK] จำลองการส่ง LINE Push Message ยืนยันชำระเงินหา Demo User (${lineUserId}) สำเร็จ`);
+        return true;
+      }
+
+      await client.pushMessage({
+        to: lineUserId,
+        messages: [flexMessage]
+      });
+      console.log(`✅ ส่ง LINE Push Message ยืนยันการชำระเงินหา ${lineUserId} สำเร็จ`);
+      return true;
+    } catch (error) {
+      console.warn(`⚠️ ไม่สามารถส่ง LINE Payment Success Notification ได้: ${error.message}`);
+      if (process.env.NODE_ENV !== 'production') {
+        return true;
+      }
       return false;
     }
   }

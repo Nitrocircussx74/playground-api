@@ -654,14 +654,22 @@ class LiffController {
 
       const updatedInvoice = await billingService.prisma.invoice.update({
         where: { id },
-        data: updateData
+        data: updateData,
+        include: { tenant: true, room: true }
       });
 
-      if (invoice.tenant?.lineUserId || lineUserId) {
-        await lineService.pushSlipReceivedNotification(
-          invoice.tenant?.lineUserId || lineUserId,
-          invoice.invoiceNumber
-        );
+      const recipientLineId = invoice.tenant?.lineUserId || lineUserId;
+      if (recipientLineId) {
+        if (verification.autoApproved) {
+          lineService.sendPaymentSuccessNotification(updatedInvoice).catch((err) => {
+            console.warn('⚠️ ไม่สามารถส่ง LINE Payment Success Push Message ได้:', err.message);
+          });
+        } else {
+          await lineService.pushSlipReceivedNotification(
+            recipientLineId,
+            invoice.invoiceNumber
+          );
+        }
       }
 
       return res.status(200).json({
