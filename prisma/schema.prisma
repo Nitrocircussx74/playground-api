@@ -73,6 +73,12 @@ model Building {
   /// ที่อยู่หรือรายละเอียดตึก
   address String?
 
+  /// ธีมสีหลักประจำตึกสำหรับ LIFF App (Hex Color e.g. #3B82F6 หรือ #EF4444)
+  themeColor String @default("#3B82F6") @map("theme_color")
+
+  /// รูปภาพโลโก้ประจำตึก (URL/Path)
+  logoUrl String? @map("logo_url")
+
   /// วันเวลาที่สร้างเรคคอร์ด
   createdAt DateTime @default(now()) @map("created_at")
 

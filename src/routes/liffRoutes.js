@@ -38,6 +38,7 @@ router.get('/check-status', (req, res, next) => liffController.checkTenantStatus
 
 // LIFF Tenant Profile & Contact Update
 router.get('/profile', (req, res, next) => liffController.getTenantProfile(req, res, next));
+router.get('/profile/me', (req, res, next) => liffController.getTenantProfile(req, res, next));
 router.put('/profile', (req, res, next) => liffController.updateTenantProfile(req, res, next));
 
 // LIFF Invoices & Payment

@@ -43,10 +43,29 @@ async function verifyLineIdToken(idToken) {
  * แนบ req.lineUserId ที่ verify แล้วให้ Controller ใช้แทนค่าที่ Client ส่งมาเอง
  */
 const liffAuthMiddleware = async (req, res, next) => {
-  try {
-    const idToken = req.headers['x-line-id-token'];
+  const idToken = req.headers['x-line-id-token'];
 
+  try {
     if (!idToken) {
+      // ในโหมด Development หรือ Mock Mode อนุญาตให้ใช้ x-line-user-id / query lineUserId หรือ dev fallback
+      // เพื่อให้สามารถเปิดทดสอบ UI ใน Standalone Browser หรือ Dev Tunnel ได้โดยไม่ติด 401
+      if (config.nodeEnv === 'development' || config.line.mockMode) {
+        const devLineUserId = req.headers['x-line-user-id'] || req.query?.lineUserId || req.body?.lineUserId;
+        if (devLineUserId) {
+          req.lineUserId = devLineUserId;
+          req.lineUser = {
+            lineUserId: devLineUserId,
+            displayName: req.headers['x-line-display-name'] || 'Dev User'
+          };
+          return next();
+        }
+
+        // กรณีไม่ส่ง lineUserId มาใน dev mode ให้ปล่อยผ่านพร้อม req.lineUserId = null ให้ controller จัดการต่อ
+        req.lineUserId = null;
+        req.lineUser = null;
+        return next();
+      }
+
       return res.status(401).json({
         success: false,
         message: 'กรุณาเข้าสู่ระบบผ่าน LINE ก่อนใช้งาน (ไม่พบ LINE ID Token)'
@@ -64,6 +83,13 @@ const liffAuthMiddleware = async (req, res, next) => {
     next();
   } catch (error) {
     console.warn(`⚠️ LINE ID Token verification failed: ${error.message}`);
+    // ใน dev mode หาก verify กับ LINE ล้มเหลว (เช่น รันออฟไลน์ หรือใช้ mock token) ให้ fallback ได้
+    if (config.nodeEnv === 'development' || config.line.mockMode) {
+      const fallbackUserId = req.headers['x-line-user-id'] || req.query?.lineUserId || idToken || 'dev_line_user';
+      req.lineUserId = fallbackUserId;
+      req.lineUser = { lineUserId: fallbackUserId, displayName: 'Dev LINE User' };
+      return next();
+    }
     return res.status(401).json({
       success: false,
       message: 'กรุณาเข้าสู่ระบบผ่าน LINE ใหม่อีกครั้ง (LINE ID Token ไม่ถูกต้องหรือหมดอายุ)'

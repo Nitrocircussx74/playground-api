@@ -277,7 +277,7 @@ class LiffController {
   }
 
   /**
-   * ดึงข้อมูลโปรไฟล์ผู้เช่าสำหรับ LIFF App
+   * ดึงข้อมูลโปรไฟล์ผู้เช่าสำหรับ LIFF App (รองรับ Multi-Room Tenancy)
    */
   async getTenantProfile(req, res, next) {
     try {
@@ -292,9 +292,12 @@ class LiffController {
         tenant = await billingService.prisma.tenant.findUnique({
           where: { lineUserId },
           include: {
-            rooms: true,
+            rooms: {
+              include: { building: true }
+            },
             leaseContracts: {
-              include: { room: true },
+              where: { status: 'ACTIVE' },
+              include: { room: { include: { building: true } } },
               orderBy: { createdAt: 'desc' }
             }
           }
@@ -306,9 +309,12 @@ class LiffController {
         tenant = await billingService.prisma.tenant.findUnique({
           where: { id: tenantId },
           include: {
-            rooms: true,
+            rooms: {
+              include: { building: true }
+            },
             leaseContracts: {
-              include: { room: true },
+              where: { status: 'ACTIVE' },
+              include: { room: { include: { building: true } } },
               orderBy: { createdAt: 'desc' }
             }
           }
@@ -322,9 +328,12 @@ class LiffController {
           include: {
             tenant: {
               include: {
-                rooms: true,
+                rooms: {
+                  include: { building: true }
+                },
                 leaseContracts: {
-                  include: { room: true },
+                  where: { status: 'ACTIVE' },
+                  include: { room: { include: { building: true } } },
                   orderBy: { createdAt: 'desc' }
                 }
               }
@@ -340,9 +349,12 @@ class LiffController {
       if (!tenant) {
         tenant = await billingService.prisma.tenant.findFirst({
           include: {
-            rooms: true,
+            rooms: {
+              include: { building: true }
+            },
             leaseContracts: {
-              include: { room: true },
+              where: { status: 'ACTIVE' },
+              include: { room: { include: { building: true } } },
               orderBy: { createdAt: 'desc' }
             }
           }
@@ -353,14 +365,56 @@ class LiffController {
         return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลผู้เช่า' });
       }
 
-      // ตรวจสอบหมายเลขห้องจาก rooms หรือ leaseContracts
-      let roomNumber = '-';
+      // รวมรายชื่อห้องพักทั้งหมดที่ผู้เช่าถือครอง (Multi-Room Data)
+      const roomsMap = new Map();
       if (tenant.rooms && tenant.rooms.length > 0) {
-        roomNumber = tenant.rooms[0].roomNumber;
-      } else if (tenant.leaseContracts && tenant.leaseContracts.length > 0) {
-        const activeContract = tenant.leaseContracts.find((c) => c.status === 'ACTIVE') || tenant.leaseContracts[0];
-        roomNumber = activeContract.room?.roomNumber || '-';
+        tenant.rooms.forEach((r) => {
+          roomsMap.set(r.id, {
+            id: r.id,
+            roomNumber: r.roomNumber,
+            floor: r.floor,
+            price: Number(r.price),
+            status: r.status,
+            unitType: r.unitType,
+            buildingId: r.buildingId,
+            buildingName: r.building?.name || 'อาคารหลัก',
+            themeColor: r.building?.themeColor || '#3B82F6',
+            theme_color: r.building?.themeColor || '#3B82F6',
+            logoUrl: r.building?.logoUrl || null,
+            logo_url: r.building?.logoUrl || null
+          });
+        });
       }
+
+      if (tenant.leaseContracts && tenant.leaseContracts.length > 0) {
+        tenant.leaseContracts.forEach((c) => {
+          if (c.room && !roomsMap.has(c.room.id)) {
+            roomsMap.set(c.room.id, {
+              id: c.room.id,
+              roomNumber: c.room.roomNumber,
+              floor: c.room.floor,
+              price: Number(c.room.price),
+              status: c.room.status,
+              unitType: c.room.unitType,
+              buildingId: c.room.buildingId,
+              buildingName: c.room.building?.name || 'อาคารหลัก',
+              themeColor: c.room.building?.themeColor || '#3B82F6',
+              theme_color: c.room.building?.themeColor || '#3B82F6',
+              logoUrl: c.room.building?.logoUrl || null,
+              logo_url: c.room.building?.logoUrl || null
+            });
+          }
+        });
+      }
+
+      const roomsList = Array.from(roomsMap.values());
+      const roomNumbers = roomsList.map((r) => r.roomNumber).join(', ') || '-';
+      const primaryRoomNumber = roomsList.length > 0 ? roomsList[0].roomNumber : '-';
+      const primaryRoom = roomsList.length > 0 ? roomsList[0] : null;
+      const primaryThemeColor = primaryRoom?.themeColor || '#3B82F6';
+      const primaryLogoUrl = primaryRoom?.logoUrl || null;
+      const primaryBuildingName = primaryRoom?.buildingName || 'อาคารหลัก';
+      const primaryBuildingId = primaryRoom?.buildingId || null;
 
       let contractEndDate = '31 ธันวาคม 2026';
       const activeContract = tenant.leaseContracts?.find((c) => c.status === 'ACTIVE');
@@ -384,8 +438,17 @@ class LiffController {
           lineDisplayName: tenant.lineDisplayName,
           linePictureUrl: tenant.linePictureUrl,
           lineStatusMessage: tenant.lineStatusMessage,
-          roomNumber,
-          contractEndDate
+          roomNumber: primaryRoomNumber,
+          roomNumbers,
+          rooms: roomsList,
+          totalRooms: roomsList.length,
+          contractEndDate,
+          buildingId: primaryBuildingId,
+          buildingName: primaryBuildingName,
+          themeColor: primaryThemeColor,
+          theme_color: primaryThemeColor,
+          logoUrl: primaryLogoUrl,
+          logo_url: primaryLogoUrl
         }
       });
     } catch (error) {
@@ -509,11 +572,18 @@ class LiffController {
         buildingSetting = await billingService.prisma.buildingSetting.findFirst();
       }
 
+      const buildingThemeColor = targetRoom?.building?.themeColor || '#3B82F6';
+      const buildingLogoUrl = targetRoom?.building?.logoUrl || null;
+
       return res.status(200).json({
         success: true,
         data: {
           buildingId: targetRoom?.building?.id || null,
           buildingName: targetRoom?.building?.name || 'หอพักหลัก',
+          themeColor: buildingThemeColor,
+          theme_color: buildingThemeColor,
+          logoUrl: buildingLogoUrl,
+          logo_url: buildingLogoUrl,
           promptpayNum: buildingSetting?.promptpayNum || '0812345678',
           paymentQrUrl: buildingSetting?.paymentQrUrl || 'https://images.unsplash.com/photo-1559526324-4b87b5e36e44?auto=format&fit=crop&w=600&q=80'
         }
@@ -739,7 +809,7 @@ class LiffController {
         });
       }
 
-      if (invite.room.status !== 'available') {
+      if (invite.room.status !== 'available' && !invite.room.tenantId) {
         return res.status(400).json({
           success: false,
           message: `ห้อง ${invite.room.roomNumber} ไม่ว่างหรือถูกลงทะเบียนไปแล้ว`
@@ -764,24 +834,66 @@ class LiffController {
         }
       }
 
-      const result = await billingService.prisma.$transaction(async (tx) => {
-        const tenant = await tx.tenant.create({
-          data: {
-            firstName,
-            lastName,
-            phone,
-            idCard: idCard || null,
-            lineUserId: lineUserId || null,
-            lineDisplayName: realDisplayName || null,
-            linePictureUrl: realPictureUrl || null,
-            lineStatusMessage: realStatusMessage || null
-          }
+      // ตรวจสอบว่ามีผู้เช่าเดิมที่ผูกกับ LINE ID หรือเบอร์โทรศัพท์นี้อยู่แล้วหรือไม่ (Multi-Room Linking)
+      let existingTenant = null;
+      if (lineUserId) {
+        existingTenant = await billingService.prisma.tenant.findUnique({
+          where: { lineUserId },
+          include: { rooms: true }
         });
+      }
+      if (!existingTenant && phone) {
+        const cleanPhone = String(phone).trim();
+        existingTenant = await billingService.prisma.tenant.findFirst({
+          where: { phone: cleanPhone },
+          include: { rooms: true }
+        });
+      }
+      if (!existingTenant && invite.room.tenantId) {
+        existingTenant = await billingService.prisma.tenant.findUnique({
+          where: { id: invite.room.tenantId },
+          include: { rooms: true }
+        });
+      }
+
+      const result = await billingService.prisma.$transaction(async (tx) => {
+        let tenantRecord = existingTenant;
+
+        if (tenantRecord) {
+          // อัปเดตข้อมูลผู้เช่าเดิมหากมีข้อมูลใหม่
+          tenantRecord = await tx.tenant.update({
+            where: { id: tenantRecord.id },
+            data: {
+              firstName: firstName || tenantRecord.firstName,
+              lastName: lastName || tenantRecord.lastName,
+              phone: phone || tenantRecord.phone,
+              idCard: idCard || tenantRecord.idCard,
+              lineUserId: lineUserId || tenantRecord.lineUserId,
+              lineDisplayName: realDisplayName || tenantRecord.lineDisplayName,
+              linePictureUrl: realPictureUrl || tenantRecord.linePictureUrl,
+              lineStatusMessage: realStatusMessage || tenantRecord.lineStatusMessage
+            }
+          });
+        } else {
+          // สร้างผู้เช่าใหม่
+          tenantRecord = await tx.tenant.create({
+            data: {
+              firstName,
+              lastName,
+              phone,
+              idCard: idCard || null,
+              lineUserId: lineUserId || null,
+              lineDisplayName: realDisplayName || null,
+              linePictureUrl: realPictureUrl || null,
+              lineStatusMessage: realStatusMessage || null
+            }
+          });
+        }
 
         const updatedRoom = await tx.room.update({
           where: { id: invite.roomId },
           data: {
-            tenantId: tenant.id,
+            tenantId: tenantRecord.id,
             status: 'occupied'
           }
         });
@@ -796,7 +908,7 @@ class LiffController {
         const roomPrice = Number(invite.room.price) || 0;
         const depositAmount = depositMonths > 0 ? depositMonths * roomPrice : 0;
 
-        // 📝 สร้างสัญญาเช่าเริ่มต้น (Active Lease Contract) เพื่อให้บันทึกประวัติการเข้าอยู่และแสดงในหน้าประวัติ
+        // 📝 สร้างสัญญาเช่าเริ่มต้น (Active Lease Contract) สำหรับห้องใหม่
         const startDate = new Date();
         const expectedEndDate = new Date(startDate);
         expectedEndDate.setFullYear(expectedEndDate.getFullYear() + 1);
@@ -804,17 +916,19 @@ class LiffController {
         const lease = await tx.leaseContract.create({
           data: {
             roomId: invite.roomId,
-            tenantId: tenant.id,
+            tenantId: tenantRecord.id,
             buildingId: invite.room.buildingId || null,
             startDate,
             expectedEndDate,
             depositAmount,
             status: 'ACTIVE',
-            adminNote: 'ลงทะเบียนเข้าพักผ่านระบบ LINE LIFF (Invite Code)'
+            adminNote: existingTenant
+              ? 'เพิ่มห้องพักเพิ่มเติมสำหรับผู้เช่าเดิมผ่าน LINE LIFF (Invite Code)'
+              : 'ลงทะเบียนเข้าพักผ่านระบบ LINE LIFF (Invite Code)'
           }
         });
 
-        return { tenant, room: updatedRoom, lease };
+        return { tenant: tenantRecord, room: updatedRoom, lease };
       });
 
       // 📲 ส่ง LINE Welcome Flex Message หากมี LINE User ID

@@ -46,7 +46,7 @@ class BuildingController {
    */
   async createBuilding(req, res, next) {
     try {
-      const { name, address, promptpayNum, paymentQrUrl } = req.body;
+      const { name, address, themeColor, logoUrl, promptpayNum, paymentQrUrl } = req.body;
 
       if (!name) {
         return res.status(400).json({
@@ -59,6 +59,8 @@ class BuildingController {
         data: {
           name,
           address: address || null,
+          themeColor: themeColor || '#3B82F6',
+          logoUrl: logoUrl || null,
           setting: {
             create: {
               promptpayNum: promptpayNum || null,
@@ -124,6 +126,8 @@ class BuildingController {
         // 1. General Info
         name,
         address,
+        themeColor,
+        logoUrl,
         phone,
         coverImageUrl,
 
@@ -153,12 +157,14 @@ class BuildingController {
       }
 
       // 1. อัปเดตข้อมูลทั่วไปของตึก (Building)
-      if (name || address !== undefined) {
+      if (name || address !== undefined || themeColor !== undefined || logoUrl !== undefined) {
         await billingService.prisma.building.update({
           where: { id },
           data: {
             ...(name && { name }),
-            ...(address !== undefined && { address })
+            ...(address !== undefined && { address }),
+            ...(themeColor !== undefined && { themeColor }),
+            ...(logoUrl !== undefined && { logoUrl })
           }
         });
       }

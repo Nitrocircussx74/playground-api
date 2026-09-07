@@ -180,12 +180,14 @@ class ParcelController {
         return res.status(200).json({ success: true, data: [] });
       }
 
-      const whereCondition = tenant.rooms?.length > 0
-        ? { roomId: tenant.rooms[0].id }
-        : { tenantId: tenant.id };
+      const allRoomIds = (tenant.rooms || []).map((r) => r.id);
+      const orConditions = [{ tenantId: tenant.id }];
+      if (allRoomIds.length > 0) {
+        orConditions.push({ roomId: { in: allRoomIds } });
+      }
 
       const parcels = await billingService.prisma.parcel.findMany({
-        where: whereCondition,
+        where: { OR: orConditions },
         orderBy: [
           { status: 'asc' }, // PENDING first
           { receivedAt: 'desc' }
