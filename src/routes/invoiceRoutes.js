@@ -10,6 +10,8 @@ router.get('/:id/export', (req, res, next) => invoiceController.exportInvoicePdf
 router.post('/:id/payment-slips', (req, res, next) => invoiceController.uploadPaymentSlip(req, res, next));
 router.patch('/:id/status', requireRole('admin'), (req, res, next) => invoiceController.updateInvoiceStatus(req, res, next));
 router.post('/:id/pay-manual', requireRole('admin'), (req, res, next) => invoiceController.recordManualPayment(req, res, next));
+router.post('/:id/remind', requireRole('admin'), (req, res, next) => invoiceController.remindInvoice(req, res, next));
+router.post('/remind-bulk', requireRole('admin'), (req, res, next) => invoiceController.remindBulkInvoices(req, res, next));
 router.delete('/:id', requireRole('admin'), (req, res, next) => invoiceController.deleteInvoice(req, res, next));
 
 module.exports = router;

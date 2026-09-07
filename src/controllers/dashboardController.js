@@ -1,5 +1,6 @@
 const billingService = require('../services/billingService');
 const lineService = require('../services/lineService');
+const { setupThaiFonts } = require('../utils/pdfHelper');
 
 class DashboardController {
   /**
@@ -370,6 +371,7 @@ class DashboardController {
       );
 
       const doc = new PDFDocument({ margin: 40, size: 'A4' });
+      const fonts = setupThaiFonts(doc);
 
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename="financial_report_${targetCycle}.pdf"`);
@@ -377,62 +379,65 @@ class DashboardController {
       doc.pipe(res);
 
       // Title & Header
-      doc.fontSize(20).text('DORMITORY FINANCIAL SUMMARY REPORT', { align: 'center' });
-      doc.moveDown(0.5);
-      doc.fontSize(12).text(`Billing Cycle: ${targetCycle}`, { align: 'center' });
-      doc.text(`Generated Date: ${new Date().toLocaleDateString('en-GB')}`, { align: 'center' });
-      doc.moveDown(1.5);
+      doc.fontSize(20).font(fonts.bold).fillColor('#1e1b4b').text('รายงานสรุปการเงินประจำเดือน / FINANCIAL REPORT', { align: 'center' });
+      doc.moveDown(0.3);
+      doc.fontSize(11).font(fonts.regular).fillColor('#475569').text(`รอบบิลประจำเดือน (Billing Cycle): ${targetCycle}`, { align: 'center' });
+      doc.text(`วันที่จัดทำรายงาน (Generated Date): ${new Date().toLocaleDateString('th-TH')}`, { align: 'center' });
+      doc.moveDown(1);
 
       // Summary Box
-      doc.fontSize(14).text('Executive Summary', { underline: true });
-      doc.moveDown(0.5);
-      doc.fontSize(11).text(`Total Invoices: ${invoices.length}`);
-      doc.text(`Grand Total Billed: ${summary.grandTotal.toLocaleString()} THB`);
-      doc.text(`Collected (Paid): ${summary.paidTotal.toLocaleString()} THB`);
-      doc.text(`Outstanding (Unpaid): ${summary.pendingTotal.toLocaleString()} THB`);
+      doc.fontSize(13).font(fonts.bold).fillColor('#0f172a').text('สรุปภาพรวมรายได้ (Executive Summary)');
+      doc.moveDown(0.4);
+      doc.fontSize(10).font(fonts.regular).fillColor('#334155');
+      doc.text(`จำนวนใบแจ้งหนี้ทั้งหมด: ${invoices.length} รายการ`);
+      doc.text(`ยอดเรียกเก็บรวมทั้งสิ้น: ฿${summary.grandTotal.toLocaleString('th-TH', { minimumFractionDigits: 2 })}`);
+      doc.text(`ยอดชำระแล้ว (Collected / Paid): ฿${summary.paidTotal.toLocaleString('th-TH', { minimumFractionDigits: 2 })}`);
+      doc.text(`ยอดค้างชำระ (Outstanding / Unpaid): ฿${summary.pendingTotal.toLocaleString('th-TH', { minimumFractionDigits: 2 })}`);
       doc.moveDown(1);
 
       // Revenue Breakdown
-      doc.fontSize(14).text('Revenue Breakdown', { underline: true });
-      doc.moveDown(0.5);
-      doc.fontSize(11).text(`Room Rent Revenue: ${summary.totalRoom.toLocaleString()} THB`);
-      doc.text(`Water Utility Revenue: ${summary.totalWater.toLocaleString()} THB`);
-      doc.text(`Electricity Utility Revenue: ${summary.totalElectric.toLocaleString()} THB`);
-      doc.text(`Common Area Fees: ${summary.totalCommon.toLocaleString()} THB`);
+      doc.fontSize(13).font(fonts.bold).fillColor('#0f172a').text('แจกแจงตามประเภทรายได้ (Revenue Breakdown)');
+      doc.moveDown(0.4);
+      doc.fontSize(10).font(fonts.regular).fillColor('#334155');
+      doc.text(`รายได้ค่าเช่าห้องพัก: ฿${summary.totalRoom.toLocaleString('th-TH', { minimumFractionDigits: 2 })}`);
+      doc.text(`รายได้ค่าน้ำประปา: ฿${summary.totalWater.toLocaleString('th-TH', { minimumFractionDigits: 2 })}`);
+      doc.text(`รายได้ค่าไฟฟ้า: ฿${summary.totalElectric.toLocaleString('th-TH', { minimumFractionDigits: 2 })}`);
+      doc.text(`รายได้ค่าส่วนกลาง: ฿${summary.totalCommon.toLocaleString('th-TH', { minimumFractionDigits: 2 })}`);
       doc.moveDown(1.5);
 
       // Invoices Table Header
-      doc.fontSize(12).text('Invoice Breakdown List', { underline: true });
-      doc.moveDown(0.5);
+      doc.fontSize(12).font(fonts.bold).fillColor('#0f172a').text('รายการใบแจ้งหนี้ประจำรอบบิล (Invoice Breakdown List)');
+      doc.moveDown(0.4);
 
       const tableTop = doc.y;
-      doc.fontSize(10);
-      doc.text('Invoice #', 40, tableTop, { width: 100 });
-      doc.text('Room', 150, tableTop, { width: 60 });
-      doc.text('Cycle', 220, tableTop, { width: 70 });
-      doc.text('Amount (THB)', 300, tableTop, { width: 100, align: 'right' });
-      doc.text('Status', 420, tableTop, { width: 80, align: 'right' });
+      doc.rect(40, tableTop, 515, 22).fill('#f1f5f9');
+      doc.fillColor('#0f172a').fontSize(9).font(fonts.bold);
+      doc.text('เลขที่บิล (Invoice #)', 50, tableTop + 5, { width: 110 });
+      doc.text('ห้อง (Room)', 170, tableTop + 5, { width: 60 });
+      doc.text('รอบบิล', 240, tableTop + 5, { width: 60 });
+      doc.text('ยอดเงิน (THB)', 310, tableTop + 5, { width: 110, align: 'right' });
+      doc.text('สถานะ', 430, tableTop + 5, { width: 90, align: 'right' });
 
-      doc.moveTo(40, tableTop + 15).lineTo(540, tableTop + 15).stroke();
+      let y = tableTop + 26;
+      doc.font(fonts.regular).fillColor('#334155').fontSize(9);
 
-      let y = tableTop + 25;
       invoices.forEach((inv) => {
         if (y > 750) {
           doc.addPage();
           y = 40;
         }
-        const roomNum = inv.room ? inv.room.roomNumber : 'N/A';
-        doc.text(inv.invoiceNumber, 40, y, { width: 100 });
-        doc.text(roomNum, 150, y, { width: 60 });
-        doc.text(inv.billingCycle, 220, y, { width: 70 });
-        doc.text(Number(inv.grandTotal).toLocaleString('en-US', { minimumFractionDigits: 2 }), 300, y, { width: 100, align: 'right' });
-        doc.text(inv.status.toUpperCase(), 420, y, { width: 80, align: 'right' });
-        y += 20;
+        const roomNum = inv.room ? `ห้อง ${inv.room.roomNumber}` : 'N/A';
+        doc.text(inv.invoiceNumber, 50, y, { width: 110 });
+        doc.text(roomNum, 170, y, { width: 60 });
+        doc.text(inv.billingCycle, 240, y, { width: 60 });
+        doc.text(Number(inv.grandTotal).toLocaleString('th-TH', { minimumFractionDigits: 2 }), 310, y, { width: 110, align: 'right' });
+        doc.text(inv.status.toUpperCase(), 430, y, { width: 90, align: 'right' });
+        y += 18;
       });
 
-      doc.moveTo(40, y + 5).lineTo(540, y + 5).stroke();
+      doc.moveTo(40, y + 5).lineTo(555, y + 5).strokeColor('#cbd5e1').stroke();
       doc.moveDown(2);
-      doc.fontSize(10).text('--- End of Financial Report ---', { align: 'center' });
+      doc.fontSize(9).font(fonts.regular).fillColor('#94a3b8').text('--- สิ้นสุดรายงานทางการเงิน (End of Financial Report) ---', { align: 'center' });
 
       doc.end();
     } catch (error) {

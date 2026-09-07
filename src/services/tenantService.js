@@ -196,6 +196,101 @@ class TenantService {
 
     return updatedTenant;
   }
+
+  /**
+   * ลงทะเบียนผู้เช่าแบบ Walk-in / ไม่ใช้ LINE (Manual Onboarding & Check-in)
+   * รองรับการบันทึกข้อมูลผู้เช่า + ผูกเข้าห้องพัก + สร้างสัญญาเช่าใน Transaction เดียว
+   * @param {Object} data - ข้อมูลผู้เช่าและสัญญาเช่า
+   * @param {Object} adminUser - ข้อมูลแอดมินผู้ดำเนินการ
+   */
+  async createManualTenant(data, adminUser) {
+    const {
+      firstName,
+      lastName,
+      phone,
+      idCard,
+      internalNotes,
+      roomId,
+      startDate,
+      expectedEndDate,
+      depositAmount,
+      adminNote
+    } = data;
+
+    return await prisma.$transaction(async (tx) => {
+      // 1. ตรวจสอบว่ามีผู้เช่าเบอร์โทรนี้อยู่ในระบบแล้วหรือไม่ (ถ้ามีให้อัปเดต ถ้าไม่มีให้สร้างใหม่)
+      let tenant = await tx.tenant.findFirst({
+        where: { phone: String(phone).trim() }
+      });
+
+      if (!tenant) {
+        tenant = await tx.tenant.create({
+          data: {
+            firstName: firstName.trim(),
+            lastName: lastName.trim(),
+            phone: String(phone).trim(),
+            idCard: idCard ? String(idCard).trim() : null,
+            internalNotes: internalNotes || null
+          }
+        });
+      } else {
+        tenant = await tx.tenant.update({
+          where: { id: tenant.id },
+          data: {
+            firstName: firstName.trim(),
+            lastName: lastName.trim(),
+            idCard: idCard ? String(idCard).trim() : tenant.idCard,
+            internalNotes: internalNotes || tenant.internalNotes
+          }
+        });
+      }
+
+      let lease = null;
+      // 2. กรณีระบุ roomId ให้ย้ายเข้าห้องพักและสร้างสัญญาเช่า (Active Lease)
+      if (roomId) {
+        const room = await tx.room.findUnique({ where: { id: roomId } });
+        if (!room) {
+          throw new Error('ไม่พบข้อมูลห้องพัก/ยูนิตที่ระบุ');
+        }
+
+        // อัปเดตห้องพักเป็น occupied และผูก tenantId
+        await tx.room.update({
+          where: { id: roomId },
+          data: {
+            status: 'occupied',
+            tenantId: tenant.id
+          }
+        });
+
+        const leaseStartDate = startDate ? new Date(startDate) : new Date();
+        const leaseEndDate = expectedEndDate
+          ? new Date(expectedEndDate)
+          : new Date(new Date().setFullYear(new Date().getFullYear() + 1));
+
+        lease = await tx.leaseContract.create({
+          data: {
+            tenantId: tenant.id,
+            roomId: room.id,
+            buildingId: room.buildingId,
+            startDate: leaseStartDate,
+            expectedEndDate: leaseEndDate,
+            depositAmount: depositAmount ? Number(depositAmount) : 0,
+            status: 'ACTIVE',
+            adminNote: adminNote || 'Walk-in / ไม่ใช้ LINE (เพิ่มโดยผู้ดูแล)'
+          },
+          include: {
+            room: true,
+            building: true
+          }
+        });
+      }
+
+      return {
+        tenant,
+        lease
+      };
+    });
+  }
 }
 
 module.exports = new TenantService();

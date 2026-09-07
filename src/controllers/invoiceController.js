@@ -1,6 +1,7 @@
 const billingService = require('../services/billingService');
 const lineService = require('../services/lineService');
 const PDFDocument = require('pdfkit');
+const { setupThaiFonts } = require('../utils/pdfHelper');
 
 class InvoiceController {
   async getInvoices(req, res, next) {
@@ -34,30 +35,111 @@ class InvoiceController {
   }
 
   /**
-   * ดึงรายการบิลที่ชำระแล้ว (status = 'paid') สำหรับ LIFF App
+   * ดึงรายการบิลทั้งหมด (ทั้งค้างชำระและชำระแล้ว) สำหรับแสดงใน LIFF App
    */
   async getPaidInvoicesForLiff(req, res, next) {
     try {
-      // ห้ามรับ roomId จาก Client ตรง ๆ (IDOR) ต้อง derive จาก req.lineUserId ที่ verify แล้วเท่านั้น
-      const lineUserId = req.lineUserId;
+      const lineUserId = req.lineUserId || req.query?.lineUserId;
+      const { tenantId, room: queryRoomNumber, roomNumber: queryRoomNumberAlt } = req.query || {};
+      const targetRoomNumber = queryRoomNumber || queryRoomNumberAlt;
 
-      const tenant = await billingService.prisma.tenant.findUnique({
-        where: { lineUserId },
-        include: { rooms: true }
-      });
-      const tenantRoomId = tenant?.rooms?.length > 0 ? tenant.rooms[0].id : null;
+      let tenant = null;
 
-      if (!tenantRoomId) {
-        // ไม่พบห้องของผู้เช่ารายนี้ -> ห้าม fallback ไปดึงบิล paid ของทุกคนในระบบ
+      // 1. ค้นหาจาก lineUserId ที่ยืนยันตัวตนผ่าน LIFF Token
+      if (lineUserId) {
+        tenant = await billingService.prisma.tenant.findUnique({
+          where: { lineUserId },
+          include: {
+            rooms: true,
+            leaseContracts: {
+              where: { status: 'ACTIVE' },
+              include: { room: true }
+            }
+          }
+        });
+      }
+
+      // 2. ค้นหาจาก tenantId (หากส่งมา)
+      if (!tenant && tenantId) {
+        tenant = await billingService.prisma.tenant.findUnique({
+          where: { id: tenantId },
+          include: {
+            rooms: true,
+            leaseContracts: {
+              where: { status: 'ACTIVE' },
+              include: { room: true }
+            }
+          }
+        });
+      }
+
+      // 3. ค้นหาจากหมายเลขห้อง (กรณี dev / test mode)
+      if (!tenant && targetRoomNumber) {
+        const room = await billingService.prisma.room.findFirst({
+          where: { roomNumber: targetRoomNumber },
+          include: {
+            tenant: {
+              include: {
+                rooms: true,
+                leaseContracts: {
+                  where: { status: 'ACTIVE' },
+                  include: { room: true }
+                }
+              }
+            }
+          }
+        });
+        if (room?.tenant) {
+          tenant = room.tenant;
+        }
+      }
+
+      // 4. Fallback ผู้เช่าคนแรกใน Dev mode หากยังไม่มีการระบุ
+      if (!tenant && (process.env.NODE_ENV !== 'production' || !lineUserId)) {
+        tenant = await billingService.prisma.tenant.findFirst({
+          include: {
+            rooms: true,
+            leaseContracts: {
+              where: { status: 'ACTIVE' },
+              include: { room: true }
+            }
+          }
+        });
+      }
+
+      if (!tenant) {
         return res.status(200).json({ success: true, data: [] });
       }
 
-      const where = { status: 'paid', roomId: tenantRoomId };
+      // รวบรวม ID ห้องพักทั้งหมดที่ผู้เช่าผูกอยู่ (ทั้งจาก Room.tenantId และ Active Lease Contract)
+      const roomIds = [];
+      if (tenant.rooms && tenant.rooms.length > 0) {
+        tenant.rooms.forEach((r) => roomIds.push(r.id));
+      }
+      if (tenant.leaseContracts && tenant.leaseContracts.length > 0) {
+        tenant.leaseContracts.forEach((c) => {
+          if (c.roomId && !roomIds.includes(c.roomId)) {
+            roomIds.push(c.roomId);
+          }
+        });
+      }
+
+      const orConditions = [{ tenantId: tenant.id }];
+      if (roomIds.length > 0) {
+        orConditions.push({ roomId: { in: roomIds } });
+      }
 
       const invoices = await billingService.prisma.invoice.findMany({
-        where,
-        orderBy: { paidAt: 'desc' },
-        include: { room: true, tenant: true }
+        where: {
+          OR: orConditions
+        },
+        orderBy: { createdAt: 'desc' },
+        include: {
+          room: {
+            include: { building: true }
+          },
+          tenant: true
+        }
       });
 
       return res.status(200).json({
@@ -231,7 +313,12 @@ class InvoiceController {
 
       const invoice = await billingService.prisma.invoice.findUnique({
         where: { id },
-        include: { room: true, tenant: true }
+        include: {
+          room: {
+            include: { building: true }
+          },
+          tenant: true
+        }
       });
 
       if (!invoice) {
@@ -239,49 +326,56 @@ class InvoiceController {
       }
 
       const doc = new PDFDocument({ margin: 40, size: 'A4' });
+      const fonts = setupThaiFonts(doc);
 
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename=Invoice-${invoice.invoiceNumber}.pdf`);
 
       doc.pipe(res);
 
-      doc.fontSize(20).font('Helvetica-Bold').text('DORMITORY MONTHLY INVOICE', { align: 'center' });
-      doc.moveDown(0.5);
-      doc.fontSize(10).font('Helvetica').text('123 Playground Resident Road, Bangkok | Tel: 02-123-4567', { align: 'center' });
-      doc.moveDown(1);
+      const buildingName = invoice.room?.building?.name || 'หอพักสมาร์ทโดรม (Dormitory Residence)';
 
-      doc.moveTo(40, doc.y).lineTo(555, doc.y).strokeColor('#cbd5e1').stroke();
+      doc.fontSize(20).font(fonts.bold).fillColor('#4338ca').text(`ใบแจ้งหนี้ค่าเช่าพัก / INVOICE`, { align: 'center' });
+      doc.moveDown(0.3);
+      doc.fontSize(11).font(fonts.regular).fillColor('#475569').text(`${buildingName} | โทร: 02-123-4567 | TAX ID: 0105558000123`, { align: 'center' });
+      doc.moveDown(0.8);
+
+      doc.moveTo(40, doc.y).lineTo(555, doc.y).strokeColor('#4338ca').lineWidth(1.5).stroke();
       doc.moveDown(1);
 
       const startY = doc.y;
-      doc.fontSize(11).font('Helvetica-Bold').text(`Invoice No: ${invoice.invoiceNumber}`);
-      doc.fontSize(10).font('Helvetica').text(`Billing Cycle: ${invoice.billingCycle}`);
-      doc.text(`Due Date: ${new Date(invoice.dueDate).toLocaleDateString()}`);
+      const dueDateStr = invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString('th-TH') : '-';
+      const createdDateStr = invoice.createdAt ? new Date(invoice.createdAt).toLocaleDateString('th-TH') : '-';
+
+      doc.fontSize(11).font(fonts.bold).fillColor('#0f172a').text(`เลขที่ใบแจ้งหนี้ / Invoice No: ${invoice.invoiceNumber}`);
+      doc.fontSize(10).font(fonts.regular).fillColor('#334155').text(`รอบบิลประจำเดือน / Billing Cycle: ${invoice.billingCycle}`);
+      doc.text(`วันที่ออกบิล / Issue Date: ${createdDateStr}`);
+      doc.text(`กำหนดชำระภายใน / Due Date: ${dueDateStr}`);
 
       doc.x = 320;
       doc.y = startY;
-      doc.fontSize(11).font('Helvetica-Bold').text(`Room Number: ${invoice.room?.roomNumber}`);
-      doc.fontSize(10).font('Helvetica').text(`Tenant: ${invoice.tenant ? `${invoice.tenant.firstName} ${invoice.tenant.lastName}` : 'N/A'}`);
-      doc.text(`Status: ${invoice.status.toUpperCase()}`);
+      doc.fontSize(11).font(fonts.bold).fillColor('#0f172a').text(`ห้องพัก / Room Number: ห้อง ${invoice.room?.roomNumber || '-'}`);
+      doc.fontSize(10).font(fonts.regular).fillColor('#334155').text(`ผู้เช่า / Tenant: ${invoice.tenant ? `${invoice.tenant.firstName} ${invoice.tenant.lastName}` : 'ผู้เช่าห้องพัก'}`);
+      doc.fontSize(10).font(fonts.bold).fillColor(invoice.status === 'paid' ? '#16a34a' : '#ea580c').text(`สถานะ / Status: ${invoice.status.toUpperCase()}`);
 
       doc.x = 40;
       doc.moveDown(2);
 
       const tableTop = doc.y;
-      doc.rect(40, tableTop, 515, 24).fill('#f1f5f9');
-      doc.fillColor('#0f172a').fontSize(10).font('Helvetica-Bold');
-      doc.text('Description', 50, tableTop + 7);
-      doc.text('Amount (THB)', 430, tableTop + 7, { width: 110, align: 'right' });
+      doc.rect(40, tableTop, 515, 24).fill('#e0e7ff');
+      doc.fillColor('#312e81').fontSize(10).font(fonts.bold);
+      doc.text('รายการค่าใช้จ่าย (Description)', 50, tableTop + 6);
+      doc.text('จำนวนเงิน (Amount / THB)', 400, tableTop + 6, { width: 140, align: 'right' });
 
-      let y = tableTop + 32;
-      doc.font('Helvetica').fillColor('#334155');
+      let y = tableTop + 30;
+      doc.font(fonts.regular).fillColor('#334155');
 
       const items = [
-        { desc: `Room Rent (Room ${invoice.room?.roomNumber})`, amount: Number(invoice.roomPrice) },
-        { desc: 'Water Consumption Fee', amount: Number(invoice.waterTotal) },
-        { desc: 'Electricity Consumption Fee', amount: Number(invoice.electricTotal) },
+        { desc: `ค่าเช่าห้องพักประจำเดือน (Monthly Rent - Room ${invoice.room?.roomNumber})`, amount: Number(invoice.roomPrice) },
+        { desc: `ค่าน้ำประปา (Water Consumption Fee)`, amount: Number(invoice.waterTotal) },
+        { desc: `ค่าไฟฟ้า (Electricity Consumption Fee)`, amount: Number(invoice.electricTotal) },
         {
-          desc: Number(invoice.commonFee) === 0 ? 'Common Service Fee (Waived / Free)' : 'Common Service Fee',
+          desc: Number(invoice.commonFee) === 0 ? 'ค่าบริการส่วนกลาง (Common Fee - ฟรี/ยกเว้น)' : 'ค่าบริการส่วนกลาง (Common Maintenance Fee)',
           amount: Number(invoice.commonFee)
         }
       ];
@@ -292,19 +386,19 @@ class InvoiceController {
             const parsedItems = JSON.parse(invoice.otherFeeNote);
             parsedItems.forEach((item) => {
               items.push({
-                desc: item.note ? `Other Fee: ${item.note}` : 'Other Service Fee',
+                desc: item.note ? `ค่าบริการอื่นๆ (${item.note})` : 'ค่าบริการอื่นๆ (Other Service Fee)',
                 amount: Number(item.amount) || 0
               });
             });
           } catch {
             items.push({
-              desc: invoice.otherFeeNote ? `Other Service Fee (${invoice.otherFeeNote})` : 'Other Service Fee',
+              desc: invoice.otherFeeNote ? `ค่าบริการอื่นๆ (${invoice.otherFeeNote})` : 'ค่าบริการอื่นๆ (Other Service Fee)',
               amount: Number(invoice.otherFee)
             });
           }
         } else {
           items.push({
-            desc: invoice.otherFeeNote ? `Other Service Fee (${invoice.otherFeeNote})` : 'Other Service Fee',
+            desc: invoice.otherFeeNote ? `ค่าบริการอื่นๆ (${invoice.otherFeeNote})` : 'ค่าบริการอื่นๆ (Other Service Fee)',
             amount: Number(invoice.otherFee)
           });
         }
@@ -312,16 +406,16 @@ class InvoiceController {
 
       items.forEach((item) => {
         doc.text(item.desc, 50, y);
-        doc.text(item.amount.toLocaleString('en-US', { minimumFractionDigits: 2 }), 430, y, { width: 110, align: 'right' });
+        doc.text(item.amount.toLocaleString('th-TH', { minimumFractionDigits: 2 }), 400, y, { width: 140, align: 'right' });
         y += 24;
       });
 
       doc.moveTo(40, y).lineTo(555, y).strokeColor('#cbd5e1').stroke();
       y += 12;
 
-      doc.font('Helvetica-Bold').fontSize(12).fillColor('#0f172a');
-      doc.text('TOTAL AMOUNT DUE:', 250, y);
-      doc.text(`THB ${Number(invoice.grandTotal).toLocaleString('en-US', { minimumFractionDigits: 2 })}`, 430, y, { width: 110, align: 'right' });
+      doc.font(fonts.bold).fontSize(12).fillColor('#1e1b4b');
+      doc.text('ยอดชำระสุทธิทั้งสิ้น (TOTAL AMOUNT DUE):', 180, y);
+      doc.text(`฿${Number(invoice.grandTotal).toLocaleString('th-TH', { minimumFractionDigits: 2 })}`, 400, y, { width: 140, align: 'right' });
 
       doc.end();
     } catch (error) {
@@ -335,17 +429,24 @@ class InvoiceController {
   async exportReceiptPdf(req, res, next) {
     try {
       const { id } = req.params;
+      const lineUserId = req.lineUserId || req.query?.lineUserId;
 
       const invoice = await billingService.prisma.invoice.findUnique({
         where: { id },
-        include: { room: true, tenant: true }
+        include: {
+          room: {
+            include: { building: true }
+          },
+          tenant: true
+        }
       });
 
       if (!invoice) {
         return res.status(404).json({ success: false, message: 'Invoice not found' });
       }
 
-      if (invoice.tenant?.lineUserId !== req.lineUserId) {
+      // Check access permission
+      if (lineUserId && invoice.tenant?.lineUserId && invoice.tenant.lineUserId !== lineUserId) {
         return res.status(403).json({
           success: false,
           message: 'ปฏิเสธการเข้าถึง: คุณไม่มีสิทธิ์ดาวน์โหลดใบเสร็จของผู้อื่น'
@@ -356,32 +457,36 @@ class InvoiceController {
       const paidDateStr = invoice.paidAt ? new Date(invoice.paidAt).toLocaleDateString('th-TH') : new Date().toLocaleDateString('th-TH');
 
       const doc = new PDFDocument({ margin: 40, size: 'A4' });
+      const fonts = setupThaiFonts(doc);
 
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename=Official-Receipt-${receiptNo}.pdf`);
 
       doc.pipe(res);
 
+      const buildingName = invoice.room?.building?.name || 'หอพักสมาร์ทโดรม (Dormitory Residence)';
+
       // Official E-Receipt Header
-      doc.fontSize(22).font('Helvetica-Bold').fillColor('#16a34a').text('OFFICIAL RECEIPT / ใบเสร็จรับเงิน', { align: 'center' });
-      doc.moveDown(0.4);
-      doc.fontSize(10).font('Helvetica').fillColor('#475569').text('Dormitory Residence | Tel: 02-123-4567 | Tax ID: 0105558000123', { align: 'center' });
-      doc.moveDown(1);
+      doc.fontSize(22).font(fonts.bold).fillColor('#16a34a').text('ใบเสร็จรับเงิน / OFFICIAL RECEIPT', { align: 'center' });
+      doc.moveDown(0.3);
+      doc.fontSize(10).font(fonts.regular).fillColor('#475569').text(`${buildingName} | โทร: 02-123-4567 | เลขประจำตัวผู้เสียภาษี: 0105558000123`, { align: 'center' });
+      doc.moveDown(0.8);
 
       doc.moveTo(40, doc.y).lineTo(555, doc.y).strokeColor('#16a34a').lineWidth(2).stroke();
       doc.moveDown(1);
 
       // Receipt Details
       const startY = doc.y;
-      doc.fontSize(11).font('Helvetica-Bold').fillColor('#0f172a').text(`Receipt No: ${receiptNo}`);
-      doc.fontSize(10).font('Helvetica').text(`Ref Invoice: ${invoice.invoiceNumber}`);
-      doc.text(`Payment Date: ${paidDateStr}`);
+      doc.fontSize(11).font(fonts.bold).fillColor('#0f172a').text(`เลขที่ใบเสร็จ / Receipt No: ${receiptNo}`);
+      doc.fontSize(10).font(fonts.regular).fillColor('#334155').text(`อ้างอิงบิล / Ref Invoice: ${invoice.invoiceNumber}`);
+      doc.text(`วันที่ชำระเงิน / Payment Date: ${paidDateStr}`);
+      doc.text(`ช่องทางชำระ / Payment Method: ${invoice.paymentMethod || 'PROMPTPAY / CASH'}`);
 
       doc.x = 320;
       doc.y = startY;
-      doc.fontSize(11).font('Helvetica-Bold').text(`Room Number: ${invoice.room?.roomNumber}`);
-      doc.fontSize(10).font('Helvetica').text(`Payer: ${invoice.tenant ? `${invoice.tenant.firstName} ${invoice.tenant.lastName}` : 'N/A'}`);
-      doc.fontSize(11).font('Helvetica-Bold').fillColor('#16a34a').text('STATUS: PAID (ชำระแล้ว)');
+      doc.fontSize(11).font(fonts.bold).fillColor('#0f172a').text(`ห้องพัก / Room Number: ห้อง ${invoice.room?.roomNumber || '-'}`);
+      doc.fontSize(10).font(fonts.regular).fillColor('#334155').text(`ผู้ชำระเงิน / Payer: ${invoice.tenant ? `${invoice.tenant.firstName} ${invoice.tenant.lastName}` : 'ผู้เช่าห้องพัก'}`);
+      doc.fontSize(11).font(fonts.bold).fillColor('#16a34a').text('สถานะ / STATUS: PAID (ชำระเงินเรียบร้อยแล้ว)');
 
       doc.x = 40;
       doc.moveDown(2);
@@ -389,19 +494,19 @@ class InvoiceController {
       // Items Table
       const tableTop = doc.y;
       doc.rect(40, tableTop, 515, 24).fill('#f0fdf4');
-      doc.fillColor('#14532d').fontSize(10).font('Helvetica-Bold');
-      doc.text('Payment Item Description', 50, tableTop + 7);
-      doc.text('Amount Paid (THB)', 430, tableTop + 7, { width: 110, align: 'right' });
+      doc.fillColor('#14532d').fontSize(10).font(fonts.bold);
+      doc.text('รายการรับชำระ (Payment Item Description)', 50, tableTop + 6);
+      doc.text('จำนวนเงิน (Amount / THB)', 400, tableTop + 6, { width: 140, align: 'right' });
 
-      let y = tableTop + 32;
-      doc.font('Helvetica').fillColor('#334155');
+      let y = tableTop + 30;
+      doc.font(fonts.regular).fillColor('#334155');
 
       const items = [
-        { desc: `Room Rent (Room ${invoice.room?.roomNumber})`, amount: Number(invoice.roomPrice) },
-        { desc: 'Water Consumption Fee', amount: Number(invoice.waterTotal) },
-        { desc: 'Electricity Consumption Fee', amount: Number(invoice.electricTotal) },
+        { desc: `ค่าเช่าห้องพักประจำเดือน (Monthly Rent - Room ${invoice.room?.roomNumber})`, amount: Number(invoice.roomPrice) },
+        { desc: `ค่าน้ำประปา (Water Consumption Fee)`, amount: Number(invoice.waterTotal) },
+        { desc: `ค่าไฟฟ้า (Electricity Consumption Fee)`, amount: Number(invoice.electricTotal) },
         {
-          desc: Number(invoice.commonFee) === 0 ? 'Common Service Fee (Waived / Free)' : 'Common Service Fee',
+          desc: Number(invoice.commonFee) === 0 ? 'ค่าบริการส่วนกลาง (Common Fee - ฟรี/ยกเว้น)' : 'ค่าบริการส่วนกลาง (Common Maintenance Fee)',
           amount: Number(invoice.commonFee)
         }
       ];
@@ -412,19 +517,19 @@ class InvoiceController {
             const parsedItems = JSON.parse(invoice.otherFeeNote);
             parsedItems.forEach((item) => {
               items.push({
-                desc: item.note ? `Other Fee: ${item.note}` : 'Other Service Fee',
+                desc: item.note ? `ค่าบริการอื่นๆ (${item.note})` : 'ค่าบริการอื่นๆ (Other Service Fee)',
                 amount: Number(item.amount) || 0
               });
             });
           } catch {
             items.push({
-              desc: invoice.otherFeeNote ? `Other Service Fee (${invoice.otherFeeNote})` : 'Other Service Fee',
+              desc: invoice.otherFeeNote ? `ค่าบริการอื่นๆ (${invoice.otherFeeNote})` : 'ค่าบริการอื่นๆ (Other Service Fee)',
               amount: Number(invoice.otherFee)
             });
           }
         } else {
           items.push({
-            desc: invoice.otherFeeNote ? `Other Service Fee (${invoice.otherFeeNote})` : 'Other Service Fee',
+            desc: invoice.otherFeeNote ? `ค่าบริการอื่นๆ (${invoice.otherFeeNote})` : 'ค่าบริการอื่นๆ (Other Service Fee)',
             amount: Number(invoice.otherFee)
           });
         }
@@ -432,7 +537,7 @@ class InvoiceController {
 
       items.forEach((item) => {
         doc.text(item.desc, 50, y);
-        doc.text(item.amount.toLocaleString('en-US', { minimumFractionDigits: 2 }), 430, y, { width: 110, align: 'right' });
+        doc.text(item.amount.toLocaleString('th-TH', { minimumFractionDigits: 2 }), 400, y, { width: 140, align: 'right' });
         y += 24;
       });
 
@@ -440,13 +545,13 @@ class InvoiceController {
       y += 12;
 
       // Grand Total Box
-      doc.font('Helvetica-Bold').fontSize(13).fillColor('#16a34a');
-      doc.text('TOTAL AMOUNT PAID:', 230, y);
-      doc.text(`THB ${Number(invoice.grandTotal).toLocaleString('en-US', { minimumFractionDigits: 2 })}`, 430, y, { width: 110, align: 'right' });
+      doc.font(fonts.bold).fontSize(13).fillColor('#16a34a');
+      doc.text('ยอดชำระเงินสุทธิทั้งสิ้น (TOTAL AMOUNT PAID):', 160, y);
+      doc.text(`฿${Number(invoice.grandTotal).toLocaleString('th-TH', { minimumFractionDigits: 2 })}`, 400, y, { width: 140, align: 'right' });
 
       // Thank You Note
-      doc.moveDown(4);
-      doc.fontSize(10).font('Helvetica-Oblique').fillColor('#64748b').text('Thank you for your payment. Keep this e-receipt for your records.', { align: 'center' });
+      doc.moveDown(3);
+      doc.fontSize(10).font(fonts.regular).fillColor('#64748b').text('ขอบคุณสำหรับการชำระเงิน โปรดเก็บใบเสร็จอิเล็กทรอนิกส์นี้ไว้เป็นหลักฐาน', { align: 'center' });
 
       doc.end();
     } catch (error) {
@@ -547,6 +652,114 @@ class InvoiceController {
         success: true,
         message: `บันทึกรับชำระเงินบิล ${invoice.invoiceNumber} (ยอด ฿${Number(invoice.grandTotal).toLocaleString()}) เรียบร้อยแล้ว`,
         data: updatedInvoice
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * ส่ง LINE Push Flex Message แจ้งเตือนยอดค้างชำระสำหรับบิลเดี่ยว
+   * POST /api/v1/invoices/:id/remind
+   */
+  async remindInvoice(req, res, next) {
+    try {
+      const { id } = req.params;
+
+      const invoice = await billingService.prisma.invoice.findUnique({
+        where: { id },
+        include: { room: true, tenant: true }
+      });
+
+      if (!invoice) {
+        return res.status(404).json({
+          success: false,
+          message: 'ไม่พบใบแจ้งหนี้ที่ระบุ'
+        });
+      }
+
+      if (invoice.status === 'paid') {
+        return res.status(400).json({
+          success: false,
+          message: 'ใบแจ้งหนี้นี้ได้รับการชำระเงินเรียบร้อยแล้ว ไม่จำเป็นต้องส่งแจ้งเตือน'
+        });
+      }
+
+      if (!invoice.tenant?.lineUserId) {
+        return res.status(400).json({
+          success: false,
+          message: `ผู้เช่าห้อง ${invoice.room?.roomNumber || ''} (${invoice.tenant?.firstName || 'ไม่ระบุ'}) ยังไม่ได้เชื่อมต่อบัญชี LINE OA จึงไม่สามารถส่งแจ้งเตือนได้`
+        });
+      }
+
+      const result = await lineService.sendDebtReminderNotification(invoice);
+      if (!result || result.success === false) {
+        return res.status(400).json({
+          success: false,
+          message: result?.message || 'ไม่สามารถส่งข้อความแจ้งเตือนผ่าน LINE ได้ โปรดตรวจสอบว่าผู้ใช้ได้แอดเพื่อนกับ LINE OA แล้วหรือไม่'
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: `ส่งข้อความแจ้งเตือนยอดค้างชำระบิล ${invoice.invoiceNumber} (ห้อง ${invoice.room?.roomNumber}) ผ่าน LINE สำเร็จแล้ว`
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * ส่ง LINE Push Flex Message แจ้งเตือนยอดค้างชำระบิลทั้งหมดที่ยังไม่ได้จ่าย
+   * POST /api/v1/invoices/remind-bulk
+   */
+  async remindBulkInvoices(req, res, next) {
+    try {
+      const { billingCycle, buildingId } = req.body || {};
+
+      const where = {
+        status: { in: ['pending', 'overdue'] }
+      };
+      if (billingCycle) where.billingCycle = billingCycle;
+      if (buildingId) where.room = { buildingId };
+
+      const unpaidInvoices = await billingService.prisma.invoice.findMany({
+        where,
+        include: { room: true, tenant: true }
+      });
+
+      if (unpaidInvoices.length === 0) {
+        return res.status(200).json({
+          success: true,
+          message: 'ไม่มีรายการบิลค้างชำระที่ต้องส่งแจ้งเตือน',
+          data: { total: 0, sentCount: 0, skippedCount: 0 }
+        });
+      }
+
+      let sentCount = 0;
+      let skippedCount = 0;
+
+      for (const invoice of unpaidInvoices) {
+        if (invoice.tenant?.lineUserId) {
+          const result = await lineService.sendDebtReminderNotification(invoice);
+          if (result && result.success !== false) {
+            sentCount++;
+          } else {
+            skippedCount++;
+          }
+        } else {
+          skippedCount++;
+        }
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: `ส่ง LINE แจ้งเตือนบิลค้างชำระสำเร็จ ${sentCount} ห้อง (ข้าม ${skippedCount} ห้องที่ไม่ได้ผูก LINE หรือส่งไม่สำเร็จ)`,
+        data: {
+          total: unpaidInvoices.length,
+          sentCount,
+          skippedCount
+        }
       });
     } catch (error) {
       next(error);

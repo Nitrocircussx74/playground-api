@@ -11,6 +11,7 @@ router.put('/me/password', (req, res, next) => adminController.updatePassword(re
 
 // Tenant CRM & 360 History Profile Endpoints
 router.get('/tenants', (req, res, next) => tenantController.getAllTenants(req, res, next));
+router.post('/tenants/manual', (req, res, next) => tenantController.createManualTenant(req, res, next));
 router.get('/tenants/:tenantId', (req, res, next) => tenantController.getTenantDetail(req, res, next));
 router.patch('/tenants/:tenantId/notes', requireRole('OWNER', 'MANAGER', 'super_admin', 'superadmin', 'admin'), (req, res, next) =>
   tenantController.updateTenantNotes(req, res, next)

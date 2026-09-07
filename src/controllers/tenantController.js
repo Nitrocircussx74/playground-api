@@ -118,6 +118,42 @@ class TenantController {
       next(error);
     }
   }
+
+  /**
+   * POST /api/admin/tenants/manual
+   * ลงทะเบียนผู้เช่าแบบ Walk-in / ไม่ใช้ LINE และเข้าพักทันที
+   */
+  async createManualTenant(req, res, next) {
+    try {
+      const { firstName, lastName, phone } = req.body;
+
+      if (!firstName || !lastName || !phone) {
+        return res.status(400).json({
+          success: false,
+          message: 'กรุณากรอกชื่อ นามสกุล และเบอร์โทรศัพท์ของผู้เช่าให้ครบถ้วน'
+        });
+      }
+
+      const result = await tenantService.createManualTenant(req.body, req.user);
+
+      // Audit Log
+      await auditService.logAction({
+        adminId: req.user?.id || req.user?.userId,
+        action: 'CREATE',
+        entity: 'TENANT',
+        entityId: result.tenant.id,
+        newValues: result
+      });
+
+      return res.status(201).json({
+        success: true,
+        message: 'ลงทะเบียนผู้เช่าและบันทึกข้อมูลเข้าพักเรียบร้อยแล้ว',
+        data: result
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 module.exports = new TenantController();

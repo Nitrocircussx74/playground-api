@@ -167,6 +167,24 @@ model Room {
   /// สถานะห้องพัก (available = ว่าง, occupied = มีผู้เช่า, maintenance = ซ่อมบำรุง)
   status String @default("available")
 
+  /// ประเภทสินทรัพย์/ยูนิตให้เช่า (residential, commercial_shop, vending_spot, parking, storage, billboard_rooftop)
+  unitType String @default("residential") @map("unit_type")
+
+  /// ขนาดพื้นที่เช่า (ตารางเมตร)
+  areaSqm Decimal? @map("area_sqm") @db.Decimal(8, 2)
+
+  /// ตำแหน่งโซนที่ตั้ง (เช่น ชั้น 1 ริมถนน, ลานจอดรถ A, ดาดฟ้า)
+  locationZone String? @map("location_zone")
+
+  /// รูปแบบการคิดค่าบริการ (fixed = เหมาจ่ายรายเดือน, revenue_share = ส่วนแบ่งยอดขาย, metered_only = คิดตามมิเตอร์)
+  billingModel String @default("fixed") @map("billing_model")
+
+  /// เปอร์เซ็นต์ส่วนแบ่งยอดขายกรณีเป็น Revenue Share (เช่น 10.00%)
+  revSharePercent Decimal? @map("rev_share_percent") @db.Decimal(5, 2)
+
+  /// เลขประจำตัวผู้เสียภาษี (กรณีนิติบุคคล/บริษัทเช่า)
+  companyTaxId String? @map("company_tax_id")
+
   /// รหัสผู้เช่าปัจจุบัน (Foreign Key ไปยังตาราง Tenant)
   tenantId String? @map("tenant_id") @db.Uuid
   tenant Tenant? @relation(fields: [tenantId], references: [id])
@@ -668,4 +686,15 @@ model MoveOutRecord {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("move_out_records")
+}
+
+/// ตารางเก็บ Refresh Token สำหรับการยืนยันตัวตน
+model RefreshToken {
+  id Int @id @default(autoincrement())
+  userId String @map("user_id") @db.Uuid
+  token String @unique
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("refresh_tokens")
 }

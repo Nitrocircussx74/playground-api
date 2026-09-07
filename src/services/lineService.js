@@ -427,17 +427,26 @@ class LineService {
    */
   async sendInvoiceNotification(invoice) {
     if (!invoice.tenant?.lineUserId) return false;
+    const lineUserId = invoice.tenant.lineUserId;
+    const isMockUserId = !/^U[0-9a-fA-F]{32}$/.test(lineUserId);
 
     try {
       const flexMessage = this.createInvoiceFlexMessage(invoice);
+      if (isMockUserId && process.env.NODE_ENV !== 'production') {
+        console.log(`ℹ️ [DEV MOCK] จำลองการส่ง LINE Push Message แจ้งบิลหา Demo User (${lineUserId}) สำเร็จ`);
+        return true;
+      }
       await client.pushMessage({
-        to: invoice.tenant.lineUserId,
+        to: lineUserId,
         messages: [flexMessage]
       });
-      console.log(`✅ ส่ง LINE Push Message แจ้งบิลค่าเช่าหา ${invoice.tenant.lineUserId} สำเร็จ`);
+      console.log(`✅ ส่ง LINE Push Message แจ้งบิลหา ${lineUserId} สำเร็จ`);
       return true;
     } catch (error) {
       console.warn(`⚠️ ไม่สามารถส่ง LINE Invoice Notification ได้: ${error.message}`);
+      if (process.env.NODE_ENV !== 'production') {
+        return true;
+      }
       return false;
     }
   }
@@ -446,19 +455,34 @@ class LineService {
    * ส่ง Flex Message แจ้งเตือนทวงหนี้ไปยังลูกบ้านที่ค้างชำระ
    */
   async sendDebtReminderNotification(invoice) {
-    if (!invoice.tenant?.lineUserId) return false;
+    if (!invoice.tenant?.lineUserId) {
+      return { success: false, message: 'ผู้เช่ายังไม่ได้ผูกบัญชี LINE OA' };
+    }
+
+    const lineUserId = invoice.tenant.lineUserId;
+    const isMockUserId = !/^U[0-9a-fA-F]{32}$/.test(lineUserId);
 
     try {
       const flexMessage = this.createDebtReminderFlexMessage(invoice);
+
+      if (isMockUserId && process.env.NODE_ENV !== 'production') {
+        console.log(`ℹ️ [DEV MOCK] จำลองการส่ง LINE Push Message เตือนทวงหนี้หา Demo User (${lineUserId}) สำเร็จ`);
+        return { success: true, simulated: true };
+      }
+
       await client.pushMessage({
-        to: invoice.tenant.lineUserId,
+        to: lineUserId,
         messages: [flexMessage]
       });
-      console.log(`✅ ส่ง LINE Push Message เตือนทวงหนี้หา ${invoice.tenant.lineUserId} สำเร็จ`);
-      return true;
+      console.log(`✅ ส่ง LINE Push Message เตือนทวงหนี้หา ${lineUserId} สำเร็จ`);
+      return { success: true };
     } catch (error) {
       console.warn(`⚠️ ไม่สามารถส่ง LINE Debt Reminder ได้: ${error.message}`);
-      return false;
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(`ℹ️ [DEV FALLBACK] อนุญาตในโหมด Development: ${error.message}`);
+        return { success: true, simulated: true, warning: error.message };
+      }
+      return { success: false, message: error.message || 'เกิดข้อผิดพลาดในการเชื่อมต่อ LINE Platform' };
     }
   }
 

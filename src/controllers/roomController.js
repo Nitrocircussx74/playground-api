@@ -4,12 +4,16 @@ const billingService = require('../services/billingService');
 class RoomController {
   async getRooms(req, res, next) {
     try {
-      const { buildingId } = req.query;
+      const { buildingId, unitType } = req.query;
       const userRole = (req.user?.role || '').toLowerCase();
       const userId = req.user?.id;
 
       const isFullAdmin = ['super_admin', 'superadmin', 'owner'].includes(userRole);
       let where = {};
+
+      if (unitType) {
+        where.unitType = unitType;
+      }
 
       if (buildingId) {
         if (!isFullAdmin && userId) {
@@ -79,7 +83,19 @@ class RoomController {
 
   async createRoom(req, res, next) {
     try {
-      const { roomNumber, floor, price, status, buildingId } = req.body;
+      const {
+        roomNumber,
+        floor,
+        price,
+        status,
+        buildingId,
+        unitType,
+        areaSqm,
+        locationZone,
+        billingModel,
+        revSharePercent,
+        companyTaxId
+      } = req.body;
 
       if (!roomNumber || floor == null || price == null) {
         return res.status(400).json({
@@ -107,7 +123,7 @@ class RoomController {
       if (existingRoom) {
         return res.status(400).json({
           success: false,
-          message: `ห้องพักหมายเลข ${roomNumber} มีอยู่ในตึกนี้แล้ว`
+          message: `ยูนิต/ห้องพักหมายเลข ${roomNumber} มีอยู่ในตึกนี้แล้ว`
         });
       }
 
@@ -117,7 +133,13 @@ class RoomController {
           floor: Number(floor),
           price: Number(price),
           status: status || 'available',
-          buildingId: targetBuildingId
+          buildingId: targetBuildingId,
+          unitType: unitType || 'residential',
+          areaSqm: areaSqm != null ? Number(areaSqm) : null,
+          locationZone: locationZone || null,
+          billingModel: billingModel || 'fixed',
+          revSharePercent: revSharePercent != null ? Number(revSharePercent) : null,
+          companyTaxId: companyTaxId || null
         },
         include: {
           building: true
@@ -126,7 +148,7 @@ class RoomController {
 
       return res.status(201).json({
         success: true,
-        message: `Room ${newRoom.roomNumber} created successfully`,
+        message: `สร้างยูนิต/ห้อง ${newRoom.roomNumber} เรียบร้อยแล้ว`,
         data: newRoom
       });
     } catch (error) {
