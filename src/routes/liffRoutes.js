@@ -7,6 +7,7 @@ const liffAuthMiddleware = require('../middlewares/liffAuthMiddleware');
 const validate = require('../middlewares/validateMiddleware');
 const { linkAccountSchema, registerInviteSchema, verifyPhoneSchema } = require('../validators/liffValidator');
 const liffController = require('../controllers/liffController');
+const authController = require('../controllers/authController');
 const announcementController = require('../controllers/announcementController');
 const maintenanceController = require('../controllers/maintenanceController');
 const invoiceController = require('../controllers/invoiceController');
@@ -15,11 +16,18 @@ const parcelController = require('../controllers/parcelController');
 // Public Invite Code Verification (อนุญาตให้ตรวจสอบความถูกต้องของรหัสเชิญได้ทั้งในและนอก LINE App)
 router.get('/invites/verify/:code', (req, res, next) => liffController.verifyInviteCode(req, res, next));
 
-// Silent Re-Authentication (สำหรับต่ออายุเซสชัน LIFF อัตโนมัติเบื้องหลังโดยใช้ LINE ID Token)
+// Silent Re-Authentication & LIFF PIN Authentication
 router.post('/auth/silent-login', (req, res, next) => liffController.silentLogin(req, res, next));
+router.post('/auth/check-status', (req, res, next) => authController.checkAuthStatus(req, res, next));
+router.post('/auth/pin-login', (req, res, next) => authController.pinLogin(req, res, next));
+router.post('/auth/setup-pin', (req, res, next) => authController.setupPin(req, res, next));
 
 // ทุก Route ถัดจากนี้ต้องมี LINE ID Token หรือ Backend JWT Bearer Token ที่ตรวจสอบผ่านแล้วเสมอ (req.lineUserId)
 router.use(liffAuthMiddleware);
+
+// LIFF PIN & Password Management (Protected with Token)
+router.post('/profile/change-pin', (req, res, next) => authController.changePin(req, res, next));
+router.post('/change-pin', (req, res, next) => authController.changePin(req, res, next));
 
 // จำกัดจำนวนครั้งการลองผูกบัญชี เพื่อป้องกัน Brute Force เดา phoneLast4 (10,000 ค่า) เมื่อรู้ inviteCode แล้ว
 const linkAccountLimiter = rateLimit({

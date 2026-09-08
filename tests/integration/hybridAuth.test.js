@@ -242,5 +242,43 @@ describe('Hybrid Authentication (LINE SSO + Local Password) Integration Tests', 
       expect(response.body.success).toBe(false);
       expect(response.body.code).toBe('TENANT_NOT_FOUND');
     });
+
+    test('POST /api/liff/auth/check-status - ตรวจสอบสถานะการผูกบัญชีและ PIN (200 OK)', async () => {
+      const response = await request(app)
+        .post('/api/liff/auth/check-status')
+        .send({
+          lineIdToken: mockLineIdToken
+        });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.isLinked).toBe(true);
+      expect(response.body.hasPin).toBe(true);
+    });
+
+    test('POST /api/liff/profile/change-pin - เปลี่ยนรหัส PIN สำเร็จ (200 OK)', async () => {
+      const newChangedPin = '987654';
+      const response = await request(app)
+        .post('/api/liff/profile/change-pin')
+        .set('Authorization', `Bearer ${tenantToken}`)
+        .send({
+          oldPin: testPin,
+          newPin: newChangedPin
+        });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+
+      // Verify new PIN works for login
+      const loginRes = await request(app)
+        .post('/api/liff/auth/pin-login')
+        .send({
+          lineIdToken: mockLineIdToken,
+          pin: newChangedPin
+        });
+
+      expect(loginRes.statusCode).toBe(200);
+      expect(loginRes.body.success).toBe(true);
+    });
   });
 });

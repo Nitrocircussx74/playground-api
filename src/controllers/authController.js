@@ -243,10 +243,11 @@ class AuthController {
    */
   async setupPin(req, res, next) {
     try {
-      const { pin, lineIdToken, idToken } = req.body;
+      const { pin, newPin, lineIdToken, idToken } = req.body;
+      const targetPin = newPin || pin;
       const rawToken = lineIdToken || idToken || req.headers['x-line-id-token'];
 
-      if (!pin || !/^\d{6}$/.test(String(pin))) {
+      if (!targetPin || !/^\d{6}$/.test(String(targetPin))) {
         return res.status(400).json({
           success: false,
           message: 'รหัส PIN ต้องเป็นตัวเลข 6 หลักเท่านั้น'
@@ -265,10 +266,16 @@ class AuthController {
       let tenant = null;
 
       if (tenantId) {
-        tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+        tenant = await prisma.tenant.findUnique({
+          where: { id: tenantId },
+          include: { rooms: true }
+        });
       }
       if (!tenant && lineUserId) {
-        tenant = await prisma.tenant.findFirst({ where: { lineUserId } });
+        tenant = await prisma.tenant.findFirst({
+          where: { lineUserId },
+          include: { rooms: true }
+        });
       }
 
       if (!tenant) {
@@ -278,7 +285,103 @@ class AuthController {
         });
       }
 
-      const pinHash = await bcrypt.hash(String(pin), 10);
+      const pinHash = await bcrypt.hash(String(targetPin), 10);
+      const updatedTenant = await prisma.tenant.update({
+        where: { id: tenant.id },
+        data: { pinHash },
+        include: { rooms: true }
+      });
+
+      // ออก Backend JWT เพื่อให้ลูกบ้านเข้าใช้งานระบบได้ทันทีหลังตั้งค่า PIN ครั้งแรก
+      const tenantUser = {
+        id: updatedTenant.id,
+        tenantId: updatedTenant.id,
+        phone: updatedTenant.phone,
+        email: `tenant_${updatedTenant.id}@dorm.local`,
+        name: updatedTenant.name || `${updatedTenant.firstName} ${updatedTenant.lastName}`.trim(),
+        displayName: updatedTenant.lineDisplayName || updatedTenant.firstName,
+        role: 'tenant',
+        lineUserId: updatedTenant.lineUserId,
+        roomId: updatedTenant.rooms?.[0]?.id,
+        buildingId: updatedTenant.rooms?.[0]?.buildingId
+      };
+
+      const accessToken = authService.generateAccessToken(tenantUser);
+      const refreshToken = authService.generateRefreshToken(tenantUser);
+
+      await authService.saveRefreshToken(updatedTenant.id, refreshToken);
+      setRefreshTokenCookie(res, refreshToken, req);
+
+      return res.status(200).json({
+        success: true,
+        message: 'ตั้งค่ารหัส PIN 6 หลักสำเร็จเรียบร้อยแล้ว',
+        accessToken,
+        token: accessToken,
+        user: tenantUser,
+        tenant: updatedTenant,
+        data: {
+          accessToken,
+          token: accessToken,
+          user: tenantUser,
+          tenant: updatedTenant
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * เปลี่ยนรหัส PIN สำหรับลูกบ้าน (ต้องยืนยันตัวตนด้วย Bearer JWT)
+   * POST /api/liff/profile/change-pin
+   */
+  async changePin(req, res, next) {
+    try {
+      const { oldPin, newPin } = req.body;
+
+      if (!oldPin || !newPin) {
+        return res.status(400).json({
+          success: false,
+          message: 'กรุณากรอกรหัส PIN เดิมและรหัส PIN ใหม่'
+        });
+      }
+
+      if (!/^\d{6}$/.test(String(newPin))) {
+        return res.status(400).json({
+          success: false,
+          message: 'รหัส PIN ใหม่ต้องเป็นตัวเลข 6 หลักเท่านั้น'
+        });
+      }
+
+      const tenantId = req.tenantId || req.user?.tenantId || req.user?.id;
+      const lineUserId = req.lineUserId || req.user?.lineUserId;
+
+      let tenant = null;
+      if (tenantId) {
+        tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+      } else if (lineUserId) {
+        tenant = await prisma.tenant.findFirst({ where: { lineUserId } });
+      }
+
+      if (!tenant) {
+        return res.status(404).json({
+          success: false,
+          message: 'ไม่พบข้อมูลลูกบ้าน'
+        });
+      }
+
+      // ถ้ามี PIN เดิมอยู่ใน DB ให้ตรวจสอบว่าตรงไหม
+      if (tenant.pinHash) {
+        const isMatch = await bcrypt.compare(String(oldPin), tenant.pinHash);
+        if (!isMatch) {
+          return res.status(400).json({
+            success: false,
+            message: 'รหัส PIN เดิมไม่ถูกต้อง'
+          });
+        }
+      }
+
+      const pinHash = await bcrypt.hash(String(newPin), 10);
       await prisma.tenant.update({
         where: { id: tenant.id },
         data: { pinHash }
@@ -286,7 +389,81 @@ class AuthController {
 
       return res.status(200).json({
         success: true,
-        message: 'ตั้งค่ารหัส PIN 6 หลักสำเร็จเรียบร้อยแล้ว'
+        message: 'เปลี่ยนรหัส PIN สำเร็จเรียบร้อยแล้ว'
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * ตรวจสอบสถานะการผูกบัญชีและการตั้งค่า PIN ของลูกบ้าน
+   * POST /api/liff/auth/check-status
+   */
+  async checkAuthStatus(req, res, next) {
+    try {
+      const { lineIdToken, idToken } = req.body;
+      const rawToken = lineIdToken || idToken || req.headers['x-line-id-token'];
+
+      let lineUserId = req.lineUserId || req.user?.lineUserId;
+
+      if (!lineUserId && rawToken) {
+        try {
+          const verified = await verifyLineIdToken(rawToken);
+          lineUserId = verified?.sub;
+        } catch {
+          return res.status(401).json({
+            success: false,
+            message: 'LINE ID Token ไม่ถูกต้องหรือหมดอายุแล้ว'
+          });
+        }
+      }
+
+      if (!lineUserId) {
+        return res.status(200).json({
+          success: true,
+          isLinked: false,
+          hasPin: false,
+          data: null
+        });
+      }
+
+      const tenant = await prisma.tenant.findFirst({
+        where: { lineUserId },
+        include: { rooms: { include: { building: true } } }
+      });
+
+      if (!tenant) {
+        return res.status(200).json({
+          success: true,
+          isLinked: false,
+          hasPin: false,
+          isRegistered: false,
+          data: null
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        isLinked: true,
+        hasPin: Boolean(tenant.pinHash),
+        isRegistered: true,
+        data: {
+          isLinked: true,
+          hasPin: Boolean(tenant.pinHash),
+          tenant: {
+            id: tenant.id,
+            firstName: tenant.firstName,
+            lastName: tenant.lastName,
+            phone: tenant.phone,
+            lineDisplayName: tenant.lineDisplayName,
+            linePictureUrl: tenant.linePictureUrl
+          },
+          room: tenant.rooms?.[0] ? {
+            id: tenant.rooms[0].id,
+            roomNumber: tenant.rooms[0].roomNumber
+          } : null
+        }
       });
     } catch (error) {
       next(error);
