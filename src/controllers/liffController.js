@@ -436,9 +436,23 @@ class LiffController {
 
       const room = updatedTenant.rooms && updatedTenant.rooms.length > 0 ? updatedTenant.rooms[0] : null;
 
+      const accessToken = authService.generateAccessToken({
+        id: updatedTenant.id,
+        tenantId: updatedTenant.id,
+        email: updatedTenant.email || `tenant_${updatedTenant.id}@dorm.local`,
+        name: updatedTenant.name,
+        displayName: updatedTenant.lineDisplayName || updatedTenant.name,
+        role: 'tenant',
+        lineUserId: updatedTenant.lineUserId,
+        roomId: room?.id,
+        buildingId: room?.buildingId
+      });
+
       return res.status(200).json({
         success: true,
         message: 'ยืนยันตัวตนและผูกบัญชี LINE สำเร็จเรียบร้อยแล้ว',
+        accessToken,
+        token: accessToken,
         data: {
           tenant: {
             id: updatedTenant.id,
@@ -450,7 +464,8 @@ class LiffController {
             linePictureUrl: updatedTenant.linePictureUrl,
             lineStatusMessage: updatedTenant.lineStatusMessage
           },
-          room: room ? { id: room.id, roomNumber: room.roomNumber } : null
+          room: room ? { id: room.id, roomNumber: room.roomNumber } : null,
+          accessToken
         }
       });
     } catch (error) {
