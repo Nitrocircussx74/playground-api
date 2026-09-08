@@ -281,4 +281,119 @@ describe('Hybrid Authentication (LINE SSO + Local Password) Integration Tests', 
       expect(loginRes.body.success).toBe(true);
     });
   });
+
+  describe('Centralized User Identity (1 User : Multi-Building LINE OA IDs)', () => {
+    const building2LineUserId = 'U_building2_scoped_line_id_999';
+    let testBuilding2;
+
+    beforeAll(async () => {
+      // Create building 2
+      testBuilding2 = await billingService.prisma.building.create({
+        data: {
+          name: 'หอพักสุขสบาย สาขา 2',
+          address: '456 ถนนสุขุมวิท'
+        }
+      });
+    });
+
+    afterAll(async () => {
+      if (testBuilding2) {
+        await billingService.prisma.userLineAccount.deleteMany({
+          where: { buildingId: testBuilding2.id }
+        });
+        await billingService.prisma.building.delete({
+          where: { id: testBuilding2.id }
+        });
+      }
+    });
+
+    test('POST /api/liff/auth/verify-phone-status - ตรวจสอบเบอร์โทรที่ยังไม่มีในระบบ', async () => {
+      const response = await request(app)
+        .post('/api/liff/auth/verify-phone-status')
+        .send({
+          phone: '0990001122'
+        });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.isExistingUser).toBe(false);
+      expect(response.body.hasPin).toBe(false);
+    });
+
+    test('POST /api/liff/auth/verify-phone-status - ตรวจสอบเบอร์โทรของผู้เช่าเดิมในระบบ', async () => {
+      const response = await request(app)
+        .post('/api/liff/auth/verify-phone-status')
+        .send({
+          phone: testPhone
+        });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.isExistingUser).toBe(true);
+      expect(response.body.hasPin).toBe(true);
+      expect(response.body.tenantName).toBe('ไฮบริด ออธ');
+    });
+
+    test('POST /api/liff/auth/link-and-login - กรณีใส่ PIN ผิด ต้องปฏิเสธ 401 INVALID_PIN', async () => {
+      const response = await request(app)
+        .post('/api/liff/auth/link-and-login')
+        .send({
+          phone: testPhone,
+          pin: '000000',
+          buildingId: testBuilding2.id,
+          lineUserId: building2LineUserId
+        });
+
+      expect(response.statusCode).toBe(401);
+      expect(response.body.success).toBe(false);
+      expect(response.body.code).toBe('INVALID_PIN');
+    });
+
+    test('POST /api/liff/auth/link-and-login - กรณีใส่ PIN ถูกต้อง ต้องผูก UserLineAccount และออก Token สำเร็จ', async () => {
+      const currentPin = '987654'; // PIN updated in previous change-pin test
+      const response = await request(app)
+        .post('/api/liff/auth/link-and-login')
+        .send({
+          phone: testPhone,
+          pin: currentPin,
+          buildingId: testBuilding2.id,
+          lineUserId: building2LineUserId,
+          lineDisplayName: 'Hybrid User Building 2',
+          linePictureUrl: 'https://example.com/pic2.jpg',
+          lineStatusMessage: 'อยู่ในสาขา 2'
+        });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.accessToken).toBeDefined();
+      expect(response.body.data.user.phone).toBe(testPhone);
+
+      // Verify UserLineAccount created in database
+      const linkedAccount = await billingService.prisma.userLineAccount.findUnique({
+        where: {
+          buildingId_lineUserId: {
+            buildingId: testBuilding2.id,
+            lineUserId: building2LineUserId
+          }
+        }
+      });
+      expect(linkedAccount).toBeDefined();
+      expect(linkedAccount.tenantId).toBe(testTenant.id);
+      expect(linkedAccount.lineDisplayName).toBe('Hybrid User Building 2');
+    });
+
+    test('POST /api/liff/auth/check-status - ตรวจสอบสถานะของ LINE User ID ในสาขา 2 ต้องพบสถานะ linked', async () => {
+      const response = await request(app)
+        .post('/api/liff/auth/check-status')
+        .send({
+          lineIdToken: building2LineUserId,
+          buildingId: testBuilding2.id
+        });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.isLinked).toBe(true);
+      expect(response.body.hasPin).toBe(true);
+    });
+  });
 });

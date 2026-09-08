@@ -129,7 +129,7 @@ class AuthController {
    */
   async pinLogin(req, res, next) {
     try {
-      const { lineIdToken, idToken, pin } = req.body;
+      const { lineIdToken, idToken, pin, buildingId } = req.body;
       const rawToken = lineIdToken || idToken || req.headers['x-line-id-token'];
 
       if (!rawToken || !pin) {
@@ -148,9 +148,14 @@ class AuthController {
 
       // 1. ถอดรหัส LINE ID Token เพื่อดึง lineUserId
       let lineUserId = null;
+      let lineProfileData = null;
       try {
         const verified = await verifyLineIdToken(rawToken);
         lineUserId = verified?.sub;
+        lineProfileData = {
+          displayName: verified?.name || req.body?.lineDisplayName || null,
+          pictureUrl: verified?.picture || req.body?.linePictureUrl || null
+        };
       } catch (err) {
         return res.status(401).json({
           success: false,
@@ -165,17 +170,52 @@ class AuthController {
         });
       }
 
-      // 2. ค้นหา Tenant ใน Database
-      const tenant = await prisma.tenant.findFirst({
-        where: { lineUserId },
-        include: { rooms: true }
-      });
+      // 2. ค้นหา Tenant: ตรวจสอบจากตาราง UserLineAccount ก่อน (Multi-Building Mapping)
+      let tenant = null;
+      if (buildingId) {
+        const linkedAccount = await prisma.userLineAccount.findUnique({
+          where: {
+            buildingId_lineUserId: {
+              buildingId,
+              lineUserId
+            }
+          },
+          include: {
+            tenant: {
+              include: { rooms: { include: { building: true } } }
+            }
+          }
+        });
+        tenant = linkedAccount?.tenant || null;
+      }
+
+      // Fallback: ค้นหาจาก UserLineAccount ใดๆ ที่ตรงกับ lineUserId
+      if (!tenant) {
+        const anyLinkedAccount = await prisma.userLineAccount.findFirst({
+          where: { lineUserId },
+          include: {
+            tenant: {
+              include: { rooms: { include: { building: true } } }
+            }
+          }
+        });
+        tenant = anyLinkedAccount?.tenant || null;
+      }
+
+      // Fallback: ค้นหาจากตาราง Tenant โดยตรง (Backward Compatibility)
+      if (!tenant) {
+        tenant = await prisma.tenant.findFirst({
+          where: { lineUserId },
+          include: { rooms: { include: { building: true } } }
+        });
+      }
 
       if (!tenant) {
         return res.status(404).json({
           success: false,
           code: 'TENANT_NOT_FOUND',
-          message: 'ไม่พบบัญชีผู้เช่าที่ผูกกับ LINE บัญชีนี้ กรุณาลงทะเบียนหรือผูกห้องพักก่อน'
+          isRegistered: false,
+          message: 'ยังไม่พบบัญชีผู้เช่าที่ผูกกับ LINE ในตึกนี้ กรุณาผูกบัญชีด้วยเบอร์โทรศัพท์'
         });
       }
 
@@ -198,7 +238,31 @@ class AuthController {
         });
       }
 
-      // 5. ออก Backend JWT และ Refresh Token
+      // 5. บันทึก/อัปเดต UserLineAccount สำหรับตึกนี้อัตโนมัติ (Seamless Sync)
+      if (buildingId) {
+        await prisma.userLineAccount.upsert({
+          where: {
+            buildingId_lineUserId: {
+              buildingId,
+              lineUserId
+            }
+          },
+          update: {
+            tenantId: tenant.id,
+            lineDisplayName: lineProfileData?.displayName || tenant.lineDisplayName,
+            linePictureUrl: lineProfileData?.pictureUrl || tenant.linePictureUrl
+          },
+          create: {
+            tenantId: tenant.id,
+            buildingId,
+            lineUserId,
+            lineDisplayName: lineProfileData?.displayName || tenant.lineDisplayName,
+            linePictureUrl: lineProfileData?.pictureUrl || tenant.linePictureUrl
+          }
+        }).catch((e) => console.warn('UserLineAccount sync warning in pinLogin:', e.message));
+      }
+
+      // 6. ออก Backend JWT และ Refresh Token
       const tenantUser = {
         id: tenant.id,
         tenantId: tenant.id,
@@ -207,9 +271,9 @@ class AuthController {
         name: tenant.name || `${tenant.firstName} ${tenant.lastName}`.trim(),
         displayName: tenant.lineDisplayName || tenant.firstName,
         role: 'tenant',
-        lineUserId: tenant.lineUserId,
+        lineUserId: tenant.lineUserId || lineUserId,
         roomId: tenant.rooms?.[0]?.id,
-        buildingId: tenant.rooms?.[0]?.buildingId
+        buildingId: buildingId || tenant.rooms?.[0]?.buildingId
       };
 
       const accessToken = authService.generateAccessToken(tenantUser);
@@ -402,7 +466,7 @@ class AuthController {
    */
   async checkAuthStatus(req, res, next) {
     try {
-      const { lineIdToken, idToken } = req.body;
+      const { lineIdToken, idToken, buildingId } = req.body;
       const rawToken = lineIdToken || idToken || req.headers['x-line-id-token'];
 
       let lineUserId = req.lineUserId || req.user?.lineUserId;
@@ -428,10 +492,45 @@ class AuthController {
         });
       }
 
-      const tenant = await prisma.tenant.findFirst({
-        where: { lineUserId },
-        include: { rooms: { include: { building: true } } }
-      });
+      // 1. ค้นหาในตาราง UserLineAccount ตาม buildingId + lineUserId ก่อน
+      let tenant = null;
+      if (buildingId) {
+        const linkedAccount = await prisma.userLineAccount.findUnique({
+          where: {
+            buildingId_lineUserId: {
+              buildingId,
+              lineUserId
+            }
+          },
+          include: {
+            tenant: {
+              include: { rooms: { include: { building: true } } }
+            }
+          }
+        });
+        tenant = linkedAccount?.tenant || null;
+      }
+
+      // 2. Fallback: ค้นหาจาก UserLineAccount ใดๆ ที่ตรงกับ lineUserId
+      if (!tenant) {
+        const anyLinked = await prisma.userLineAccount.findFirst({
+          where: { lineUserId },
+          include: {
+            tenant: {
+              include: { rooms: { include: { building: true } } }
+            }
+          }
+        });
+        tenant = anyLinked?.tenant || null;
+      }
+
+      // 3. Fallback: ค้นหาในตาราง Tenant โดยตรง (Backward-Compatible)
+      if (!tenant) {
+        tenant = await prisma.tenant.findFirst({
+          where: { lineUserId },
+          include: { rooms: { include: { building: true } } }
+        });
+      }
 
       if (!tenant) {
         return res.status(200).json({
@@ -463,6 +562,212 @@ class AuthController {
             id: tenant.rooms[0].id,
             roomNumber: tenant.rooms[0].roomNumber
           } : null
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * ตรวจสอบว่าเบอร์โทรศัพท์เป็นผู้ใช้เดิมในระบบ HorHub หรือเป็นลูกบ้านใหม่
+   * POST /api/v1/liff/auth/verify-phone-status
+   */
+  async verifyPhoneStatus(req, res, next) {
+    try {
+      const { phone, phoneNumber, buildingId } = req.body;
+      const rawPhone = phone || phoneNumber;
+
+      if (!rawPhone) {
+        return res.status(400).json({
+          success: false,
+          message: 'กรุณาระบุเบอร์โทรศัพท์'
+        });
+      }
+
+      const cleanDigits = String(rawPhone).replace(/\D/g, '');
+      const possiblePhones = [
+        rawPhone.trim(),
+        cleanDigits,
+        cleanDigits.startsWith('0') ? cleanDigits.slice(1) : '0' + cleanDigits,
+        cleanDigits.startsWith('66') ? '0' + cleanDigits.slice(2) : cleanDigits
+      ];
+
+      const tenant = await prisma.tenant.findFirst({
+        where: {
+          phone: { in: possiblePhones }
+        },
+        include: {
+          rooms: {
+            include: { building: true }
+          },
+          lineAccounts: true
+        }
+      });
+
+      if (tenant) {
+        const fullName = `${tenant.firstName} ${tenant.lastName}`.trim();
+        return res.status(200).json({
+          success: true,
+          isExistingUser: true,
+          hasPin: Boolean(tenant.pinHash),
+          userName: fullName,
+          tenantName: fullName,
+          tenant: {
+            id: tenant.id,
+            firstName: tenant.firstName,
+            lastName: tenant.lastName,
+            phone: tenant.phone
+          },
+          message: 'พบข้อมูลบัญชีของคุณในระบบ HorHub แล้ว กรุณากรอกรหัส PIN เดิมเพื่อยืนยันตัวตนและผูกเข้ากับตึกนี้'
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        isExistingUser: false,
+        hasPin: false,
+        message: 'เป็นลูกบ้านใหม่ กรุณากรอกข้อมูลและตั้งค่ารหัส PIN 6 หลักใหม่'
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * ผูก LINE ID ตึกใหม่เข้ากับบัญชีผู้ใช้เดิมด้วย PIN 6 หลัก และออก Token ทันที
+   * POST /api/v1/liff/auth/link-and-login
+   */
+  async linkAndLogin(req, res, next) {
+    try {
+      const { phone, phoneNumber, pin, buildingId, lineIdToken, idToken, lineDisplayName, linePictureUrl, lineStatusMessage } = req.body;
+      const rawPhone = phone || phoneNumber;
+      const rawToken = lineIdToken || idToken || req.headers['x-line-id-token'];
+
+      if (!rawPhone || !pin) {
+        return res.status(400).json({
+          success: false,
+          message: 'กรุณาระบุเบอร์โทรศัพท์และรหัส PIN 6 หลัก'
+        });
+      }
+
+      let lineUserId = null;
+      let profileFromToken = null;
+      if (rawToken) {
+        try {
+          const verified = await verifyLineIdToken(rawToken);
+          lineUserId = verified?.sub;
+          profileFromToken = {
+            displayName: verified?.name || null,
+            pictureUrl: verified?.picture || null
+          };
+        } catch {}
+      }
+
+      if (!lineUserId && req.body?.lineUserId) {
+        lineUserId = req.body.lineUserId;
+      }
+
+      const cleanDigits = String(rawPhone).replace(/\D/g, '');
+      const possiblePhones = [
+        rawPhone.trim(),
+        cleanDigits,
+        cleanDigits.startsWith('0') ? cleanDigits.slice(1) : '0' + cleanDigits,
+        cleanDigits.startsWith('66') ? '0' + cleanDigits.slice(2) : cleanDigits
+      ];
+
+      const tenant = await prisma.tenant.findFirst({
+        where: {
+          phone: { in: possiblePhones }
+        },
+        include: {
+          rooms: {
+            include: { building: true }
+          }
+        }
+      });
+
+      if (!tenant) {
+        return res.status(404).json({
+          success: false,
+          message: 'ไม่พบบัญชีผู้ใช้ที่ตรงกับเบอร์โทรศัพท์นี้'
+        });
+      }
+
+      if (!tenant.pinHash) {
+        return res.status(400).json({
+          success: false,
+          code: 'PIN_NOT_SET',
+          message: 'บัญชีนี้ยังไม่ได้ตั้งรหัส PIN 6 หลัก'
+        });
+      }
+
+      const isMatch = await bcrypt.compare(String(pin), tenant.pinHash);
+      if (!isMatch) {
+        return res.status(401).json({
+          success: false,
+          code: 'INVALID_PIN',
+          message: 'รหัส PIN 6 หลักไม่ถูกต้อง'
+        });
+      }
+
+      // Upsert UserLineAccount สำหรับตึกนี้
+      if (buildingId && lineUserId) {
+        await prisma.userLineAccount.upsert({
+          where: {
+            buildingId_lineUserId: {
+              buildingId,
+              lineUserId
+            }
+          },
+          update: {
+            tenantId: tenant.id,
+            lineDisplayName: lineDisplayName || profileFromToken?.displayName || tenant.lineDisplayName,
+            linePictureUrl: linePictureUrl || profileFromToken?.pictureUrl || tenant.linePictureUrl,
+            lineStatusMessage: lineStatusMessage || tenant.lineStatusMessage
+          },
+          create: {
+            tenantId: tenant.id,
+            buildingId,
+            lineUserId,
+            lineDisplayName: lineDisplayName || profileFromToken?.displayName || tenant.lineDisplayName,
+            linePictureUrl: linePictureUrl || profileFromToken?.pictureUrl || tenant.linePictureUrl,
+            lineStatusMessage: lineStatusMessage || tenant.lineStatusMessage
+          }
+        }).catch((e) => console.warn('UserLineAccount upsert warning in linkAndLogin:', e.message));
+      }
+
+      const tenantUser = {
+        id: tenant.id,
+        tenantId: tenant.id,
+        phone: tenant.phone,
+        email: `tenant_${tenant.id}@dorm.local`,
+        name: tenant.name || `${tenant.firstName} ${tenant.lastName}`.trim(),
+        displayName: tenant.lineDisplayName || tenant.firstName,
+        role: 'tenant',
+        lineUserId: lineUserId || tenant.lineUserId,
+        roomId: tenant.rooms?.[0]?.id,
+        buildingId: buildingId || tenant.rooms?.[0]?.buildingId
+      };
+
+      const accessToken = authService.generateAccessToken(tenantUser);
+      const refreshToken = authService.generateRefreshToken(tenantUser);
+
+      await authService.saveRefreshToken(tenant.id, refreshToken);
+      setRefreshTokenCookie(res, refreshToken, req);
+
+      return res.status(200).json({
+        success: true,
+        message: 'ยืนยันตัวตนและผูก LINE กับตึกนี้สำเร็จเรียบร้อย',
+        accessToken,
+        token: accessToken,
+        user: tenantUser,
+        tenant,
+        data: {
+          accessToken,
+          token: accessToken,
+          user: tenantUser,
+          tenant
         }
       });
     } catch (error) {

@@ -93,6 +93,7 @@ model Building {
   parcels Parcel[]
   leaseContracts LeaseContract[]
   maintenanceRequests MaintenanceRequest[]
+  lineAccounts UserLineAccount[]
 
   @@map("buildings")
 }
@@ -279,8 +280,46 @@ model Tenant {
   parcels Parcel[]
   leaseContracts LeaseContract[]
   maintenanceRequests MaintenanceRequest[]
+  lineAccounts UserLineAccount[]
 
   @@map("tenants")
+}
+
+/// ตาราง Mapping LINE Account ประจำแต่ละตึก (1 ลูกบ้าน : หลาย LINE OA ID จากหลายตึก)
+model UserLineAccount {
+  /// รหัสอ้างอิง Mapping (PK, UUID)
+  id String @id @default(uuid()) @db.Uuid
+
+  /// รหัสอ้างอิงผู้เช่า/ลูกบ้านกลาง (Foreign Key)
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// รหัสอ้างอิงตึก/โครงการ (Foreign Key)
+  buildingId String @map("building_id") @db.Uuid
+  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  /// LINE User ID (Provider-specific User ID ประจำ LINE OA ตึกนั้น)
+  lineUserId String @map("line_user_id")
+
+  /// ชื่อโปรไฟล์ LINE
+  lineDisplayName String? @map("line_display_name")
+
+  /// รูปโปรไฟล์ LINE
+  linePictureUrl String? @map("line_picture_url")
+
+  /// ข้อความสถานะ LINE
+  lineStatusMessage String? @map("line_status_message")
+
+  /// วันเวลาที่เชื่อมต่อ
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Constraints & Indexes
+  @@unique([buildingId, lineUserId], name: "buildingId_lineUserId")
+  @@index([lineUserId])
+  @@index([tenantId])
+  @@index([buildingId])
+  @@map("user_line_accounts")
 }
 
 /// ตารางประวัติการจดมิเตอร์น้ำและไฟ

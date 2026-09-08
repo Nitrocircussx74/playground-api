@@ -52,6 +52,18 @@ router.post('/liff/setup-pin', authController.setupPin);
 router.post('/setup-pin', authController.setupPin);
 
 /**
+ * @route   POST /auth/liff/verify-phone-status
+ * @desc    ตรวจสอบเบอร์โทรศัพท์ว่ามีในระบบแล้วหรือไม่สำหรับ Multi-Building Centralized Identity
+ */
+router.post('/liff/verify-phone-status', authController.verifyPhoneStatus);
+
+/**
+ * @route   POST /auth/liff/link-and-login
+ * @desc    ยืนยัน PIN เพื่อผูก LINE OA ใหม่กับ User เดิม และเข้าสู่ระบบทันที
+ */
+router.post('/liff/link-and-login', authController.linkAndLogin);
+
+/**
  * @route   POST /auth/login/local
  * @desc    เข้าสู่ระบบด้วยเบอร์โทรศัพท์และรหัสผ่าน (Local Password Authentication)
  */
