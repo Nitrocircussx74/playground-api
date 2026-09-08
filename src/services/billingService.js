@@ -140,7 +140,6 @@ class BillingService {
     const roomPrice = Number(room.price);
     const finalCommonFee = waiveCommonFee ? 0 : (commonFee != null ? Number(commonFee) : DEFAULT_COMMON_FEE);
     const finalOtherFee = Number(otherFee) || 0;
-    const grandTotal = roomPrice + waterTotal + electricTotal + finalCommonFee + finalOtherFee;
 
     const formattedCycle = billingCycle.replace('-', '');
     const invoiceNumber = `INV-${formattedCycle}-${room.roomNumber}`;
@@ -156,6 +155,9 @@ class BillingService {
       }
 
       if (existingInvoice) {
+        const existingLateFee = Number(existingInvoice.lateFeeCharge) || 0;
+        const grandTotal = roomPrice + waterTotal + electricTotal + finalCommonFee + finalOtherFee + existingLateFee;
+
         return await tx.invoice.update({
           where: { id: existingInvoice.id },
           data: {
@@ -172,6 +174,8 @@ class BillingService {
         });
       }
 
+      const grandTotal = roomPrice + waterTotal + electricTotal + finalCommonFee + finalOtherFee;
+
       return await tx.invoice.create({
         data: {
           invoiceNumber,
@@ -184,6 +188,7 @@ class BillingService {
           commonFee: finalCommonFee,
           otherFee: finalOtherFee,
           otherFeeNote: otherFeeNote || null,
+          lateFeeCharge: 0.00,
           grandTotal,
           status: 'pending',
           dueDate: dueDate ? new Date(dueDate) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
@@ -198,7 +203,7 @@ class BillingService {
   /**
    * แก้ไขข้อมูลใบแจ้งหนี้เดิมที่ยังไม่ได้ชำระเงิน
    */
-  async updateInvoice(invoiceId, { roomPrice, waterTotal, electricTotal, waiveCommonFee, commonFee, otherFee, otherFeeNote, dueDate, status }) {
+  async updateInvoice(invoiceId, { roomPrice, waterTotal, electricTotal, waiveCommonFee, commonFee, otherFee, otherFeeNote, lateFeeCharge, dueDate, status }) {
     const existingInvoice = await prisma.invoice.findUnique({
       where: { id: invoiceId },
       include: { room: true, tenant: true }
@@ -218,8 +223,9 @@ class BillingService {
     const finalCommonFee = waiveCommonFee ? 0 : (commonFee != null ? Number(commonFee) : Number(existingInvoice.commonFee));
     const finalOtherFee = otherFee != null ? Number(otherFee) : Number(existingInvoice.otherFee);
     const finalOtherFeeNote = otherFeeNote !== undefined ? otherFeeNote : existingInvoice.otherFeeNote;
+    const finalLateFee = lateFeeCharge != null ? Number(lateFeeCharge) : Number(existingInvoice.lateFeeCharge || 0);
 
-    const grandTotal = finalRoomPrice + finalWaterTotal + finalElectricTotal + finalCommonFee + finalOtherFee;
+    const grandTotal = finalRoomPrice + finalWaterTotal + finalElectricTotal + finalCommonFee + finalOtherFee + finalLateFee;
 
     const updatedInvoice = await prisma.invoice.update({
       where: { id: invoiceId },
@@ -230,6 +236,7 @@ class BillingService {
         commonFee: finalCommonFee,
         otherFee: finalOtherFee,
         otherFeeNote: finalOtherFeeNote || null,
+        lateFeeCharge: finalLateFee,
         grandTotal,
         status: status || existingInvoice.status,
         dueDate: dueDate ? new Date(dueDate) : existingInvoice.dueDate

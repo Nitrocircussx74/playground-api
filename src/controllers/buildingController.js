@@ -144,6 +144,9 @@ class BuildingController {
         electricRate,
         dueDateDay,
         latePenalty,
+        lateFeeType,
+        lateFeeAmount,
+        gracePeriodDays,
 
         // 4. Rules & Contracts
         depositMonths,
@@ -183,6 +186,9 @@ class BuildingController {
         ...(electricRate !== undefined && { electricRate }),
         ...(dueDateDay !== undefined && { dueDateDay: parseInt(dueDateDay, 10) }),
         ...(latePenalty !== undefined && { latePenalty }),
+        ...(lateFeeType !== undefined && { lateFeeType: lateFeeType.toUpperCase() }),
+        ...(lateFeeAmount !== undefined && { lateFeeAmount }),
+        ...(gracePeriodDays !== undefined && { gracePeriodDays: parseInt(gracePeriodDays, 10) }),
         ...(depositMonths !== undefined && { depositMonths: parseInt(depositMonths, 10) }),
         ...(advanceMonths !== undefined && { advanceMonths: parseInt(advanceMonths, 10) }),
         ...(termsAndConditions !== undefined && { termsAndConditions })

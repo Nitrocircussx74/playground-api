@@ -2,6 +2,8 @@ const app = require('./app');
 const config = require('./config/env');
 const db = require('./config/db');
 
+const { initLateFeeCron } = require('./jobs/lateFeeCron');
+
 // เริ่มต้นเปิดเซิร์ฟเวอร์รับการเชื่อมต่อ
 const server = app.listen(config.port, async () => {
   console.log(`=================================`);
@@ -14,6 +16,11 @@ const server = app.listen(config.port, async () => {
 
   // ทดสอบเชื่อมต่อกับ PostgreSQL Database
   await db.testConnection();
+
+  // เริ่มต้นทำงาน Background Worker (Late Fee Cron Job)
+  if (config.nodeEnv !== 'test') {
+    initLateFeeCron();
+  }
 });
 
 // จัดการกรณีเซิร์ฟเวอร์ปิดตัวอย่างกะทันหัน (Graceful Shutdown)

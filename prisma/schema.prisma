@@ -133,8 +133,14 @@ model BuildingSetting {
   electricRate Decimal @default(7.00) @map("electric_rate") @db.Decimal(10, 2)
   /// วันกำหนดชำระเงินของทุกเดือน (เช่น วันที่ 5)
   dueDateDay Int @default(5) @map("due_date_day")
-  /// ค่าปรับชำระเกินกำหนด (Decimal)
+  /// ค่าปรับชำระเกินกำหนด (Decimal) - Deprecated Alias
   latePenalty Decimal @default(50.00) @map("late_penalty") @db.Decimal(10, 2)
+  /// ประเภทนโยบายค่าปรับ (NONE = ไม่มี, DAILY = รายวัน, FLAT = เหมาจ่ายครั้งเดียว)
+  lateFeeType String @default("NONE") @map("late_fee_type")
+  /// จำนวนเงินค่าปรับ (Decimal)
+  lateFeeAmount Decimal @default(0.00) @map("late_fee_amount") @db.Decimal(10, 2)
+  /// ระยะเวลาผ่อนผันก่อนเริ่มคิดค่าปรับ (จำนวนวัน)
+  gracePeriodDays Int @default(0) @map("grace_period_days")
 
   // 4. Rules & Contract Terms (กฎระเบียบและข้อตกลง)
   /// จำนวนเดือนเงินประกัน/มัดจำ (Int)
@@ -350,7 +356,10 @@ model Invoice {
   /// หมายเหตุค่าบริการอื่นๆ
   otherFeeNote String? @map("other_fee_note")
 
-  /// ยอดเงินสุทธิที่ต้องชำระ (ค่าห้อง + ค่าน้ำ + ค่าไฟ + ค่าอื่นๆ)
+  /// ค่าปรับชำระล่าช้า (Late Fee)
+  lateFeeCharge Decimal @default(0.00) @map("late_fee_charge") @db.Decimal(10, 2)
+
+  /// ยอดเงินสุทธิที่ต้องชำระ (ค่าห้อง + ค่าน้ำ + ค่าไฟ + ค่าส่วนกลาง + ค่าอื่นๆ + ค่าปรับ)
   grandTotal Decimal @map("grand_total") @db.Decimal(10, 2)
 
   /// สถานะการชำระเงิน (pending = รอชำระ, paid = ชำระแล้ว, overdue = เกินกำหนด)

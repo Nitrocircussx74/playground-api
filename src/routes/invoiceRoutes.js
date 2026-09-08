@@ -12,6 +12,7 @@ router.patch('/:id/status', requireRole('admin'), (req, res, next) => invoiceCon
 router.post('/:id/pay-manual', requireRole('admin'), (req, res, next) => invoiceController.recordManualPayment(req, res, next));
 router.post('/:id/remind', requireRole('admin'), (req, res, next) => invoiceController.remindInvoice(req, res, next));
 router.post('/remind-bulk', requireRole('admin'), (req, res, next) => invoiceController.remindBulkInvoices(req, res, next));
+router.post('/process-late-fees', requireRole('admin'), (req, res, next) => invoiceController.processLateFees(req, res, next));
 router.delete('/:id', requireRole('admin'), (req, res, next) => invoiceController.deleteInvoice(req, res, next));
 
 module.exports = router;

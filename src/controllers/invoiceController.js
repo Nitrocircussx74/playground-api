@@ -402,6 +402,13 @@ class InvoiceController {
         }
       }
 
+      if (Number(invoice.lateFeeCharge) > 0) {
+        items.push({
+          desc: 'ค่าปรับชำระล่าช้า (Late Payment Penalty Fee)',
+          amount: Number(invoice.lateFeeCharge)
+        });
+      }
+
       items.forEach((item) => {
         doc.text(item.desc, 50, y);
         doc.text(item.amount.toLocaleString('th-TH', { minimumFractionDigits: 2 }), 400, y, { width: 140, align: 'right' });
@@ -531,6 +538,13 @@ class InvoiceController {
             amount: Number(invoice.otherFee)
           });
         }
+      }
+
+      if (Number(invoice.lateFeeCharge) > 0) {
+        items.push({
+          desc: 'ค่าปรับชำระล่าช้า (Late Payment Penalty Fee)',
+          amount: Number(invoice.lateFeeCharge)
+        });
       }
 
       items.forEach((item) => {
@@ -765,6 +779,25 @@ class InvoiceController {
           sentCount,
           skippedCount
         }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * สั่งประมวลผลคำนวณค่าปรับจ่ายล่าช้าอัตโนมัติ (On-Demand / Manual Trigger โดยแอดมิน)
+   */
+  async processLateFees(req, res, next) {
+    try {
+      const { buildingId, targetDate } = req.body || {};
+      const lateFeeService = require('../services/lateFeeService');
+      const result = await lateFeeService.processLateFees({ buildingId, targetDate });
+
+      return res.status(200).json({
+        success: true,
+        message: `ประมวลผลค่าปรับสำเร็จ: อัปเดต ${result.totalUpdated} จากทั้งหมด ${result.totalProcessed} บิล (ยอดค่าปรับรวม ฿${result.totalLateFeeAmount.toLocaleString()})`,
+        data: result
       });
     } catch (error) {
       next(error);
