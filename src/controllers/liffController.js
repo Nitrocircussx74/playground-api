@@ -9,6 +9,7 @@ class LiffController {
   async checkTenantStatus(req, res, next) {
     try {
       const lineUserId = req.lineUserId;
+      const { phone, roomNumber, inviteCode, tenantId } = req.query || {};
 
       if (!lineUserId) {
         return res.status(200).json({
@@ -18,10 +19,89 @@ class LiffController {
         });
       }
 
-      const tenant = await billingService.prisma.tenant.findFirst({
+      // 1. ค้นหาผู้เช่าที่ผูกกับ lineUserId อยู่แล้ว
+      let tenant = await billingService.prisma.tenant.findFirst({
         where: { lineUserId },
         include: { rooms: { include: { building: true } } }
       });
+
+      // 2. หากยังไม่พบ และมีการส่ง phone / roomNumber / tenantId เข้ามา ให้ทำการผูก lineUserId เข้ากับ Tenant ทันที
+      if (!tenant && phone) {
+        const cleanPhone = String(phone).trim();
+        tenant = await billingService.prisma.tenant.findFirst({
+          where: { phone: cleanPhone },
+          include: { rooms: { include: { building: true } } }
+        });
+        if (tenant && !tenant.lineUserId) {
+          tenant = await billingService.prisma.tenant.update({
+            where: { id: tenant.id },
+            data: {
+              lineUserId,
+              lineDisplayName: req.lineUser?.displayName || tenant.lineDisplayName,
+              linePictureUrl: req.lineUser?.pictureUrl || tenant.linePictureUrl
+            },
+            include: { rooms: { include: { building: true } } }
+          });
+        }
+      }
+
+      if (!tenant && roomNumber) {
+        const room = await billingService.prisma.room.findFirst({
+          where: { roomNumber: String(roomNumber).trim() },
+          include: { tenant: { include: { rooms: { include: { building: true } } } } }
+        });
+        if (room?.tenant) {
+          tenant = room.tenant;
+          if (!tenant.lineUserId) {
+            tenant = await billingService.prisma.tenant.update({
+              where: { id: tenant.id },
+              data: {
+                lineUserId,
+                lineDisplayName: req.lineUser?.displayName || tenant.lineDisplayName,
+                linePictureUrl: req.lineUser?.pictureUrl || tenant.linePictureUrl
+              },
+              include: { rooms: { include: { building: true } } }
+            });
+          }
+        }
+      }
+
+      if (!tenant && tenantId) {
+        const matched = await billingService.prisma.tenant.findUnique({
+          where: { id: tenantId },
+          include: { rooms: { include: { building: true } } }
+        });
+        if (matched) {
+          tenant = await billingService.prisma.tenant.update({
+            where: { id: matched.id },
+            data: {
+              lineUserId,
+              lineDisplayName: req.lineUser?.displayName || matched.lineDisplayName,
+              linePictureUrl: req.lineUser?.pictureUrl || matched.linePictureUrl
+            },
+            include: { rooms: { include: { building: true } } }
+          });
+        }
+      }
+
+      // 3. Fallback: หากยังไม่พบผู้เช่า และอยู่ใน Dev/Test Mode ให้ auto-bind กับผู้เช่าที่ยังไม่มี lineUserId
+      if (!tenant && (process.env.NODE_ENV !== 'production' || process.env.LINE_MOCK_MODE === 'true')) {
+        const unlinked = await billingService.prisma.tenant.findFirst({
+          where: { lineUserId: null },
+          include: { rooms: { include: { building: true } } }
+        });
+        if (unlinked) {
+          tenant = await billingService.prisma.tenant.update({
+            where: { id: unlinked.id },
+            data: {
+              lineUserId,
+              lineDisplayName: req.lineUser?.displayName || unlinked.lineDisplayName,
+              linePictureUrl: req.lineUser?.pictureUrl || unlinked.linePictureUrl
+            },
+            include: { rooms: { include: { building: true } } }
+          });
+        }
+      }
 
       if (!tenant) {
         return res.status(200).json({
@@ -29,6 +109,20 @@ class LiffController {
           isRegistered: false,
           data: null
         });
+      }
+
+      // Sync LINE profile หากมีการเปลี่ยนแปลง
+      if (req.lineUser) {
+        if ((req.lineUser.displayName && req.lineUser.displayName !== tenant.lineDisplayName) ||
+            (req.lineUser.pictureUrl && req.lineUser.pictureUrl !== tenant.linePictureUrl)) {
+          await billingService.prisma.tenant.update({
+            where: { id: tenant.id },
+            data: {
+              lineDisplayName: req.lineUser.displayName || tenant.lineDisplayName,
+              linePictureUrl: req.lineUser.pictureUrl || tenant.linePictureUrl
+            }
+          }).catch(() => {});
+        }
       }
 
       const room = tenant.rooms && tenant.rooms.length > 0 ? tenant.rooms[0] : null;
@@ -363,6 +457,30 @@ class LiffController {
 
       if (!tenant) {
         return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลผู้เช่า' });
+      }
+
+      // หากพบผู้เช่าและมี lineUserId ที่ยืนยันแล้ว แต่ผู้เช่ายังไม่ได้ผูก ให้ทำการ Auto-bind ทันที
+      if (lineUserId && !tenant.lineUserId) {
+        try {
+          tenant = await billingService.prisma.tenant.update({
+            where: { id: tenant.id },
+            data: {
+              lineUserId,
+              lineDisplayName: req.lineUser?.displayName || tenant.lineDisplayName,
+              linePictureUrl: req.lineUser?.pictureUrl || tenant.linePictureUrl
+            },
+            include: {
+              rooms: { include: { building: true } },
+              leaseContracts: {
+                where: { status: 'ACTIVE' },
+                include: { room: { include: { building: true } } },
+                orderBy: { createdAt: 'desc' }
+              }
+            }
+          });
+        } catch (bindErr) {
+          console.warn('Auto-bind tenant lineUserId error:', bindErr.message);
+        }
       }
 
       // รวมรายชื่อห้องพักทั้งหมดที่ผู้เช่าถือครอง (Multi-Room Data)
