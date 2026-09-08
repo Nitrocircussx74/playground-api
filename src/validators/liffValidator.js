@@ -12,9 +12,9 @@ const linkAccountSchema = z.object({
     .string({ required_error: 'กรุณาระบุเบอร์โทรศัพท์ 4 ตัวท้าย' })
     .trim()
     .regex(/^\d{4}$/, { message: 'เบอร์โทรศัพท์ 4 ตัวท้ายต้องเป็นตัวเลข 4 หลัก' }),
-  lineDisplayName: z.string().trim().max(200).nullish(),
+  lineDisplayName: z.string().trim().max(500).nullish(),
   linePictureUrl: z.string().trim().url({ message: 'รูปแบบ URL รูปโปรไฟล์ไม่ถูกต้อง' }).nullish().or(z.literal('')),
-  lineStatusMessage: z.string().trim().max(200).nullish()
+  lineStatusMessage: z.string().trim().max(2000).nullish().or(z.literal(''))
 });
 
 /**
@@ -43,9 +43,9 @@ const registerInviteSchema = z.object({
     .regex(/^\d{13}$/, { message: 'เลขบัตรประจำตัวประชาชนต้องเป็นตัวเลข 13 หลัก' })
     .nullish()
     .or(z.literal('')),
-  lineDisplayName: z.string().trim().max(200).nullish(),
+  lineDisplayName: z.string().trim().max(500).nullish(),
   linePictureUrl: z.string().trim().url({ message: 'รูปแบบ URL รูปโปรไฟล์ไม่ถูกต้อง' }).nullish().or(z.literal('')),
-  lineStatusMessage: z.string().trim().max(200).nullish()
+  lineStatusMessage: z.string().trim().max(2000).nullish().or(z.literal(''))
 });
 
 /**
@@ -58,9 +58,9 @@ const verifyPhoneSchema = z.object({
     .min(9, { message: 'เบอร์โทรศัพท์ต้องมีความยาวอย่างน้อย 9-10 หลัก' }),
   roomNumber: z.string().trim().optional(),
   idCardLast4: z.string().trim().optional(),
-  lineDisplayName: z.string().trim().max(200).nullish(),
+  lineDisplayName: z.string().trim().max(500).nullish(),
   linePictureUrl: z.string().trim().nullish().or(z.literal('')),
-  lineStatusMessage: z.string().trim().max(200).nullish()
+  lineStatusMessage: z.string().trim().max(2000).nullish().or(z.literal(''))
 });
 
 module.exports = {
