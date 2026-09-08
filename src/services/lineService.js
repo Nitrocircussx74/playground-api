@@ -855,6 +855,7 @@ class LineService {
     return {
       promptpayNumber: targetPromptPay,
       promptpayName: 'หอพักสมาร์ทโดรม (Dormitory Admin)',
+      amount: numAmount,
       payload,
       qrDataUrl
     };
