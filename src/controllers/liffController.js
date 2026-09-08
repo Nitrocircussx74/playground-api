@@ -315,16 +315,51 @@ class LiffController {
   }
 
   /**
-   * ซิงค์ข้อมูลโปรไฟล์ LINE ของลูกบ้านอัตโนมัติ (Profile Auto-Sync)
+   * ซิงค์ข้อมูลโปรไฟล์ LINE ของลูกบ้านอัตโนมัติ (Profile Auto-Sync & Bind)
    */
   async syncLineProfile(req, res, next) {
     try {
-      const { lineDisplayName, linePictureUrl, lineStatusMessage } = req.body;
-      const lineUserId = req.lineUserId;
+      const { lineDisplayName, linePictureUrl, lineStatusMessage, tenantId, phone, roomNumber } = req.body;
+      const lineUserId = req.lineUserId || req.body.lineUserId;
 
-      const tenant = await billingService.prisma.tenant.findUnique({
-        where: { lineUserId }
-      });
+      let tenant = null;
+
+      // 1. ค้นหาด้วย lineUserId
+      if (lineUserId) {
+        tenant = await billingService.prisma.tenant.findUnique({
+          where: { lineUserId }
+        });
+      }
+
+      // 2. ค้นหาด้วย tenantId (ถ้าส่งมา)
+      if (!tenant && tenantId) {
+        tenant = await billingService.prisma.tenant.findUnique({
+          where: { id: tenantId }
+        });
+      }
+
+      // 3. ค้นหาด้วย phone (ถ้าส่งมา)
+      if (!tenant && phone) {
+        tenant = await billingService.prisma.tenant.findFirst({
+          where: { phone: String(phone).trim() }
+        });
+      }
+
+      // 4. ค้นหาด้วย roomNumber (ถ้าส่งมา)
+      if (!tenant && roomNumber) {
+        const room = await billingService.prisma.room.findFirst({
+          where: { roomNumber: String(roomNumber).trim() },
+          include: { tenant: true }
+        });
+        tenant = room?.tenant || null;
+      }
+
+      // 5. Fallback ใน Dev/Mock Mode
+      if (!tenant && (process.env.NODE_ENV !== 'production' || process.env.LINE_MOCK_MODE === 'true')) {
+        tenant = await billingService.prisma.tenant.findFirst({
+          where: { lineUserId: null }
+        });
+      }
 
       if (!tenant) {
         return res.status(404).json({ success: false, message: 'ไม่พบผู้เช่าที่ผูกกับบัญชี LINE นี้' });
@@ -350,9 +385,10 @@ class LiffController {
       const updatedTenant = await billingService.prisma.tenant.update({
         where: { id: tenant.id },
         data: {
-          lineDisplayName: realDisplayName || null,
-          linePictureUrl: realPictureUrl || null,
-          lineStatusMessage: realStatusMessage || null
+          lineUserId: lineUserId || tenant.lineUserId,
+          lineDisplayName: realDisplayName || tenant.lineDisplayName,
+          linePictureUrl: realPictureUrl || tenant.linePictureUrl,
+          lineStatusMessage: realStatusMessage || tenant.lineStatusMessage
         }
       });
 
@@ -360,6 +396,8 @@ class LiffController {
         success: true,
         message: 'ซิงค์ข้อมูลโปรไฟล์ LINE สำเร็จ',
         data: {
+          id: updatedTenant.id,
+          lineUserId: updatedTenant.lineUserId,
           lineDisplayName: updatedTenant.lineDisplayName,
           linePictureUrl: updatedTenant.linePictureUrl,
           lineStatusMessage: updatedTenant.lineStatusMessage
