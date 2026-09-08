@@ -44,4 +44,42 @@ describe('LINE Rich Menu & LIFF Smart Entry Router Integration Tests', () => {
       expect(response.body.data.tenant.lineUserId).toBe(testTenant.lineUserId);
     });
   });
+
+  describe('POST /api/v1/liff/auth/verify-phone', () => {
+    test('กรณีเบอร์โทรศัพท์ไม่มีในระบบ ควรส่งคืน 404 Not Found', async () => {
+      const response = await request(app)
+        .post('/api/v1/liff/auth/verify-phone')
+        .set('X-Line-Id-Token', 'U_test_verify_phone_not_found')
+        .send({ phone: '0999999999' });
+
+      expect(response.statusCode).toBe(404);
+      expect(response.body.success).toBe(false);
+    });
+
+    test('กรณีส่งเบอร์โทรศัพท์ที่ถูกต้อง ควรจับคู่ผู้เช่าและบันทึก LINE Profile สำเร็จ (200 OK)', async () => {
+      if (!testTenant || !testTenant.phone) return;
+
+      const newUid = `U_verified_phone_${Date.now()}`;
+      const response = await request(app)
+        .post('/api/v1/liff/auth/verify-phone')
+        .set('X-Line-Id-Token', newUid)
+        .send({
+          phone: testTenant.phone,
+          lineDisplayName: 'Test Phone Verified Tenant',
+          linePictureUrl: 'https://example.com/phone_avatar.png'
+        });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.tenant.id).toBe(testTenant.id);
+      expect(response.body.data.tenant.lineUserId).toBe(newUid);
+      expect(response.body.data.tenant.lineDisplayName).toBe('Test Phone Verified Tenant');
+
+      // Restore testTenant lineUserId
+      await billingService.prisma.tenant.update({
+        where: { id: testTenant.id },
+        data: { lineUserId: testTenant.lineUserId, lineDisplayName: testTenant.lineDisplayName }
+      });
+    });
+  });
 });

@@ -5,7 +5,7 @@ const upload = require('../middlewares/uploadMiddleware');
 const verifyImageMagicBytes = require('../middlewares/verifyImageMagicBytes');
 const liffAuthMiddleware = require('../middlewares/liffAuthMiddleware');
 const validate = require('../middlewares/validateMiddleware');
-const { linkAccountSchema, registerInviteSchema } = require('../validators/liffValidator');
+const { linkAccountSchema, registerInviteSchema, verifyPhoneSchema } = require('../validators/liffValidator');
 const liffController = require('../controllers/liffController');
 const announcementController = require('../controllers/announcementController');
 const maintenanceController = require('../controllers/maintenanceController');
@@ -48,6 +48,7 @@ router.get('/invoices/:id', (req, res, next) => liffController.getInvoiceForLiff
 router.post('/invoices/:id/slip', upload.single('file'), verifyImageMagicBytes, (req, res, next) => liffController.uploadSlipFromLiff(req, res, next));
 
 // LIFF Tenant Registration & Account Linking
+router.post('/auth/verify-phone', validate(verifyPhoneSchema), (req, res, next) => liffController.verifyPhoneAndLinkTenant(req, res, next));
 router.post('/register/invite', validate(registerInviteSchema), (req, res, next) => liffController.registerTenantWithInvite(req, res, next));
 router.post('/auth/link-account', linkAccountLimiter, validate(linkAccountSchema), (req, res, next) => liffController.linkTenantAccount(req, res, next));
 router.patch('/auth/sync-profile', (req, res, next) => liffController.syncLineProfile(req, res, next));

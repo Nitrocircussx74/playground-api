@@ -48,7 +48,23 @@ const registerInviteSchema = z.object({
   lineStatusMessage: z.string().trim().max(200).nullish()
 });
 
+/**
+ * Zod Schema สำหรับ POST /api/v1/liff/auth/verify-phone (ยืนยันตัวตนและผูกบัญชีด้วยเบอร์โทรศัพท์)
+ */
+const verifyPhoneSchema = z.object({
+  phone: z
+    .string({ required_error: 'กรุณาระบุเบอร์โทรศัพท์ที่ลงทะเบียนไว้' })
+    .trim()
+    .min(9, { message: 'เบอร์โทรศัพท์ต้องมีความยาวอย่างน้อย 9-10 หลัก' }),
+  roomNumber: z.string().trim().optional(),
+  idCardLast4: z.string().trim().optional(),
+  lineDisplayName: z.string().trim().max(200).nullish(),
+  linePictureUrl: z.string().trim().nullish().or(z.literal('')),
+  lineStatusMessage: z.string().trim().max(200).nullish()
+});
+
 module.exports = {
   linkAccountSchema,
-  registerInviteSchema
+  registerInviteSchema,
+  verifyPhoneSchema
 };

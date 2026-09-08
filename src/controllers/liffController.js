@@ -198,6 +198,137 @@ class LiffController {
   }
 
   /**
+   * ยืนยันตัวตนและผูกบัญชีลูกบ้านผ่านหมายเลขโทรศัพท์ (Phone Number Verification)
+   * POST /api/v1/liff/auth/verify-phone
+   */
+  async verifyPhoneAndLinkTenant(req, res, next) {
+    try {
+      const { phone, roomNumber, lineDisplayName, linePictureUrl, lineStatusMessage } = req.body;
+      const lineUserId = req.lineUserId;
+
+      if (!phone) {
+        return res.status(400).json({
+          success: false,
+          message: 'กรุณาระบุหมายเลขโทรศัพท์ที่ลงทะเบียนไว้'
+        });
+      }
+
+      const cleanPhone = String(phone).replace(/[^0-9]/g, '');
+
+      // ค้นหาผู้เช่าจากเบอร์โทรศัพท์
+      let tenant = await billingService.prisma.tenant.findFirst({
+        where: {
+          OR: [
+            { phone: cleanPhone },
+            { phone: cleanPhone.startsWith('0') ? cleanPhone : `0${cleanPhone}` },
+            { phone: cleanPhone.startsWith('66') ? `0${cleanPhone.slice(2)}` : cleanPhone }
+          ]
+        },
+        include: {
+          rooms: { include: { building: true } },
+          leaseContracts: { where: { status: 'ACTIVE' }, include: { room: { include: { building: true } } } }
+        }
+      });
+
+      // หากมีระบุ roomNumber เพิ่มเติม ช่วยค้นหา
+      if (!tenant && roomNumber) {
+        const room = await billingService.prisma.room.findFirst({
+          where: { roomNumber: String(roomNumber).trim() },
+          include: {
+            tenant: {
+              include: {
+                rooms: { include: { building: true } },
+                leaseContracts: { where: { status: 'ACTIVE' }, include: { room: { include: { building: true } } } }
+              }
+            }
+          }
+        });
+        if (room?.tenant) {
+          tenant = room.tenant;
+        }
+      }
+
+      if (!tenant) {
+        return res.status(404).json({
+          success: false,
+          message: `ไม่พบข้อมูลผู้เช่าที่ลงทะเบียนด้วยเบอร์โทร ${phone} ในระบบ กรุณาตรวจสอบเบอร์โทรศัพท์หรือติดต่อผู้ดูแลตึก`
+        });
+      }
+
+      // ตรวจสอบว่า lineUserId นี้เคยผูกกับผู้เช่ารายอื่นหรือไม่
+      if (lineUserId) {
+        const existingTenant = await billingService.prisma.tenant.findUnique({
+          where: { lineUserId }
+        });
+        if (existingTenant && existingTenant.id !== tenant.id) {
+          await billingService.prisma.tenant.update({
+            where: { id: existingTenant.id },
+            data: { lineUserId: null }
+          }).catch(() => {});
+        }
+      }
+
+      // ดึงโปรไฟล์ LINE จริง
+      let realDisplayName = req.lineUser?.displayName || lineDisplayName || tenant.lineDisplayName;
+      let realPictureUrl = req.lineUser?.pictureUrl || linePictureUrl || tenant.linePictureUrl;
+      let realStatusMessage = lineStatusMessage || tenant.lineStatusMessage;
+
+      if (lineUserId) {
+        try {
+          const liveProfile = await lineService.getUserProfile(lineUserId);
+          if (liveProfile) {
+            realDisplayName = liveProfile.displayName || realDisplayName;
+            realPictureUrl = liveProfile.pictureUrl || realPictureUrl;
+            realStatusMessage = liveProfile.statusMessage || realStatusMessage;
+          }
+        } catch (err) {
+          console.warn('Could not fetch live LINE profile:', err.message);
+        }
+      }
+
+      const updatedTenant = await billingService.prisma.tenant.update({
+        where: { id: tenant.id },
+        data: {
+          lineUserId: lineUserId || tenant.lineUserId,
+          lineDisplayName: realDisplayName || null,
+          linePictureUrl: realPictureUrl || null,
+          lineStatusMessage: realStatusMessage || null
+        },
+        include: {
+          rooms: { include: { building: true } },
+          leaseContracts: { where: { status: 'ACTIVE' }, include: { room: { include: { building: true } } } }
+        }
+      });
+
+      if (lineUserId) {
+        lineService.sendWelcomeFlexMessage(lineUserId, updatedTenant).catch(() => {});
+      }
+
+      const room = updatedTenant.rooms && updatedTenant.rooms.length > 0 ? updatedTenant.rooms[0] : null;
+
+      return res.status(200).json({
+        success: true,
+        message: 'ยืนยันตัวตนและผูกบัญชี LINE สำเร็จเรียบร้อยแล้ว',
+        data: {
+          tenant: {
+            id: updatedTenant.id,
+            firstName: updatedTenant.firstName,
+            lastName: updatedTenant.lastName,
+            phone: updatedTenant.phone,
+            lineUserId: updatedTenant.lineUserId,
+            lineDisplayName: updatedTenant.lineDisplayName,
+            linePictureUrl: updatedTenant.linePictureUrl,
+            lineStatusMessage: updatedTenant.lineStatusMessage
+          },
+          room: room ? { id: room.id, roomNumber: room.roomNumber } : null
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * ผูกบัญชี LINE ลูกบ้านผ่าน Invite Code 6 หลัก และเบอร์โทร 4 ตัวท้าย (LIFF API)
    */
   async linkTenantAccount(req, res, next) {
