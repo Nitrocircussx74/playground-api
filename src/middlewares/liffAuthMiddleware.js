@@ -49,12 +49,16 @@ const authService = require('../services/authService');
 const liffAuthMiddleware = async (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const idToken = req.headers['x-line-id-token'];
+  const queryToken = req.query?.token || req.query?.t;
 
-  // 1. ตรวจสอบว่ามี Backend JWT Bearer Token หรือไม่
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.split(' ')[1];
+  // 1. ตรวจสอบว่ามี Backend JWT Bearer Token หรือ Query Token หรือไม่
+  const rawToken = (authHeader && authHeader.startsWith('Bearer '))
+    ? authHeader.split(' ')[1]
+    : queryToken;
+
+  if (rawToken) {
     try {
-      const decoded = authService.verifyAccessToken(token);
+      const decoded = authService.verifyAccessToken(rawToken);
       req.user = decoded;
       req.tenantId = decoded.tenantId || decoded.id;
       req.lineUserId = decoded.lineUserId || req.lineUserId;

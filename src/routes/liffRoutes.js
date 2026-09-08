@@ -55,6 +55,8 @@ router.put('/profile', (req, res, next) => liffController.updateTenantProfile(re
 // LIFF Invoices & Payment
 router.get('/invoices/history', (req, res, next) => invoiceController.getPaidInvoicesForLiff(req, res, next));
 router.get('/invoices/:id/receipt-pdf', (req, res, next) => invoiceController.exportReceiptPdf(req, res, next));
+router.get('/invoices/:id/invoice-pdf', (req, res, next) => invoiceController.exportInvoicePdf(req, res, next));
+router.get('/invoices/:id/pdf', (req, res, next) => invoiceController.exportInvoicePdf(req, res, next));
 router.get('/invoices/:id', (req, res, next) => liffController.getInvoiceForLiff(req, res, next));
 router.post('/invoices/:id/slip', upload.single('file'), verifyImageMagicBytes, (req, res, next) => liffController.uploadSlipFromLiff(req, res, next));
 
