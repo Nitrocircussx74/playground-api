@@ -154,6 +154,99 @@ class TenantController {
       next(error);
     }
   }
+
+  /**
+   * POST /api/admin/tenants/:id/reset-pin
+   * รีเซ็ตรหัส PIN ของผู้เช่า (ตั้งค่า pin_hash = null)
+   */
+  async resetPin(req, res, next) {
+    try {
+      const tenantId = req.params.id || req.params.tenantId;
+      if (!tenantId) {
+        return res.status(400).json({
+          success: false,
+          message: 'กรุณาระบุ tenantId'
+        });
+      }
+
+      const updated = await tenantService.resetPin(tenantId, req.user);
+
+      return res.status(200).json({
+        success: true,
+        message: 'รีเซ็ตรหัส PIN ของผู้เช่าเรียบร้อยแล้ว (ลูกบ้านจะถูกแจ้งให้ตั้ง PIN ใหม่เมื่อเปิด LIFF)',
+        data: {
+          tenantId: updated.id,
+          hasPin: false,
+          pinHash: null
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/admin/tenants/:id/unlink-line
+   * ยกเลิกการผูกบัญชี LINE และล้างค่า PIN
+   */
+  async unlinkLine(req, res, next) {
+    try {
+      const tenantId = req.params.id || req.params.tenantId;
+      if (!tenantId) {
+        return res.status(400).json({
+          success: false,
+          message: 'กรุณาระบุ tenantId'
+        });
+      }
+
+      const updated = await tenantService.unlinkLine(tenantId, req.user);
+
+      return res.status(200).json({
+        success: true,
+        message: 'ยกเลิกการผูกบัญชี LINE และล้างค่าความปลอดภัยเรียบร้อยแล้ว',
+        data: {
+          tenantId: updated.id,
+          lineUserId: null,
+          lineDisplayName: null,
+          linePictureUrl: null,
+          hasPin: false,
+          pinHash: null
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/admin/tenants/:id/generate-invite
+   * สร้างรหัสเชิญ 6 หลักสำหรับผู้เช่า
+   */
+  async generateInvite(req, res, next) {
+    try {
+      const tenantId = req.params.id || req.params.tenantId;
+      if (!tenantId) {
+        return res.status(400).json({
+          success: false,
+          message: 'กรุณาระบุ tenantId'
+        });
+      }
+
+      const updated = await tenantService.generateInvite(tenantId, req.user);
+
+      return res.status(200).json({
+        success: true,
+        message: 'สร้างรหัสเชิญใหม่สำเร็จ',
+        data: {
+          tenantId: updated.id,
+          inviteCode: updated.inviteCode,
+          inviteExpiresAt: updated.inviteExpiresAt
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 module.exports = new TenantController();

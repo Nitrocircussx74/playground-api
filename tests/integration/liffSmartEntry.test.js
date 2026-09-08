@@ -22,7 +22,7 @@ describe('LINE Rich Menu & LIFF Smart Entry Router Integration Tests', () => {
     test('กรณีแนบ LINE ID Token ของผู้ใช้ที่ยังไม่เคยลงทะเบียน ต้องส่งคืน isRegistered: false (200 OK)', async () => {
       const response = await request(app)
         .get('/api/v1/liff/check-status')
-        .set('X-Line-Id-Token', 'U_unregistered_test_123456');
+        .set('X-Line-Id-Token', `U_unregistered_test_${Date.now()}_${Math.random()}`);
 
       expect(response.statusCode).toBe(200);
       expect(response.body.success).toBe(true);

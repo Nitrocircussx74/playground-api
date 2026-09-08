@@ -1,5 +1,6 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+const auditService = require('./auditService');
 
 class TenantService {
   /**
@@ -290,6 +291,148 @@ class TenantService {
         lease
       };
     });
+  }
+
+  /**
+   * POST /api/admin/tenants/:id/reset-pin
+   * รีเซ็ตรหัส PIN ของผู้เช่า (ตั้งค่า pinHash = null)
+   */
+  async resetPin(tenantId, user = {}) {
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId }
+    });
+
+    if (!tenant) {
+      const error = new Error('ไม่พบข้อมูลผู้เช่ารายนี้ในระบบ');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    const updated = await prisma.tenant.update({
+      where: { id: tenantId },
+      data: { pinHash: null }
+    });
+
+    const adminId = user?.id || user?.userId;
+    if (adminId) {
+      try {
+        await auditService.logAction({
+          adminId,
+          action: 'UPDATE',
+          entity: 'TENANT',
+          entityId: tenantId,
+          oldValues: { hasPin: Boolean(tenant.pinHash) },
+          newValues: { hasPin: false, pinHash: null }
+        });
+      } catch (e) {
+        console.warn('AuditLog failed:', e.message);
+      }
+    }
+
+    return updated;
+  }
+
+  /**
+   * POST /api/admin/tenants/:id/unlink-line
+   * ยกเลิกการผูกบัญชี LINE และล้าง PIN ของผู้เช่า (สำหรับกรณีเปลี่ยนเครื่อง/มือถือหาย)
+   */
+  async unlinkLine(tenantId, user = {}) {
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId }
+    });
+
+    if (!tenant) {
+      const error = new Error('ไม่พบข้อมูลผู้เช่ารายนี้ในระบบ');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    const updated = await prisma.tenant.update({
+      where: { id: tenantId },
+      data: {
+        lineUserId: null,
+        lineDisplayName: null,
+        linePictureUrl: null,
+        lineStatusMessage: null,
+        pinHash: null
+      }
+    });
+
+    const adminId = user?.id || user?.userId;
+    if (adminId) {
+      try {
+        await auditService.logAction({
+          adminId,
+          action: 'UPDATE',
+          entity: 'TENANT',
+          entityId: tenantId,
+          oldValues: {
+            lineUserId: tenant.lineUserId,
+            lineDisplayName: tenant.lineDisplayName,
+            hasPin: Boolean(tenant.pinHash)
+          },
+          newValues: {
+            lineUserId: null,
+            lineDisplayName: null,
+            hasPin: false,
+            pinHash: null
+          }
+        });
+      } catch (e) {
+        console.warn('AuditLog failed:', e.message);
+      }
+    }
+
+    return updated;
+  }
+
+  /**
+   * POST /api/admin/tenants/:id/generate-invite
+   * สร้างรหัสเชิญใหม่ 6 หลัก และอัปเดตเวลาหมดอายุ 7 วัน
+   */
+  async generateInvite(tenantId, user = {}) {
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId }
+    });
+
+    if (!tenant) {
+      const error = new Error('ไม่พบข้อมูลผู้เช่ารายนี้ในระบบ');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    const characters = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let inviteCode = '';
+    for (let i = 0; i < 6; i++) {
+      inviteCode += characters.charAt(Math.floor(Math.random() * characters.length));
+    }
+
+    const inviteExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+    const updated = await prisma.tenant.update({
+      where: { id: tenantId },
+      data: {
+        inviteCode,
+        inviteExpiresAt
+      }
+    });
+
+    const adminId = user?.id || user?.userId;
+    if (adminId) {
+      try {
+        await auditService.logAction({
+          adminId,
+          action: 'UPDATE',
+          entity: 'TENANT',
+          entityId: tenantId,
+          newValues: { inviteCode, inviteExpiresAt }
+        });
+      } catch (e) {
+        console.warn('AuditLog failed:', e.message);
+      }
+    }
+
+    return updated;
   }
 }
 

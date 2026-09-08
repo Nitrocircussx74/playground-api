@@ -17,8 +17,14 @@ router.patch('/tenants/:tenantId/notes', requireRole('OWNER', 'MANAGER', 'super_
   tenantController.updateTenantNotes(req, res, next)
 );
 
-// Tenant Invite Generator
-router.post('/tenants/:id/generate-invite', (req, res, next) => liffController.generateTenantInvite(req, res, next));
+// App Access & Security Management (PIN Reset, Unlink LINE, Invite Code)
+router.post('/tenants/:id/reset-pin', requireRole('OWNER', 'MANAGER', 'super_admin', 'superadmin', 'admin'), (req, res, next) =>
+  tenantController.resetPin(req, res, next)
+);
+router.post('/tenants/:id/unlink-line', requireRole('OWNER', 'MANAGER', 'super_admin', 'superadmin', 'admin'), (req, res, next) =>
+  tenantController.unlinkLine(req, res, next)
+);
+router.post('/tenants/:id/generate-invite', (req, res, next) => tenantController.generateInvite(req, res, next));
 
 // Admin User & Permission Management (Restricted to OWNER / super_admin)
 router.get('/users', requireRole('OWNER', 'super_admin', 'superadmin'), (req, res, next) =>
