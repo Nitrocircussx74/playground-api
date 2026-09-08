@@ -32,6 +32,24 @@ router.get(
 router.post('/login', validate(loginSchema), authController.login);
 
 /**
+ * @route   POST /auth/login/line
+ * @desc    เข้าสู่ระบบด้วย LINE SSO ID Token สำหรับลูกบ้านและผู้ใช้งาน LIFF
+ */
+router.post('/login/line', authController.loginLine);
+
+/**
+ * @route   POST /auth/login/local
+ * @desc    เข้าสู่ระบบด้วยเบอร์โทรศัพท์และรหัสผ่าน (Local Password Authentication)
+ */
+router.post('/login/local', authController.loginLocal);
+
+/**
+ * @route   POST /auth/setup-password
+ * @desc    ตั้งค่ารหัสผ่านใหม่หรือเปลี่ยนรหัสผ่านสำหรับลูกบ้าน
+ */
+router.post('/setup-password', authenticateJWT, authController.setupPassword);
+
+/**
  * @route   POST /auth/refresh
  * @desc    ขอ Access Token ชุดใหม่โดยใช้อ่าน Refresh Token จาก HTTP-Only Cookie (Token Rotation)
  */

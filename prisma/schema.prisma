@@ -228,6 +228,9 @@ model Tenant {
   /// เบอร์โทรศัพท์ติดต่อ
   phone String
 
+  /// รหัสผ่านสำหรับ Local Authentication (Bcrypt Hash, Nullable สำหรับคนที่ยังไม่เคยตั้ง)
+  passwordHash String? @map("password_hash")
+
   /// เลขบัตรประจำตัวประชาชน
   idCard String? @map("id_card")
 

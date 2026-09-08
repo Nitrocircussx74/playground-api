@@ -33,6 +33,8 @@ router.get('/', (req, res) => {
 
 // Public LIFF App, Feature Flags & Auth Routes (Mounted BEFORE protected /api prefix)
 router.use('/auth', authRoutes);
+router.use('/api/auth', authRoutes);
+router.use('/api/v1/auth', authRoutes);
 router.use('/api/v1/liff', liffRoutes);
 router.use('/api/liff', liffRoutes);
 router.get('/api/settings', (req, res, next) => liffController.getSettingsForTenant(req, res, next));
