@@ -77,13 +77,6 @@ class LiffController {
         }
       });
 
-      // Dev Mock Fallback
-      if (!tenant && (config.nodeEnv === 'development' || config.line.mockMode)) {
-        tenant = await billingService.prisma.tenant.findFirst({
-          include: { rooms: { include: { building: true } } }
-        });
-      }
-
       if (!tenant) {
         return res.status(404).json({
           success: false,
@@ -208,25 +201,6 @@ class LiffController {
               lineUserId,
               lineDisplayName: req.lineUser?.displayName || matched.lineDisplayName,
               linePictureUrl: req.lineUser?.pictureUrl || matched.linePictureUrl
-            },
-            include: { rooms: { include: { building: true } } }
-          });
-        }
-      }
-
-      // 3. Fallback: หากยังไม่พบผู้เช่า และอยู่ใน Dev/Test Mode ให้ auto-bind กับผู้เช่าที่ยังไม่มี lineUserId
-      if (!tenant && (process.env.NODE_ENV !== 'production' || process.env.LINE_MOCK_MODE === 'true')) {
-        const unlinked = await billingService.prisma.tenant.findFirst({
-          where: { lineUserId: null },
-          include: { rooms: { include: { building: true } } }
-        });
-        if (unlinked) {
-          tenant = await billingService.prisma.tenant.update({
-            where: { id: unlinked.id },
-            data: {
-              lineUserId,
-              lineDisplayName: req.lineUser?.displayName || unlinked.lineDisplayName,
-              linePictureUrl: req.lineUser?.pictureUrl || unlinked.linePictureUrl
             },
             include: { rooms: { include: { building: true } } }
           });
@@ -753,48 +727,14 @@ class LiffController {
         }
       }
 
-      // 4. Fallback ดึงผู้เช่าคนแรก
       if (!tenant) {
-        tenant = await billingService.prisma.tenant.findFirst({
-          include: {
-            rooms: {
-              include: { building: true }
-            },
-            leaseContracts: {
-              where: { status: 'ACTIVE' },
-              include: { room: { include: { building: true } } },
-              orderBy: { createdAt: 'desc' }
-            }
-          }
+        return res.status(200).json({
+          success: true,
+          isRegistered: false,
+          isLinked: false,
+          hasPin: false,
+          data: null
         });
-      }
-
-      if (!tenant) {
-        return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลผู้เช่า' });
-      }
-
-      // หากพบผู้เช่าและมี lineUserId ที่ยืนยันแล้ว แต่ผู้เช่ายังไม่ได้ผูก ให้ทำการ Auto-bind ทันที
-      if (lineUserId && !tenant.lineUserId) {
-        try {
-          tenant = await billingService.prisma.tenant.update({
-            where: { id: tenant.id },
-            data: {
-              lineUserId,
-              lineDisplayName: req.lineUser?.displayName || tenant.lineDisplayName,
-              linePictureUrl: req.lineUser?.pictureUrl || tenant.linePictureUrl
-            },
-            include: {
-              rooms: { include: { building: true } },
-              leaseContracts: {
-                where: { status: 'ACTIVE' },
-                include: { room: { include: { building: true } } },
-                orderBy: { createdAt: 'desc' }
-              }
-            }
-          });
-        } catch (bindErr) {
-          console.warn('Auto-bind tenant lineUserId error:', bindErr.message);
-        }
       }
 
       // รวมรายชื่อห้องพักทั้งหมดที่ผู้เช่าถือครอง (Multi-Room Data)
@@ -893,7 +833,9 @@ class LiffController {
    */
   async updateTenantProfile(req, res, next) {
     try {
-      const { phone, lineUserId, tenantId } = req.body;
+      const { phone, lineUserId, tenantId } = req.body || {};
+      const effectiveLineUserId = req.lineUserId || lineUserId;
+      const effectiveTenantId = req.tenantId || tenantId;
 
       if (!phone) {
         return res.status(400).json({ success: false, message: 'กรุณาระบุเบอร์โทรศัพท์' });
@@ -909,18 +851,13 @@ class LiffController {
         });
       }
 
-      let targetTenantId = tenantId;
+      let targetTenantId = effectiveTenantId;
 
-      if (!targetTenantId && lineUserId) {
+      if (!targetTenantId && effectiveLineUserId) {
         const tenant = await billingService.prisma.tenant.findUnique({
-          where: { lineUserId }
+          where: { lineUserId: effectiveLineUserId }
         });
         if (tenant) targetTenantId = tenant.id;
-      }
-
-      if (!targetTenantId) {
-        const firstTenant = await billingService.prisma.tenant.findFirst();
-        targetTenantId = firstTenant?.id;
       }
 
       if (!targetTenantId) {

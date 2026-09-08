@@ -59,15 +59,6 @@ class MaintenanceController {
         });
       }
 
-      if (!tenantRecord && (process.env.NODE_ENV !== 'production' || !lineUserId)) {
-        tenantRecord = await billingService.prisma.tenant.findFirst({
-          include: {
-            rooms: true,
-            leaseContracts: { where: { status: 'ACTIVE' } }
-          }
-        });
-      }
-
       if (!tenantRecord) {
         return res.status(200).json({ success: true, data: [] });
       }
