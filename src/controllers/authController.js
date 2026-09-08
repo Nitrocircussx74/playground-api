@@ -302,14 +302,18 @@ class AuthController {
   }
 
   /**
-   * ตั้งค่าหรือเปลี่ยนรหัส PIN 6 หลัก
+  /**
+   * ตั้งค่าหรือรีเซ็ตรหัส PIN 6 หลักสำหรับลูกบ้าน (Setup / Reset PIN)
    * POST /api/auth/liff/setup-pin
+   * POST /api/v1/liff/auth/setup-pin
+   * POST /api/v1/liff/auth/reset-pin
    */
   async setupPin(req, res, next) {
     try {
-      const { pin, newPin, lineIdToken, idToken } = req.body;
+      const { pin, newPin, lineIdToken, idToken, phone, phoneNumber, buildingId, lineDisplayName, linePictureUrl, lineStatusMessage } = req.body;
       const targetPin = newPin || pin;
       const rawToken = lineIdToken || idToken || req.headers['x-line-id-token'];
+      const rawPhone = phone || phoneNumber;
 
       if (!targetPin || !/^\d{6}$/.test(String(targetPin))) {
         return res.status(400).json({
@@ -319,11 +323,20 @@ class AuthController {
       }
 
       let lineUserId = req.lineUserId || req.user?.lineUserId;
+      let profileFromToken = null;
       if (!lineUserId && rawToken) {
         try {
           const verified = await verifyLineIdToken(rawToken);
           lineUserId = verified?.sub;
+          profileFromToken = {
+            displayName: verified?.name || null,
+            pictureUrl: verified?.picture || null
+          };
         } catch {}
+      }
+
+      if (!lineUserId && req.body?.lineUserId) {
+        lineUserId = req.body.lineUserId;
       }
 
       const tenantId = req.tenantId || req.user?.tenantId || req.user?.id;
@@ -332,31 +345,89 @@ class AuthController {
       if (tenantId) {
         tenant = await prisma.tenant.findUnique({
           where: { id: tenantId },
-          include: { rooms: true }
+          include: { rooms: { include: { building: true } } }
         });
       }
+
+      // 1. หากระบุเบอร์โทรศัพท์ (เช่น มาจาก Reset PIN / Verify flow) ให้ค้นหาตามเบอร์
+      if (!tenant && rawPhone) {
+        const cleanDigits = String(rawPhone).replace(/\D/g, '');
+        const possiblePhones = [
+          rawPhone.trim(),
+          cleanDigits,
+          cleanDigits.startsWith('0') ? cleanDigits.slice(1) : '0' + cleanDigits,
+          cleanDigits.startsWith('66') ? '0' + cleanDigits.slice(2) : cleanDigits
+        ];
+        tenant = await prisma.tenant.findFirst({
+          where: { phone: { in: possiblePhones } },
+          include: { rooms: { include: { building: true } } }
+        });
+      }
+
+      // 2. ค้นหาจาก UserLineAccount
+      if (!tenant && lineUserId) {
+        const linked = await prisma.userLineAccount.findFirst({
+          where: { lineUserId },
+          include: { tenant: { include: { rooms: { include: { building: true } } } } }
+        });
+        tenant = linked?.tenant || null;
+      }
+
+      // 3. ค้นหาจาก Tenant.lineUserId โดยตรง
       if (!tenant && lineUserId) {
         tenant = await prisma.tenant.findFirst({
           where: { lineUserId },
-          include: { rooms: true }
+          include: { rooms: { include: { building: true } } }
         });
       }
 
       if (!tenant) {
         return res.status(404).json({
           success: false,
-          message: 'ไม่พบข้อมูลลูกบ้านสำหรับตั้งค่า PIN'
+          message: 'ไม่พบข้อมูลลูกบ้านสำหรับตั้งค่าหรือรีเซ็ต PIN'
         });
       }
 
       const pinHash = await bcrypt.hash(String(targetPin), 10);
       const updatedTenant = await prisma.tenant.update({
         where: { id: tenant.id },
-        data: { pinHash },
-        include: { rooms: true }
+        data: {
+          pinHash,
+          ...(lineUserId && !tenant.lineUserId ? { lineUserId } : {}),
+          ...((lineDisplayName || profileFromToken?.displayName) && !tenant.lineDisplayName ? { lineDisplayName: lineDisplayName || profileFromToken?.displayName } : {}),
+          ...((linePictureUrl || profileFromToken?.pictureUrl) && !tenant.linePictureUrl ? { linePictureUrl: linePictureUrl || profileFromToken?.pictureUrl } : {})
+        },
+        include: { rooms: { include: { building: true } } }
       });
 
-      // ออก Backend JWT เพื่อให้ลูกบ้านเข้าใช้งานระบบได้ทันทีหลังตั้งค่า PIN ครั้งแรก
+      // Upsert UserLineAccount สำหรับตึกนี้เพื่อรองรับ Multi-Building Centralized Identity
+      const targetBuildingId = buildingId || tenant.rooms?.[0]?.buildingId;
+      if (targetBuildingId && lineUserId) {
+        await prisma.userLineAccount.upsert({
+          where: {
+            buildingId_lineUserId: {
+              buildingId: targetBuildingId,
+              lineUserId
+            }
+          },
+          update: {
+            tenantId: updatedTenant.id,
+            lineDisplayName: lineDisplayName || profileFromToken?.displayName || updatedTenant.lineDisplayName,
+            linePictureUrl: linePictureUrl || profileFromToken?.pictureUrl || updatedTenant.linePictureUrl,
+            lineStatusMessage: lineStatusMessage || updatedTenant.lineStatusMessage
+          },
+          create: {
+            tenantId: updatedTenant.id,
+            buildingId: targetBuildingId,
+            lineUserId,
+            lineDisplayName: lineDisplayName || profileFromToken?.displayName || updatedTenant.lineDisplayName,
+            linePictureUrl: linePictureUrl || profileFromToken?.pictureUrl || updatedTenant.linePictureUrl,
+            lineStatusMessage: lineStatusMessage || updatedTenant.lineStatusMessage
+          }
+        }).catch((e) => console.warn('UserLineAccount upsert in setupPin:', e.message));
+      }
+
+      // ออก Backend JWT เพื่อให้ลูกบ้านเข้าใช้งานระบบได้ทันทีหลังตั้งค่าหรือรีเซ็ต PIN
       const tenantUser = {
         id: updatedTenant.id,
         tenantId: updatedTenant.id,
@@ -365,9 +436,9 @@ class AuthController {
         name: updatedTenant.name || `${updatedTenant.firstName} ${updatedTenant.lastName}`.trim(),
         displayName: updatedTenant.lineDisplayName || updatedTenant.firstName,
         role: 'tenant',
-        lineUserId: updatedTenant.lineUserId,
+        lineUserId: lineUserId || updatedTenant.lineUserId,
         roomId: updatedTenant.rooms?.[0]?.id,
-        buildingId: updatedTenant.rooms?.[0]?.buildingId
+        buildingId: targetBuildingId || updatedTenant.rooms?.[0]?.buildingId
       };
 
       const accessToken = authService.generateAccessToken(tenantUser);
@@ -378,7 +449,7 @@ class AuthController {
 
       return res.status(200).json({
         success: true,
-        message: 'ตั้งค่ารหัส PIN 6 หลักสำเร็จเรียบร้อยแล้ว',
+        message: 'ตั้งค่าหรือรีเซ็ตรหัส PIN 6 หลักสำเร็จเรียบร้อยแล้ว',
         accessToken,
         token: accessToken,
         user: tenantUser,

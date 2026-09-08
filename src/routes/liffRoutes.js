@@ -21,6 +21,7 @@ router.post('/auth/silent-login', (req, res, next) => liffController.silentLogin
 router.post('/auth/check-status', (req, res, next) => authController.checkAuthStatus(req, res, next));
 router.post('/auth/pin-login', (req, res, next) => authController.pinLogin(req, res, next));
 router.post('/auth/setup-pin', (req, res, next) => authController.setupPin(req, res, next));
+router.post('/auth/reset-pin', (req, res, next) => authController.setupPin(req, res, next));
 router.post('/auth/verify-phone-status', (req, res, next) => authController.verifyPhoneStatus(req, res, next));
 router.post('/auth/link-and-login', (req, res, next) => authController.linkAndLogin(req, res, next));
 

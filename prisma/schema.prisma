@@ -151,6 +151,18 @@ model BuildingSetting {
   /// กฎระเบียบและข้อตกลงสัญญาเช่า (Text)
   termsAndConditions String? @map("terms_and_conditions") @db.Text
 
+  // 5. LINE Official Account & LIFF Settings (การตั้งค่า LINE OA ประจำตึก)
+  /// LINE OA Basic ID หรือ Handle (เช่น @horhub_a)
+  lineOaId String? @map("line_oa_id")
+  /// LINE Messaging API Channel Access Token ประจำตึก (Long-lived Token)
+  lineChannelAccessToken String? @map("line_channel_access_token") @db.Text
+  /// LINE Channel Secret ประจำตึก
+  lineChannelSecret String? @map("line_channel_secret")
+  /// LINE LIFF ID ประจำตึก (เช่น 200xxxxxxx-xxxxxxx)
+  lineLiffId String? @map("line_liff_id")
+  /// ลิงก์กดเพิ่มเพื่อน LINE OA (Add Friend URL เช่น https://line.me/R/ti/p/@horhub)
+  lineAddFriendUrl String? @map("line_add_friend_url")
+
   /// วันเวลาที่สร้างเรคคอร์ด
   createdAt DateTime @default(now()) @map("created_at")
   /// วันเวลาที่อัปเดตเรคคอร์ดล่าสุด

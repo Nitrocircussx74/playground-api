@@ -50,6 +50,8 @@ router.post('/pin-login', authController.pinLogin);
  */
 router.post('/liff/setup-pin', authController.setupPin);
 router.post('/setup-pin', authController.setupPin);
+router.post('/liff/reset-pin', authController.setupPin);
+router.post('/reset-pin', authController.setupPin);
 
 /**
  * @route   POST /auth/liff/verify-phone-status

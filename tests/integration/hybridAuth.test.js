@@ -280,6 +280,41 @@ describe('Hybrid Authentication (LINE SSO + Local Password) Integration Tests', 
       expect(loginRes.statusCode).toBe(200);
       expect(loginRes.body.success).toBe(true);
     });
+
+    test('POST /api/v1/liff/auth/reset-pin - รีเซ็ตรหัส PIN เมื่อลืมรหัสเดิม (Forgot PIN) สำเร็จ (200 OK)', async () => {
+      const resetNewPin = '112233';
+      const resetRes = await request(app)
+        .post('/api/v1/liff/auth/reset-pin')
+        .send({
+          phone: testPhone,
+          lineIdToken: mockLineIdToken,
+          newPin: resetNewPin
+        });
+
+      expect(resetRes.statusCode).toBe(200);
+      expect(resetRes.body.success).toBe(true);
+      expect(resetRes.body.accessToken).toBeDefined();
+
+      // Test login with the newly reset PIN
+      const loginRes = await request(app)
+        .post('/api/liff/auth/pin-login')
+        .send({
+          lineIdToken: mockLineIdToken,
+          pin: resetNewPin
+        });
+
+      expect(loginRes.statusCode).toBe(200);
+      expect(loginRes.body.success).toBe(true);
+
+      // Restore PIN back to 987654 (currentPin) for subsequent test cases
+      await request(app)
+        .post('/api/v1/liff/auth/reset-pin')
+        .send({
+          phone: testPhone,
+          lineIdToken: mockLineIdToken,
+          newPin: '987654'
+        });
+    });
   });
 
   describe('Centralized User Identity (1 User : Multi-Building LINE OA IDs)', () => {

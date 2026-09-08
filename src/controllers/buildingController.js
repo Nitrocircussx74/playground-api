@@ -151,7 +151,14 @@ class BuildingController {
         // 4. Rules & Contracts
         depositMonths,
         advanceMonths,
-        termsAndConditions
+        termsAndConditions,
+
+        // 5. LINE Official Account & LIFF Settings
+        lineOaId,
+        lineChannelAccessToken,
+        lineChannelSecret,
+        lineLiffId,
+        lineAddFriendUrl
       } = req.body;
 
       const building = await billingService.prisma.building.findUnique({ where: { id } });
@@ -191,7 +198,12 @@ class BuildingController {
         ...(gracePeriodDays !== undefined && { gracePeriodDays: parseInt(gracePeriodDays, 10) }),
         ...(depositMonths !== undefined && { depositMonths: parseInt(depositMonths, 10) }),
         ...(advanceMonths !== undefined && { advanceMonths: parseInt(advanceMonths, 10) }),
-        ...(termsAndConditions !== undefined && { termsAndConditions })
+        ...(termsAndConditions !== undefined && { termsAndConditions }),
+        ...(lineOaId !== undefined && { lineOaId: lineOaId?.trim() || null }),
+        ...(lineChannelAccessToken !== undefined && { lineChannelAccessToken: lineChannelAccessToken?.trim() || null }),
+        ...(lineChannelSecret !== undefined && { lineChannelSecret: lineChannelSecret?.trim() || null }),
+        ...(lineLiffId !== undefined && { lineLiffId: lineLiffId?.trim() || null }),
+        ...(lineAddFriendUrl !== undefined && { lineAddFriendUrl: lineAddFriendUrl?.trim() || null })
       };
 
       const setting = await billingService.prisma.buildingSetting.upsert({
