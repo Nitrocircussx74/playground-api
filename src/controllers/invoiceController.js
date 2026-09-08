@@ -308,6 +308,8 @@ class InvoiceController {
   async exportInvoicePdf(req, res, next) {
     try {
       const { id } = req.params;
+      const lineUserId = req.lineUserId || req.query?.lineUserId;
+      const tenantId = req.tenantId || req.user?.tenantId || req.user?.id;
 
       const invoice = await billingService.prisma.invoice.findUnique({
         where: { id },
@@ -315,7 +317,9 @@ class InvoiceController {
           room: {
             include: { building: true }
           },
-          tenant: true
+          tenant: {
+            include: { lineAccounts: true }
+          }
         }
       });
 
@@ -323,11 +327,31 @@ class InvoiceController {
         return res.status(404).json({ success: false, message: 'Invoice not found' });
       }
 
+      // Check tenant access permission (IDOR protection)
+      if (req.user?.role === 'tenant' || req.user?.role === 'TENANT' || (lineUserId && !req.user)) {
+        let isAuthorized = false;
+
+        if (tenantId && invoice.tenantId === tenantId) {
+          isAuthorized = true;
+        } else if (lineUserId && invoice.tenant?.lineUserId === lineUserId) {
+          isAuthorized = true;
+        } else if (lineUserId && invoice.tenant?.lineAccounts?.some(acc => acc.lineUserId === lineUserId)) {
+          isAuthorized = true;
+        }
+
+        if (!isAuthorized && (invoice.tenantId || invoice.tenant?.lineUserId)) {
+          return res.status(403).json({
+            success: false,
+            message: 'ปฏิเสธการเข้าถึง: คุณไม่มีสิทธิ์ดาวน์โหลดใบแจ้งหนี้ของผู้อื่น'
+          });
+        }
+      }
+
       const doc = new PDFDocument({ margin: 40, size: 'A4' });
       const fonts = setupThaiFonts(doc);
 
       res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename=Invoice-${invoice.invoiceNumber}.pdf`);
+      res.setHeader('Content-Disposition', `inline; filename="Invoice-${invoice.invoiceNumber}.pdf"`);
 
       doc.pipe(res);
 
@@ -435,6 +459,7 @@ class InvoiceController {
     try {
       const { id } = req.params;
       const lineUserId = req.lineUserId || req.query?.lineUserId;
+      const tenantId = req.tenantId || req.user?.tenantId || req.user?.id;
 
       const invoice = await billingService.prisma.invoice.findUnique({
         where: { id },
@@ -442,7 +467,9 @@ class InvoiceController {
           room: {
             include: { building: true }
           },
-          tenant: true
+          tenant: {
+            include: { lineAccounts: true }
+          }
         }
       });
 
@@ -450,12 +477,24 @@ class InvoiceController {
         return res.status(404).json({ success: false, message: 'Invoice not found' });
       }
 
-      // Check access permission
-      if (lineUserId && invoice.tenant?.lineUserId && invoice.tenant.lineUserId !== lineUserId) {
-        return res.status(403).json({
-          success: false,
-          message: 'ปฏิเสธการเข้าถึง: คุณไม่มีสิทธิ์ดาวน์โหลดใบเสร็จของผู้อื่น'
-        });
+      // Check tenant access permission (IDOR protection)
+      if (req.user?.role === 'tenant' || req.user?.role === 'TENANT' || (lineUserId && !req.user)) {
+        let isAuthorized = false;
+
+        if (tenantId && invoice.tenantId === tenantId) {
+          isAuthorized = true;
+        } else if (lineUserId && invoice.tenant?.lineUserId === lineUserId) {
+          isAuthorized = true;
+        } else if (lineUserId && invoice.tenant?.lineAccounts?.some(acc => acc.lineUserId === lineUserId)) {
+          isAuthorized = true;
+        }
+
+        if (!isAuthorized && (invoice.tenantId || invoice.tenant?.lineUserId)) {
+          return res.status(403).json({
+            success: false,
+            message: 'ปฏิเสธการเข้าถึง: คุณไม่มีสิทธิ์ดาวน์โหลดใบเสร็จของผู้อื่น'
+          });
+        }
       }
 
       const receiptNo = `REC-${invoice.invoiceNumber}`;
@@ -465,7 +504,7 @@ class InvoiceController {
       const fonts = setupThaiFonts(doc);
 
       res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename=Official-Receipt-${receiptNo}.pdf`);
+      res.setHeader('Content-Disposition', `inline; filename="Official-Receipt-${receiptNo}.pdf"`);
 
       doc.pipe(res);
 
