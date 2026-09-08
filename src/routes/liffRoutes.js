@@ -53,7 +53,10 @@ router.post('/invoices/:id/slip', upload.single('file'), verifyImageMagicBytes, 
 // LIFF Tenant Registration & Account Linking
 router.post('/auth/verify-phone', validate(verifyPhoneSchema), (req, res, next) => liffController.verifyPhoneAndLinkTenant(req, res, next));
 router.post('/register/invite', validate(registerInviteSchema), (req, res, next) => liffController.registerTenantWithInvite(req, res, next));
+router.post('/auth/register-invite', validate(registerInviteSchema), (req, res, next) => liffController.registerTenantWithInvite(req, res, next));
+router.post('/register-invite', validate(registerInviteSchema), (req, res, next) => liffController.registerTenantWithInvite(req, res, next));
 router.post('/auth/link-account', linkAccountLimiter, validate(linkAccountSchema), (req, res, next) => liffController.linkTenantAccount(req, res, next));
+router.post('/link-account', linkAccountLimiter, validate(linkAccountSchema), (req, res, next) => liffController.linkTenantAccount(req, res, next));
 router.patch('/auth/sync-profile', (req, res, next) => liffController.syncLineProfile(req, res, next));
 
 // LIFF Announcements
