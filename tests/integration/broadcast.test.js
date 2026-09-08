@@ -84,4 +84,69 @@ describe('Targeted Broadcast & LINE Multicast Integration Tests', () => {
       }).catch(() => {});
     });
   });
+
+  describe('LIFF Announcement Read Tracking Endpoints', () => {
+    let testAnnouncement;
+
+    beforeAll(async () => {
+      testAnnouncement = await billingService.prisma.announcement.create({
+        data: {
+          title: 'ประกาศสำหรับทดสอบ Read Tracking',
+          content: 'เนื้อหาทดสอบการอ่านประกาศ',
+          targetType: 'ALL'
+        }
+      });
+    });
+
+    afterAll(async () => {
+      if (testAnnouncement) {
+        await billingService.prisma.announcement.delete({ where: { id: testAnnouncement.id } }).catch(() => {});
+      }
+    });
+
+    test('GET /api/v1/liff/announcements - ควรส่งคืน isRead = false ก่อนเปิดอ่าน', async () => {
+      const response = await request(app)
+        .get('/api/v1/liff/announcements')
+        .set('X-Line-Id-Token', testTenant.lineUserId);
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+      const found = response.body.data.find((a) => a.id === testAnnouncement.id);
+      expect(found).toBeDefined();
+      expect(found.isRead).toBe(false);
+    });
+
+    test('POST /api/v1/liff/announcements/:id/read - บันทึกสถานะการเปิดอ่านสำเร็จ (200 OK)', async () => {
+      const response = await request(app)
+        .post(`/api/v1/liff/announcements/${testAnnouncement.id}/read`)
+        .set('X-Line-Id-Token', testTenant.lineUserId);
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.isRead).toBe(true);
+      expect(response.body.data.readAt).toBeDefined();
+    });
+
+    test('GET /api/v1/liff/announcements - ควรส่งคืน isRead = true หลังเปิดอ่านแล้ว', async () => {
+      const response = await request(app)
+        .get('/api/v1/liff/announcements')
+        .set('X-Line-Id-Token', testTenant.lineUserId);
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+      const found = response.body.data.find((a) => a.id === testAnnouncement.id);
+      expect(found).toBeDefined();
+      expect(found.isRead).toBe(true);
+      expect(found.readAt).toBeDefined();
+    });
+
+    test('POST /api/v1/liff/announcements/read-all - ทำเครื่องหมายว่าอ่านทั้งหมดสำเร็จ (200 OK)', async () => {
+      const response = await request(app)
+        .post('/api/v1/liff/announcements/read-all')
+        .set('X-Line-Id-Token', testTenant.lineUserId);
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+    });
+  });
 });

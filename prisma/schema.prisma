@@ -293,6 +293,7 @@ model Tenant {
   leaseContracts LeaseContract[]
   maintenanceRequests MaintenanceRequest[]
   lineAccounts UserLineAccount[]
+  announcementReads AnnouncementRead[]
 
   @@map("tenants")
 }
@@ -555,7 +556,30 @@ model Announcement {
   /// วันเวลาที่อัปเดตเรคคอร์ดล่าสุด
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  // ความสัมพันธ์ (Relations)
+  announcementReads AnnouncementRead[]
+
   @@map("announcements")
+}
+
+/// ตารางบันทึกการเปิดอ่านข่าวสาร/ประกาศของผู้เช่า (Announcement Read Receipts)
+model AnnouncementRead {
+  /// รหัสอ้างอิงเรคคอร์ด (PK, UUID)
+  id String @id @default(uuid()) @db.Uuid
+
+  /// รหัสอ้างอิงประกาศ (FK)
+  announcementId String @map("announcement_id") @db.Uuid
+  announcement Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+
+  /// รหัสอ้างอิงผู้เช่า (FK)
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// วันเวลาที่เปิดอ่าน
+  readAt DateTime @default(now()) @map("read_at")
+
+  @@unique([announcementId, tenantId])
+  @@map("announcement_reads")
 }
 
 /// ตารางจัดการสวิตช์เปิด-ปิดฟีเจอร์ของระบบ (Feature Flags / Feature Toggles)

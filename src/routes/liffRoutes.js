@@ -74,6 +74,8 @@ router.patch('/auth/sync-profile', (req, res, next) => liffController.syncLinePr
 
 // LIFF Announcements
 router.get('/announcements', (req, res, next) => announcementController.getAnnouncementsForLiff(req, res, next));
+router.post('/announcements/read-all', (req, res, next) => announcementController.markAllAnnouncementsAsRead(req, res, next));
+router.post('/announcements/:id/read', (req, res, next) => announcementController.markAnnouncementAsRead(req, res, next));
 
 // LIFF Maintenance Requests & Status Tracking
 router.get('/maintenance', (req, res, next) => maintenanceController.getMaintenanceRequestsForLiff(req, res, next));

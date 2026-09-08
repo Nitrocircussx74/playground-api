@@ -156,7 +156,7 @@ class AnnouncementController {
   }
 
   /**
-   * ดึงรายการประกาศข่าวสารสำหรับ Admin (กรองตาม buildingId)
+   * ดึงรายการประกาศข่าวสารสำหรับแอดมิน (Admin Announcements List)
    */
   async getAnnouncementsForAdmin(req, res, next) {
     try {
@@ -166,7 +166,12 @@ class AnnouncementController {
       const announcements = await billingService.prisma.announcement.findMany({
         where,
         orderBy: { createdAt: 'desc' },
-        include: { building: true }
+        include: {
+          building: true,
+          _count: {
+            select: { announcementReads: true }
+          }
+        }
       });
 
       return res.status(200).json({
@@ -179,19 +184,29 @@ class AnnouncementController {
   }
 
   /**
-   * ดึงรายการประกาศข่าวสารที่ตรงกับผู้เช่าสำหรับ LIFF App
-   * GET /api/liff/announcements
+   * ดึงรายการประกาศข่าวสารที่ตรงกับผู้เช่าสำหรับ LIFF App พร้อมสถานะการเปิดอ่าน (isRead, readAt)
+   * GET /api/v1/liff/announcements
    */
   async getAnnouncementsForLiff(req, res, next) {
     try {
-      // ห้ามรับ roomId จาก Client ตรง ๆ (IDOR) ต้อง derive จาก req.lineUserId ที่ verify แล้วเท่านั้น
       const lineUserId = req.lineUserId;
+      const tenantId = req.tenantId;
+
+      let tenant = null;
+      if (tenantId) {
+        tenant = await billingService.prisma.tenant.findUnique({
+          where: { id: tenantId },
+          include: { rooms: true }
+        });
+      }
+      if (!tenant && lineUserId) {
+        tenant = await billingService.prisma.tenant.findUnique({
+          where: { lineUserId },
+          include: { rooms: true }
+        });
+      }
 
       let tenantRoom = null;
-      const tenant = await billingService.prisma.tenant.findUnique({
-        where: { lineUserId },
-        include: { rooms: true }
-      });
       if (tenant?.rooms?.length > 0) {
         tenantRoom = tenant.rooms[0];
       }
@@ -221,12 +236,179 @@ class AnnouncementController {
       const announcements = await billingService.prisma.announcement.findMany({
         where: whereCondition,
         orderBy: { createdAt: 'desc' },
-        include: { building: true }
+        include: {
+          building: true,
+          announcementReads: tenant?.id ? {
+            where: { tenantId: tenant.id }
+          } : false
+        }
+      });
+
+      const formatted = announcements.map((item) => {
+        const reads = item.announcementReads || [];
+        const readRecord = reads[0] || null;
+        const { announcementReads, ...rest } = item;
+        return {
+          ...rest,
+          isRead: Boolean(readRecord),
+          readAt: readRecord ? readRecord.readAt : null
+        };
       });
 
       return res.status(200).json({
         success: true,
-        data: announcements
+        data: formatted
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * บันทึกว่าผู้เช่าเปิดอ่านประกาศนี้แล้ว (Mark Announcement as Read)
+   * POST /api/v1/liff/announcements/:id/read
+   */
+  async markAnnouncementAsRead(req, res, next) {
+    try {
+      const { id } = req.params;
+      const lineUserId = req.lineUserId;
+      const tenantId = req.tenantId;
+
+      let tenant = null;
+      if (tenantId) {
+        tenant = await billingService.prisma.tenant.findUnique({ where: { id: tenantId } });
+      }
+      if (!tenant && lineUserId) {
+        tenant = await billingService.prisma.tenant.findUnique({ where: { lineUserId } });
+      }
+
+      if (!tenant) {
+        return res.status(404).json({
+          success: false,
+          message: 'ไม่พบข้อมูลผู้เช่า'
+        });
+      }
+
+      const announcement = await billingService.prisma.announcement.findUnique({ where: { id } });
+      if (!announcement) {
+        return res.status(404).json({
+          success: false,
+          message: 'ไม่พบประกาศข่าวสาร'
+        });
+      }
+
+      const readRecord = await billingService.prisma.announcementRead.upsert({
+        where: {
+          announcementId_tenantId: {
+            announcementId: id,
+            tenantId: tenant.id
+          }
+        },
+        update: {
+          readAt: new Date()
+        },
+        create: {
+          announcementId: id,
+          tenantId: tenant.id,
+          readAt: new Date()
+        }
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: 'บันทึกสถานะการอ่านเรียบร้อยแล้ว',
+        data: {
+          announcementId: id,
+          isRead: true,
+          readAt: readRecord.readAt
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * ทำเครื่องหมายว่าอ่านประกาศทั้งหมดแล้ว (Mark All Announcements as Read)
+   * POST /api/v1/liff/announcements/read-all
+   */
+  async markAllAnnouncementsAsRead(req, res, next) {
+    try {
+      const lineUserId = req.lineUserId;
+      const tenantId = req.tenantId;
+
+      let tenant = null;
+      if (tenantId) {
+        tenant = await billingService.prisma.tenant.findUnique({
+          where: { id: tenantId },
+          include: { rooms: true }
+        });
+      }
+      if (!tenant && lineUserId) {
+        tenant = await billingService.prisma.tenant.findUnique({
+          where: { lineUserId },
+          include: { rooms: true }
+        });
+      }
+
+      if (!tenant) {
+        return res.status(404).json({
+          success: false,
+          message: 'ไม่พบข้อมูลผู้เช่า'
+        });
+      }
+
+      let tenantRoom = tenant.rooms?.[0] || null;
+      let whereCondition = {
+        OR: [
+          { targetType: 'ALL' },
+          { targetType: 'all' }
+        ]
+      };
+
+      if (tenantRoom) {
+        whereCondition = {
+          OR: [
+            { targetType: 'ALL' },
+            { targetType: 'all' },
+            { targetType: 'BUILDING', buildingId: tenantRoom.buildingId },
+            { targetType: 'building', buildingId: tenantRoom.buildingId },
+            { targetType: 'FLOOR', targetValue: String(tenantRoom.floor), buildingId: tenantRoom.buildingId },
+            { targetType: 'floor', targetValue: String(tenantRoom.floor), buildingId: tenantRoom.buildingId },
+            { targetType: 'ROOM', targetValue: tenantRoom.id },
+            { targetType: 'room', targetValue: tenantRoom.id }
+          ]
+        };
+      }
+
+      const announcements = await billingService.prisma.announcement.findMany({
+        where: whereCondition,
+        select: { id: true }
+      });
+
+      const now = new Date();
+      await Promise.all(
+        announcements.map((a) =>
+          billingService.prisma.announcementRead.upsert({
+            where: {
+              announcementId_tenantId: {
+                announcementId: a.id,
+                tenantId: tenant.id
+              }
+            },
+            update: { readAt: now },
+            create: {
+              announcementId: a.id,
+              tenantId: tenant.id,
+              readAt: now
+            }
+          })
+        )
+      );
+
+      return res.status(200).json({
+        success: true,
+        message: 'ทำเครื่องหมายว่าอ่านทั้งหมดเรียบร้อยแล้ว'
       });
     } catch (error) {
       next(error);
