@@ -231,6 +231,9 @@ model Tenant {
   /// รหัสผ่านสำหรับ Local Authentication (Bcrypt Hash, Nullable สำหรับคนที่ยังไม่เคยตั้ง)
   passwordHash String? @map("password_hash")
 
+  /// รหัส PIN 6 หลักสำหรับ LIFF Seamless Auto-Login (Bcrypt Hash, Nullable)
+  pinHash String? @map("pin_hash")
+
   /// เลขบัตรประจำตัวประชาชน
   idCard String? @map("id_card")
 

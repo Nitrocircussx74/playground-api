@@ -38,6 +38,20 @@ router.post('/login', validate(loginSchema), authController.login);
 router.post('/login/line', authController.loginLine);
 
 /**
+ * @route   POST /auth/liff/pin-login (and alias /auth/pin-login)
+ * @desc    เข้าสู่ระบบด้วย LIFF Seamless PIN 6 หลัก
+ */
+router.post('/liff/pin-login', authController.pinLogin);
+router.post('/pin-login', authController.pinLogin);
+
+/**
+ * @route   POST /auth/liff/setup-pin (and alias /auth/setup-pin)
+ * @desc    ตั้งค่าหรือเปลี่ยนรหัส PIN 6 หลักสำหรับลูกบ้าน
+ */
+router.post('/liff/setup-pin', authController.setupPin);
+router.post('/setup-pin', authController.setupPin);
+
+/**
  * @route   POST /auth/login/local
  * @desc    เข้าสู่ระบบด้วยเบอร์โทรศัพท์และรหัสผ่าน (Local Password Authentication)
  */

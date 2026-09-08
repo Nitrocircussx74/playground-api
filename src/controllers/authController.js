@@ -124,6 +124,176 @@ class AuthController {
   }
 
   /**
+   * เข้าสู่ระบบด้วย LIFF Seamless PIN 6 หลัก
+   * POST /api/auth/liff/pin-login
+   */
+  async pinLogin(req, res, next) {
+    try {
+      const { lineIdToken, idToken, pin } = req.body;
+      const rawToken = lineIdToken || idToken || req.headers['x-line-id-token'];
+
+      if (!rawToken || !pin) {
+        return res.status(400).json({
+          success: false,
+          message: 'กรุณาระบุ LINE ID Token และรหัส PIN 6 หลัก'
+        });
+      }
+
+      if (!/^\d{6}$/.test(String(pin))) {
+        return res.status(400).json({
+          success: false,
+          message: 'รหัส PIN ต้องเป็นตัวเลข 6 หลักเท่านั้น'
+        });
+      }
+
+      // 1. ถอดรหัส LINE ID Token เพื่อดึง lineUserId
+      let lineUserId = null;
+      try {
+        const verified = await verifyLineIdToken(rawToken);
+        lineUserId = verified?.sub;
+      } catch (err) {
+        return res.status(401).json({
+          success: false,
+          message: 'LINE ID Token ไม่ถูกต้องหรือหมดอายุแล้ว'
+        });
+      }
+
+      if (!lineUserId) {
+        return res.status(401).json({
+          success: false,
+          message: 'LINE ID Token ไม่ถูกต้องหรือหมดอายุ'
+        });
+      }
+
+      // 2. ค้นหา Tenant ใน Database
+      const tenant = await prisma.tenant.findFirst({
+        where: { lineUserId },
+        include: { rooms: true }
+      });
+
+      if (!tenant) {
+        return res.status(404).json({
+          success: false,
+          code: 'TENANT_NOT_FOUND',
+          message: 'ไม่พบบัญชีผู้เช่าที่ผูกกับ LINE บัญชีนี้ กรุณาลงทะเบียนหรือผูกห้องพักก่อน'
+        });
+      }
+
+      // 3. ตรวจสอบสถานะการตั้งรหัส PIN
+      if (!tenant.pinHash) {
+        return res.status(400).json({
+          success: false,
+          code: 'PIN_NOT_SET',
+          message: 'คุณยังไม่ได้ตั้งค่ารหัส PIN 6 หลัก กรุณาตั้งค่า PIN ก่อนใช้งาน'
+        });
+      }
+
+      // 4. เปรียบเทียบรหัส PIN ด้วย Bcrypt
+      const isMatch = await bcrypt.compare(String(pin), tenant.pinHash);
+      if (!isMatch) {
+        return res.status(401).json({
+          success: false,
+          code: 'INVALID_PIN',
+          message: 'รหัส PIN 6 หลักไม่ถูกต้อง'
+        });
+      }
+
+      // 5. ออก Backend JWT และ Refresh Token
+      const tenantUser = {
+        id: tenant.id,
+        tenantId: tenant.id,
+        phone: tenant.phone,
+        email: `tenant_${tenant.id}@dorm.local`,
+        name: tenant.name || `${tenant.firstName} ${tenant.lastName}`.trim(),
+        displayName: tenant.lineDisplayName || tenant.firstName,
+        role: 'tenant',
+        lineUserId: tenant.lineUserId,
+        roomId: tenant.rooms?.[0]?.id,
+        buildingId: tenant.rooms?.[0]?.buildingId
+      };
+
+      const accessToken = authService.generateAccessToken(tenantUser);
+      const refreshToken = authService.generateRefreshToken(tenantUser);
+
+      await authService.saveRefreshToken(tenant.id, refreshToken);
+      setRefreshTokenCookie(res, refreshToken, req);
+
+      return res.status(200).json({
+        success: true,
+        message: 'เข้าสู่ระบบด้วย PIN สำเร็จ (LIFF PIN Auto-Login Success)',
+        accessToken,
+        token: accessToken,
+        user: tenantUser,
+        tenant,
+        data: {
+          accessToken,
+          token: accessToken,
+          user: tenantUser,
+          tenant
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * ตั้งค่าหรือเปลี่ยนรหัส PIN 6 หลัก
+   * POST /api/auth/liff/setup-pin
+   */
+  async setupPin(req, res, next) {
+    try {
+      const { pin, lineIdToken, idToken } = req.body;
+      const rawToken = lineIdToken || idToken || req.headers['x-line-id-token'];
+
+      if (!pin || !/^\d{6}$/.test(String(pin))) {
+        return res.status(400).json({
+          success: false,
+          message: 'รหัส PIN ต้องเป็นตัวเลข 6 หลักเท่านั้น'
+        });
+      }
+
+      let lineUserId = req.lineUserId || req.user?.lineUserId;
+      if (!lineUserId && rawToken) {
+        try {
+          const verified = await verifyLineIdToken(rawToken);
+          lineUserId = verified?.sub;
+        } catch {}
+      }
+
+      const tenantId = req.tenantId || req.user?.tenantId || req.user?.id;
+      let tenant = null;
+
+      if (tenantId) {
+        tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+      }
+      if (!tenant && lineUserId) {
+        tenant = await prisma.tenant.findFirst({ where: { lineUserId } });
+      }
+
+      if (!tenant) {
+        return res.status(404).json({
+          success: false,
+          message: 'ไม่พบข้อมูลลูกบ้านสำหรับตั้งค่า PIN'
+        });
+      }
+
+      const pinHash = await bcrypt.hash(String(pin), 10);
+      await prisma.tenant.update({
+        where: { id: tenant.id },
+        data: { pinHash }
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: 'ตั้งค่ารหัส PIN 6 หลักสำเร็จเรียบร้อยแล้ว'
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * เข้าสู่ระบบด้วยเบอร์โทรศัพท์และรหัสผ่าน (Local Password Login)
    * POST /api/auth/login/local
    */

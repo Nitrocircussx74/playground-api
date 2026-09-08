@@ -164,4 +164,83 @@ describe('Hybrid Authentication (LINE SSO + Local Password) Integration Tests', 
       expect(response.body.data.user.phone).toBe(testPhone);
     });
   });
+
+  describe('POST /api/auth/liff/pin-login & /setup-pin (LIFF Seamless PIN Auto-Login)', () => {
+    const testPin = '123456';
+    const wrongPin = '654321';
+    const mockLineIdToken = 'U_hybrid_test_user_line_123';
+
+    test('กรณีลูกบ้านยังไม่ได้ตั้งค่า PIN ต้องส่งคืน 400 PIN_NOT_SET', async () => {
+      const response = await request(app)
+        .post('/api/auth/liff/pin-login')
+        .send({
+          lineIdToken: mockLineIdToken,
+          pin: testPin
+        });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.body.success).toBe(false);
+      expect(response.body.code).toBe('PIN_NOT_SET');
+    });
+
+    test('ลูกบ้านตั้งค่ารหัส PIN 6 หลักสำเร็จ (200 OK)', async () => {
+      const response = await request(app)
+        .post('/api/auth/liff/setup-pin')
+        .send({
+          lineIdToken: mockLineIdToken,
+          pin: testPin
+        });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+
+      const updated = await billingService.prisma.tenant.findUnique({
+        where: { id: testTenant.id }
+      });
+      expect(updated.pinHash).toBeDefined();
+      const isMatch = await bcrypt.compare(testPin, updated.pinHash);
+      expect(isMatch).toBe(true);
+    });
+
+    test('กรณีระบุรหัส PIN ผิด ต้องปฏิเสธ 401 Unauthorized พร้อม code INVALID_PIN', async () => {
+      const response = await request(app)
+        .post('/api/auth/liff/pin-login')
+        .send({
+          lineIdToken: mockLineIdToken,
+          pin: wrongPin
+        });
+
+      expect(response.statusCode).toBe(401);
+      expect(response.body.success).toBe(false);
+      expect(response.body.code).toBe('INVALID_PIN');
+    });
+
+    test('กรณีระบุรหัส PIN 6 หลักถูกต้อง ล็อกอินสำเร็จและได้รับ Backend JWT (200 OK)', async () => {
+      const response = await request(app)
+        .post('/api/auth/liff/pin-login')
+        .send({
+          lineIdToken: mockLineIdToken,
+          pin: testPin
+        });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.accessToken).toBeDefined();
+      expect(response.body.data.user.role).toBe('tenant');
+      expect(response.body.data.user.phone).toBe(testPhone);
+    });
+
+    test('กรณี LINE ID Token ไม่ตรงกับผู้ใช้ใดเลย ต้องส่งคืน 404 TENANT_NOT_FOUND', async () => {
+      const response = await request(app)
+        .post('/api/auth/liff/pin-login')
+        .send({
+          lineIdToken: 'U_non_existent_tenant_999',
+          pin: testPin
+        });
+
+      expect(response.statusCode).toBe(404);
+      expect(response.body.success).toBe(false);
+      expect(response.body.code).toBe('TENANT_NOT_FOUND');
+    });
+  });
 });
