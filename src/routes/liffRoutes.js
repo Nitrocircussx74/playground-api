@@ -15,7 +15,10 @@ const parcelController = require('../controllers/parcelController');
 // Public Invite Code Verification (อนุญาตให้ตรวจสอบความถูกต้องของรหัสเชิญได้ทั้งในและนอก LINE App)
 router.get('/invites/verify/:code', (req, res, next) => liffController.verifyInviteCode(req, res, next));
 
-// ทุก Route ถัดจากนี้ต้องมี LINE ID Token ที่ตรวจสอบผ่านแล้วเสมอ (req.lineUserId)
+// Silent Re-Authentication (สำหรับต่ออายุเซสชัน LIFF อัตโนมัติเบื้องหลังโดยใช้ LINE ID Token)
+router.post('/auth/silent-login', (req, res, next) => liffController.silentLogin(req, res, next));
+
+// ทุก Route ถัดจากนี้ต้องมี LINE ID Token หรือ Backend JWT Bearer Token ที่ตรวจสอบผ่านแล้วเสมอ (req.lineUserId)
 router.use(liffAuthMiddleware);
 
 // จำกัดจำนวนครั้งการลองผูกบัญชี เพื่อป้องกัน Brute Force เดา phoneLast4 (10,000 ค่า) เมื่อรู้ inviteCode แล้ว

@@ -1,8 +1,138 @@
 const billingService = require('../services/billingService');
 const lineService = require('../services/lineService');
 const slipService = require('../services/slipService');
+const authService = require('../services/authService');
+const config = require('../config/env');
+const { verifyLineIdToken } = require('../middlewares/liffAuthMiddleware');
 
 class LiffController {
+  /**
+   * Silent Re-Authentication สำหรับต่ออายุเซสชัน LIFF อัตโนมัติเบื้องหลัง
+   * 1. รับ LINE ID Token จาก Payload หรือ Header
+   * 2. Verify Signature กับ LINE API Server
+   * 3. ค้นหา Tenant ในระบบ
+   * 4. ออก Backend JWT ตัวใหม่และส่งกลับ
+   */
+  async silentLogin(req, res, next) {
+    try {
+      const lineIdToken = req.body?.lineIdToken || req.body?.idToken || req.headers['x-line-id-token'];
+      const authHeader = req.headers['authorization'];
+
+      let lineUserId = req.lineUserId;
+      let profileData = null;
+
+      // 1. ถ้าส่ง LINE ID Token มา ให้ Verify ลายเซ็นกับ LINE API
+      if (lineIdToken) {
+        try {
+          const verified = await verifyLineIdToken(lineIdToken);
+          lineUserId = verified.sub;
+          profileData = {
+            displayName: verified.name || req.body?.lineDisplayName || null,
+            pictureUrl: verified.picture || req.body?.linePictureUrl || null,
+            email: verified.email || null
+          };
+        } catch (verifyErr) {
+          return res.status(401).json({
+            success: false,
+            code: 'LINE_TOKEN_INVALID',
+            message: 'LINE ID Token ไม่ถูกต้องหรือหมดอายุแล้ว กรุณาเข้าสู่ระบบใหม่'
+          });
+        }
+      }
+
+      // 2. ถ้ามี Bearer Token เดิมที่ส่งมา (กรณี fallback)
+      if (!lineUserId && authHeader && authHeader.startsWith('Bearer ')) {
+        try {
+          const decoded = authService.verifyAccessToken(authHeader.split(' ')[1]);
+          if (decoded && (decoded.lineUserId || decoded.id)) {
+            lineUserId = decoded.lineUserId;
+          }
+        } catch {
+          // Token expired
+        }
+      }
+
+      // Dev Mode Fallback
+      if (!lineUserId && (config.nodeEnv === 'development' || config.line.mockMode)) {
+        lineUserId = req.headers['x-line-user-id'] || req.body?.lineUserId || 'dev_line_user';
+      }
+
+      if (!lineUserId) {
+        return res.status(401).json({
+          success: false,
+          code: 'UNAUTHORIZED',
+          message: 'ไม่พบ LINE ID Token สำหรับยืนยันตัวตน'
+        });
+      }
+
+      // 3. ค้นหาผู้เช่าในระบบ
+      let tenant = await billingService.prisma.tenant.findFirst({
+        where: { lineUserId },
+        include: {
+          rooms: {
+            include: {
+              building: true
+            }
+          }
+        }
+      });
+
+      // Dev Mock Fallback
+      if (!tenant && (config.nodeEnv === 'development' || config.line.mockMode)) {
+        tenant = await billingService.prisma.tenant.findFirst({
+          include: { rooms: { include: { building: true } } }
+        });
+      }
+
+      if (!tenant) {
+        return res.status(404).json({
+          success: false,
+          isRegistered: false,
+          code: 'TENANT_NOT_FOUND',
+          message: 'ไม่พบข้อมูลลูกบ้านที่ผูกกับบัญชี LINE นี้'
+        });
+      }
+
+      // Sync Profile information if provided
+      if (profileData && (profileData.displayName || profileData.pictureUrl)) {
+        await billingService.prisma.tenant.update({
+          where: { id: tenant.id },
+          data: {
+            ...(profileData.displayName && { lineDisplayName: profileData.displayName }),
+            ...(profileData.pictureUrl && { linePictureUrl: profileData.pictureUrl })
+          }
+        }).catch((err) => console.warn('Silent Login profile sync warning:', err.message));
+      }
+
+      // 4. ออก Backend JWT Access Token ใหม่สำหรับเซสชันลูกบ้าน
+      const accessToken = authService.generateAccessToken({
+        id: tenant.id,
+        tenantId: tenant.id,
+        email: tenant.email || `tenant_${tenant.id}@dorm.local`,
+        name: tenant.name,
+        displayName: tenant.lineDisplayName || tenant.name,
+        role: 'tenant',
+        lineUserId: tenant.lineUserId,
+        roomId: tenant.rooms?.[0]?.id,
+        buildingId: tenant.rooms?.[0]?.buildingId
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: 'ต่ออายุเซสชัน LIFF อัตโนมัติสำเร็จ (Silent Re-Auth Success)',
+        accessToken,
+        token: accessToken,
+        data: {
+          tenant,
+          accessToken,
+          expiresIn: config.jwt.accessExpiresIn
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   /**
    * ตรวจสอบสถานะการเป็นลูกบ้านผ่าน lineUserId สำหรับ Smart Entry Gateway Router
    */

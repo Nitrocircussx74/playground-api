@@ -38,13 +38,45 @@ async function verifyLineIdToken(idToken) {
   return payload;
 }
 
+const authService = require('../services/authService');
+
 /**
  * Middleware สำหรับยืนยันตัวตนผู้เช่าที่เข้าใช้งานผ่าน LINE LIFF
- * แนบ req.lineUserId ที่ verify แล้วให้ Controller ใช้แทนค่าที่ Client ส่งมาเอง
+ * รองรับทั้ง:
+ * 1. Backend JWT Bearer Token (Authorization: Bearer <jwt>) ที่ออกให้หลัง Silent Login
+ * 2. LINE ID Token (X-Line-Id-Token) จาก liff.getIDToken()
  */
 const liffAuthMiddleware = async (req, res, next) => {
+  const authHeader = req.headers['authorization'];
   const idToken = req.headers['x-line-id-token'];
 
+  // 1. ตรวจสอบว่ามี Backend JWT Bearer Token หรือไม่
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.split(' ')[1];
+    try {
+      const decoded = authService.verifyAccessToken(token);
+      req.user = decoded;
+      req.tenantId = decoded.tenantId || decoded.id;
+      req.lineUserId = decoded.lineUserId || req.lineUserId;
+      req.lineUser = {
+        lineUserId: decoded.lineUserId || req.lineUserId,
+        displayName: decoded.name || decoded.displayName,
+        email: decoded.email
+      };
+      return next();
+    } catch (jwtError) {
+      // หาก JWT หมดอายุ และไม่มี X-Line-Id-Token แนบมา ให้ส่ง 401 เพื่อให้ Client Interceptor ทำ Silent Re-Auth
+      if (!idToken) {
+        return res.status(401).json({
+          success: false,
+          code: 'TOKEN_EXPIRED',
+          message: 'เซสชันการใช้งานหมดอายุ กรุณาต่ออายุเซสชัน (Token Expired)'
+        });
+      }
+    }
+  }
+
+  // 2. ตรวจสอบ LINE ID Token
   try {
     if (!idToken) {
       // ในโหมด Development หรือ Mock Mode อนุญาตให้ใช้ x-line-user-id / query lineUserId หรือ dev fallback
@@ -68,6 +100,7 @@ const liffAuthMiddleware = async (req, res, next) => {
 
       return res.status(401).json({
         success: false,
+        code: 'UNAUTHORIZED',
         message: 'กรุณาเข้าสู่ระบบผ่าน LINE ก่อนใช้งาน (ไม่พบ LINE ID Token)'
       });
     }
@@ -92,6 +125,7 @@ const liffAuthMiddleware = async (req, res, next) => {
     }
     return res.status(401).json({
       success: false,
+      code: 'TOKEN_INVALID',
       message: 'กรุณาเข้าสู่ระบบผ่าน LINE ใหม่อีกครั้ง (LINE ID Token ไม่ถูกต้องหรือหมดอายุ)'
     });
   }

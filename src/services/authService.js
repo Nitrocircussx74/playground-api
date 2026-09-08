@@ -16,7 +16,11 @@ class AuthService {
       id: userPayload.id,
       email: userPayload.email,
       name: userPayload.displayName || userPayload.name,
-      role: userPayload.role || 'user'
+      role: userPayload.role || 'user',
+      ...(userPayload.tenantId && { tenantId: userPayload.tenantId }),
+      ...(userPayload.lineUserId && { lineUserId: userPayload.lineUserId }),
+      ...(userPayload.buildingId && { buildingId: userPayload.buildingId }),
+      ...(userPayload.roomId && { roomId: userPayload.roomId })
     };
 
     return jwt.sign(payload, config.jwt.accessSecret, {

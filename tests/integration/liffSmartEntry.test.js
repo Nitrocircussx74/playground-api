@@ -82,4 +82,48 @@ describe('LINE Rich Menu & LIFF Smart Entry Router Integration Tests', () => {
       });
     });
   });
+
+  describe('POST /api/v1/liff/auth/silent-login (Silent Re-Authentication)', () => {
+    test('กรณีไม่ส่ง LINE ID Token ต้องส่งคืน 401 Unauthorized', async () => {
+      const response = await request(app)
+        .post('/api/v1/liff/auth/silent-login')
+        .send({});
+
+      expect(response.statusCode).toBe(401);
+      expect(response.body.success).toBe(false);
+    });
+
+    test('กรณี LINE ID Token ไม่ตรงกับ Tenant ใดเลย ต้องส่งคืน 404 Not Found', async () => {
+      const response = await request(app)
+        .post('/api/v1/liff/auth/silent-login')
+        .send({ lineIdToken: 'U_completely_non_existent_tenant_99999' });
+
+      expect(response.statusCode).toBe(404);
+      expect(response.body.success).toBe(false);
+    });
+
+    test('กรณีส่ง LINE ID Token ของผู้เช่าที่ถูกต้อง ต้องออก Backend JWT ใหม่สำเร็จ (200 OK)', async () => {
+      if (!testTenant || !testTenant.lineUserId) return;
+
+      const response = await request(app)
+        .post('/api/v1/liff/auth/silent-login')
+        .send({
+          lineIdToken: testTenant.lineUserId,
+          lineDisplayName: testTenant.lineDisplayName || 'Silent Reauth Tenant'
+        });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.accessToken).toBeDefined();
+      expect(response.body.data.tenant.id).toBe(testTenant.id);
+
+      // ทดสอบนำ JWT ที่ได้ไปยิง endpoint อื่นเพื่อยืนยันว่า JWT ใช้งานได้จริง
+      const profileRes = await request(app)
+        .get('/api/v1/liff/profile')
+        .set('Authorization', `Bearer ${response.body.accessToken}`);
+
+      expect(profileRes.statusCode).toBe(200);
+      expect(profileRes.body.success).toBe(true);
+    });
+  });
 });
