@@ -6,10 +6,12 @@
 
 ## 📅 ข้อมูลกิจกรรม (Activity Summary)
 
-- **วันที่ดำเนินการ**: 26 สิงหาคม 2026
-- **สถานะ**: ✅ สำเร็จเสร็จสมบูรณ์ 100%
-- **คำสั่งล่าสุด**: Complete 100% Full API Integration Tests (19/19 Tests Passed Across All Endpoints)
+- **วันที่ดำเนินการ**: 26 สิงหาคม 2026 (เริ่มโปรเจกต์) — อัปเดตล่าสุด 9 กันยายน 2026
+- **สถานะ**: ✅ สำเร็จเสร็จสมบูรณ์ 100% (Phase 1-11: โครงสร้างเริ่มต้น / Phase 12: PIN Verify + Maintenance Payer Billing + Android Download Fix)
+- **คำสั่งล่าสุด**: PIN Verify-and-Set Flow, Maintenance Repair Cost Payer & Auto-Billing, Android/LINE PDF Download Fix (ดู Phase 12)
 - **Repository**: `https://github.com/Nitrocircussx74/playground-api`
+
+> ⚠️ หมายเหตุ: บันทึกนี้ (Phase 1-11) ครอบคลุมเฉพาะช่วงเริ่มต้นโปรเจกต์ (26 ส.ค. 2026) โค้ดเบสปัจจุบันมีระบบเพิ่มเติมอีกมาก (Prisma ORM, LINE LIFF Tenant Portal, Invoices, Maintenance, Parcels, Announcements ฯลฯ) ที่ยังไม่ได้บันทึกย้อนหลังไว้ที่นี่ทั้งหมด — Phase 12 เป็นการบันทึกงานเซสชันล่าสุดต่อจากสถานะปัจจุบันของโค้ดเบส ไม่ใช่ประวัติการสร้างระบบเหล่านั้นตั้งแต่ต้น
 
 ---
 
@@ -64,6 +66,22 @@
 ### Phase 11: การออกแบบและบันทึกสถาปัตยกรรมโมดูล Meter Reading & Billing Calculation Engine
 - **`billingService.js`**: ออกแบบลอจิกการคำนวณค่าน้ำขั้นต่ำ (Minimum Base Rate), ค่าไฟอัตราคงที่ (Unit Rate), การจัดการ Edge Case มิเตอร์รันกลับไป 0 (`isMeterReset`), และการสร้างใบแจ้งหนี้ภายใต้ Prisma Database Transaction
 
+### Phase 12 (2026-09-09): PIN Verify-and-Set Flow, Maintenance Repair Cost Payer & Auto-Billing, Android/LINE PDF Download Fix
+- **Audit ระบบ PIN**: ไล่ตรวจทุก Endpoint ที่เกี่ยวกับ PIN (`pinLogin`, `setupPin`, `changePin`, `checkAuthStatus`, `verifyPhoneStatus`, `linkAndLogin`) พบว่า `linkAndLogin` (ยืนยันตัวตนด้วยเบอร์โทร+PIN เพื่อผูก LINE ตึกใหม่) ยังไม่มีทางตั้ง PIN ใหม่ได้เลยถ้าบัญชียังไม่เคยตั้ง PIN มาก่อน (บล็อกด้วย `PIN_NOT_SET` เฉยๆ)
+  - **`src/controllers/authController.js`**: แก้ `linkAndLogin` ให้ถ้า `!tenant.pinHash` ให้ถือว่า PIN ที่ส่งมาคือ PIN ใหม่ที่ต้องการตั้ง แล้วบันทึกทันทีในคำขอเดียวกัน (พร้อมเพิ่ม validate รูปแบบ PIN 6 หลักที่ขาดไปเดิม) ส่ง `pinCreated` กลับไปให้ Frontend ทราบ
+  - **`src/controllers/liffController.js`**: `linkTenantAccount` (ผูกบัญชีเดิมด้วย Invite Code) และ `registerTenantWithInvite` (ลงทะเบียนใหม่ด้วย Invite Code) เดิมไม่เคยส่ง `hasPin` กลับไปเลย ทำให้ลูกบ้านกลุ่มนี้ไม่เคยถูกพาไปตั้ง PIN — เพิ่ม `hasPin` ในผลลัพธ์ทั้งคู่ และตัดฟิลด์อ่อนไหว (`pinHash` ฯลฯ) ที่ `registerTenantWithInvite` เคยส่งกลับไปแบบดิบๆ ออก (ป้องกัน Data Leak)
+  - เพิ่มเทส `tests/integration/hybridAuth.test.js` (3 เคสใหม่) และ `tests/integration/liffAccountLinking.test.js` (assert `hasPin` + เคส `register/invite`) ครอบคลุม Flow ใหม่
+- **ระบบผู้รับผิดชอบค่าซ่อม (Maintenance Payer) + รวมบิลอัตโนมัติ**:
+  - **`prisma/schema.prisma`**: เพิ่ม `payer` (MANAGEMENT/TENANT, default MANAGEMENT) และ `billedInvoiceId` (FK → Invoice) ใน `MaintenanceRequest` — push ผ่าน `prisma db push`
+  - **`src/controllers/maintenanceController.js`**: รับ/validate `payer` ตอนสร้าง/อัปเดตงานซ่อม บล็อกการแก้ `repairCost`/`payer` ถ้าถูกรวมเข้าบิลไปแล้ว (เทียบค่าที่เปลี่ยนจริงเท่านั้น ไม่บล็อกฟิลด์อื่น)
+  - **`src/services/billingService.js` (`generateInvoice`)**: ตอนออกบิลห้องไหน จะดึงค่าซ่อม `payer=TENANT` ที่ `resolved` และยังไม่เคยถูกบิล (`billedInvoiceId: null`) มารวมเป็น `otherFee` อัตโนมัติพร้อม Note รายการ แล้ว `updateMany` mark ว่าบิลแล้วภายใน Transaction เดียวกัน กันเรียกเก็บซ้ำข้ามรอบบิล
+  - เพิ่มไฟล์เทสใหม่ **`tests/integration/maintenanceBilling.test.js`** (6 เคส): validate payer, รวมเฉพาะ TENANT (ไม่รวม MANAGEMENT), กันเก็บซ้ำ, บล็อกแก้ไขหลังบิลแล้ว
+- **แก้บั๊กดาวน์โหลดใบแจ้งหนี้/ใบเสร็จไม่ได้บน Android ใน LINE**:
+  - **`src/controllers/invoiceController.js`**: `exportInvoicePdf` และ `exportReceiptPdf` เดิม set `Content-Disposition: inline` ทำให้เปิดผ่าน External Browser บน Android (Custom Tab/WebView ที่ LINE เปิดให้เวลากดดาวน์โหลด) แสดงผล PDF ในหน้าเว็บแทนที่จะดาวน์โหลดจริง (iOS Safari ยังพอกดปุ่มแชร์เซฟได้ แต่ Android ส่วนใหญ่ไม่มีปุ่มให้กด) — แก้เป็น `attachment` ทั้งคู่
+  - เพิ่มเทสคุมใน `tests/integration/payment.test.js` (2 เคสใหม่) assert ว่า Content-Disposition ต้องเป็น `attachment` เสมอ กันกลับไปเป็น `inline` อีกในอนาคต
+- **Test Verification**: รัน `yarn test` เต็ม Suite ผ่าน 192/193 (เหลือ 1 เทสเดิมที่ Flaky อยู่ก่อนแล้วใน `liffAccountLinking.test.js` เพราะ Test Design ใช้ `tenant.findFirst()` แบบไม่เจาะจง ไม่เกี่ยวกับงานเซสชันนี้)
+- **⚠️ พบและแก้ไข Data Corruption ระหว่างตรวจงาน**: การรัน `liffAccountLinking.test.js` ซ้ำหลายรอบทำให้ tenant ทดสอบ ("sear sear", phone `0895556677`) ถูก Test เขียนทับ `lineDisplayName`/`linePictureUrl` ด้วยข้อมูลปลอมค้างไว้ (ไม่มี `afterAll` restore เดิม) — เคลียร์ข้อมูลกลับเป็น `null` ให้แล้ว และแก้ไฟล์เทสให้จด-restore ค่าเดิมเสมอ (`beforeAll`/`afterAll` + `try/finally`) กันไม่ให้เกิดซ้ำ
+
 ---
 
 ## 📂 สรุปรายการไฟล์ทั้งหมดที่สร้างขึ้น (Created Files Inventory)
@@ -106,3 +124,4 @@
 | 34 | `playground-api/tests/integration/apiRoutes.test.js` | Test File | Full Integration Tests สำหรับ Endpoints ทั้งหมดในระบบ (Passed 12/12) |
 | 35 | `playground-api/README.md` | Markdown | เอกสารคู่มือการใช้งานโปรเจกต์ภาษาไทย (Yarn Supported) |
 | 36 | `playground-api/docs/ACTIVITY_LOG.md` | Markdown | เอกสารบันทึกกิจกรรมการพัฒนาโปรเจกต์ |
+| 37 | `playground-api/tests/integration/maintenanceBilling.test.js` | Test File | Integration Tests สำหรับ Maintenance Payer + Auto-Billing เข้าใบแจ้งหนี้รอบถัดไป (Passed 6/6) |
