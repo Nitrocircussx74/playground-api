@@ -608,7 +608,7 @@ class LiffController {
       }
 
       // 5. Fallback ใน Dev/Mock Mode
-      if (!tenant && (process.env.NODE_ENV !== 'production' || process.env.LINE_MOCK_MODE === 'true')) {
+      if (!tenant && (process.env.NODE_ENV !== 'production' || config.line.mockMode)) {
         tenant = await billingService.prisma.tenant.findFirst({
           where: { lineUserId: null }
         });

@@ -4,13 +4,10 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
-const swaggerUi = require('swagger-ui-express');
-const { doubleCsrf } = require('csrf-csrf');
 const path = require('path');
 
 const config = require('./config/env');
 const passport = require('./config/passport');
-const swaggerSpec = require('./config/swagger');
 const routes = require('./routes');
 const { notFoundHandler, errorHandler } = require('./middlewares/errorMiddleware');
 
@@ -70,24 +67,6 @@ app.use(cookieParser());
 // Static Uploads Folder
 app.use('/uploads', express.static(path.join(__dirname, '../public/uploads')));
 
-const { generateToken, doubleCsrfProtection } = doubleCsrf({
-  getSecret: () => config.jwtAccessSecret || 'super_secret_csrf_key',
-  cookieName: 'x-csrf-token',
-  cookieOptions: {
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: config.nodeEnv === 'production'
-  },
-  size: 64,
-  ignoredMethods: ['GET', 'HEAD', 'OPTIONS']
-});
-
-app.get('/api/csrf-token', (req, res) => {
-  const csrfToken = generateToken(req, res);
-  res.json({ success: true, csrfToken });
-});
-
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.use(passport.initialize());
 
 app.use('/', routes);

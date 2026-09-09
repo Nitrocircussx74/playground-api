@@ -25,8 +25,7 @@ const setRefreshTokenCookie = (res, refreshToken, req) => {
 };
 
 const bcrypt = require('bcryptjs');
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = require('../config/prisma');
 const { verifyLineIdToken } = require('../middlewares/liffAuthMiddleware');
 
 class AuthController {

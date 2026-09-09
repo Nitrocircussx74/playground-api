@@ -1,6 +1,7 @@
 const billingService = require('../services/billingService');
 const lineService = require('../services/lineService');
 const { setupThaiFonts } = require('../utils/pdfHelper');
+const { formatBillingCycle } = require('../utils/formatBillingCycle');
 
 class DashboardController {
   /**
@@ -35,10 +36,10 @@ class DashboardController {
 
       // 2. Financial Flow (คำนวณรายได้เดือนปัจจุบัน เปรียบเทียบกับเดือนที่แล้วด้วย Prisma aggregate)
       const now = new Date();
-      const currentCycle = `${String(now.getMonth() + 1).padStart(2, '0')}-${now.getFullYear()}`;
+      const currentCycle = formatBillingCycle(now);
 
       const prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      const prevCycle = `${String(prevDate.getMonth() + 1).padStart(2, '0')}-${prevDate.getFullYear()}`;
+      const prevCycle = formatBillingCycle(prevDate);
 
       const currentInvoiceWhere = {
         status: 'paid',
@@ -240,7 +241,7 @@ class DashboardController {
 
       for (let i = 5; i >= 0; i--) {
         const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-        const cycle = `${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`;
+        const cycle = formatBillingCycle(d);
 
         const aggregate = await billingService.prisma.invoice.aggregate({
           where: {
@@ -349,7 +350,7 @@ class DashboardController {
       const { billingCycle } = req.query;
 
       const now = new Date();
-      const targetCycle = billingCycle || `${String(now.getMonth() + 1).padStart(2, '0')}-${now.getFullYear()}`;
+      const targetCycle = billingCycle || formatBillingCycle(now);
 
       const invoices = await billingService.prisma.invoice.findMany({
         where: { billingCycle: targetCycle },

@@ -1,6 +1,6 @@
 const jwt = require('jsonwebtoken');
 const config = require('../config/env');
-const db = require('../config/db');
+const prisma = require('../config/prisma');
 
 /**
  * Service สำหรับจัดการการสร้าง ตรวจสอบ และหมุนเวียน (Rotate) JWT Access & Refresh Tokens
@@ -28,11 +28,6 @@ class AuthService {
     });
   }
 
-  /**
-   * สร้าง (Sign) Refresh Token (อายุยาว เช่น 7d)
-   * @param {Object} userPayload
-   * @returns {string} Refresh Token
-   */
   /**
    * สร้าง (Sign) Refresh Token (อายุยาว เช่น 7d)
    * @param {Object} userPayload
@@ -68,17 +63,16 @@ class AuthService {
   }
 
   /**
-   * บันทึก Refresh Token ลงใน PostgreSQL Database
+   * บันทึก Refresh Token ลงใน Database (ผ่าน Prisma RefreshToken model)
    * @param {number|string} userId
    * @param {string} token
    */
   async saveRefreshToken(userId, token) {
     try {
       const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 วัน
-      await db.query(
-        'INSERT INTO refresh_tokens (user_id, token, expires_at) VALUES ($1, $2, $3)',
-        [userId, token, expiresAt]
-      );
+      await prisma.refreshToken.create({
+        data: { userId, token, expiresAt }
+      });
     } catch (error) {
       // Fallback กรณีไม่ได้ต่อ DB
       console.warn('⚠️ ไม่สามารถบันทึก Refresh Token ลง DB ได้:', error.message);
@@ -96,8 +90,6 @@ class AuthService {
     // 2. ดึงข้อมูล User ล่าสุดเพื่อถอด role ที่ถูกต้อง
     let userPayload = { ...decoded };
     try {
-      const { PrismaClient } = require('@prisma/client');
-      const prisma = new PrismaClient();
       const dbUser = await prisma.user.findUnique({ where: { email: decoded.email } });
       if (dbUser) {
         userPayload = {
@@ -113,17 +105,16 @@ class AuthService {
 
     // 3. ตรวจสอบกับ Database ว่า Token นี้ยังมีผลใช้งานอยู่หรือไม่ (ไม่ถูก Revoke)
     try {
-      const tokenInDb = await db.query(
-        'SELECT * FROM refresh_tokens WHERE token = $1 AND user_id = $2',
-        [oldRefreshToken, decoded.id]
-      );
+      const tokenInDb = await prisma.refreshToken.findFirst({
+        where: { token: oldRefreshToken, userId: decoded.id }
+      });
 
-      if (tokenInDb.rows.length === 0) {
+      if (!tokenInDb) {
         throw new Error('Refresh Token ไม่ถูกต้องหรือถูกเพิกถอนไปแล้ว');
       }
 
       // 4. เพิกถอน (ลบ) Refresh Token เดิมออกเพื่อป้องกัน Reuse Attack
-      await db.query('DELETE FROM refresh_tokens WHERE token = $1', [oldRefreshToken]);
+      await prisma.refreshToken.deleteMany({ where: { token: oldRefreshToken } });
     } catch (error) {
       if (error.message.includes('เพิกถอน')) throw error;
     }
@@ -148,7 +139,7 @@ class AuthService {
    */
   async revokeRefreshToken(token) {
     try {
-      await db.query('DELETE FROM refresh_tokens WHERE token = $1', [token]);
+      await prisma.refreshToken.deleteMany({ where: { token } });
     } catch (error) {
       console.warn('⚠️ ไม่สามารถลบ Refresh Token จาก DB ได้:', error.message);
     }
