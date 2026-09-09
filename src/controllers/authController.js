@@ -707,6 +707,7 @@ class AuthController {
 
   /**
    * ผูก LINE ID ตึกใหม่เข้ากับบัญชีผู้ใช้เดิมด้วย PIN 6 หลัก และออก Token ทันที
+   * หากบัญชีนี้ยังไม่เคยตั้งรหัส PIN มาก่อน จะบันทึก PIN ที่ส่งมาเป็นรหัส PIN ใหม่ให้ทันที
    * POST /api/v1/liff/auth/link-and-login
    */
   async linkAndLogin(req, res, next) {
@@ -719,6 +720,13 @@ class AuthController {
         return res.status(400).json({
           success: false,
           message: 'กรุณาระบุเบอร์โทรศัพท์และรหัส PIN 6 หลัก'
+        });
+      }
+
+      if (!/^\d{6}$/.test(String(pin))) {
+        return res.status(400).json({
+          success: false,
+          message: 'รหัส PIN ต้องเป็นตัวเลข 6 หลักเท่านั้น'
         });
       }
 
@@ -765,21 +773,26 @@ class AuthController {
         });
       }
 
+      // หากบัญชีนี้ยังไม่เคยตั้งรหัส PIN มาก่อน ให้ถือว่า PIN ที่ส่งมาในการยืนยันตัวตนครั้งนี้
+      // คือรหัส PIN ใหม่ที่ลูกบ้านต้องการตั้ง แล้วบันทึกทันที แทนที่จะบล็อกและให้ไปเรียก setup-pin แยกต่างหาก
+      let pinJustCreated = false;
       if (!tenant.pinHash) {
-        return res.status(400).json({
-          success: false,
-          code: 'PIN_NOT_SET',
-          message: 'บัญชีนี้ยังไม่ได้ตั้งรหัส PIN 6 หลัก'
+        const newPinHash = await bcrypt.hash(String(pin), 10);
+        await prisma.tenant.update({
+          where: { id: tenant.id },
+          data: { pinHash: newPinHash }
         });
-      }
-
-      const isMatch = await bcrypt.compare(String(pin), tenant.pinHash);
-      if (!isMatch) {
-        return res.status(401).json({
-          success: false,
-          code: 'INVALID_PIN',
-          message: 'รหัส PIN 6 หลักไม่ถูกต้อง'
-        });
+        tenant.pinHash = newPinHash;
+        pinJustCreated = true;
+      } else {
+        const isMatch = await bcrypt.compare(String(pin), tenant.pinHash);
+        if (!isMatch) {
+          return res.status(401).json({
+            success: false,
+            code: 'INVALID_PIN',
+            message: 'รหัส PIN 6 หลักไม่ถูกต้อง'
+          });
+        }
       }
 
       // Upsert UserLineAccount สำหรับตึกนี้
@@ -829,7 +842,10 @@ class AuthController {
 
       return res.status(200).json({
         success: true,
-        message: 'ยืนยันตัวตนและผูก LINE กับตึกนี้สำเร็จเรียบร้อย',
+        message: pinJustCreated
+          ? 'ตั้งรหัส PIN 6 หลักใหม่และผูก LINE กับตึกนี้สำเร็จเรียบร้อย'
+          : 'ยืนยันตัวตนและผูก LINE กับตึกนี้สำเร็จเรียบร้อย',
+        pinCreated: pinJustCreated,
         accessToken,
         token: accessToken,
         user: tenantUser,
@@ -838,7 +854,8 @@ class AuthController {
           accessToken,
           token: accessToken,
           user: tenantUser,
-          tenant
+          tenant,
+          pinCreated: pinJustCreated
         }
       });
     } catch (error) {

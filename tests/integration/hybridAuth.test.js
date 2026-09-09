@@ -431,4 +431,106 @@ describe('Hybrid Authentication (LINE SSO + Local Password) Integration Tests', 
       expect(response.body.hasPin).toBe(true);
     });
   });
+
+  describe('POST /api/liff/auth/link-and-login - กรณีบัญชียังไม่เคยตั้งรหัส PIN (Set PIN On Verify)', () => {
+    const noPinPhone = '0888000111';
+    const noPinLineUserId = 'U_no_pin_verify_test_user_456';
+    let noPinTenant;
+    let testBuildingForNoPin;
+
+    beforeAll(async () => {
+      testBuildingForNoPin = await billingService.prisma.building.create({
+        data: {
+          name: 'หอพักสุขสบาย สาขา 3',
+          address: '789 ถนนพระราม 9'
+        }
+      });
+
+      noPinTenant = await billingService.prisma.tenant.create({
+        data: {
+          firstName: 'ยังไม่มี',
+          lastName: 'พิน',
+          phone: noPinPhone,
+          pinHash: null
+        }
+      });
+    });
+
+    afterAll(async () => {
+      await billingService.prisma.userLineAccount.deleteMany({
+        where: { buildingId: testBuildingForNoPin.id }
+      });
+      // ลบด้วย id ของ tenant ที่สร้างในเทสนี้โดยตรงเท่านั้น (phone ไม่ใช่ unique field จึงห้ามลบด้วยเบอร์โทรเพราะอาจไปโดน tenant รายอื่นที่ใช้เบอร์เดียวกัน)
+      await billingService.prisma.tenant.delete({
+        where: { id: noPinTenant.id }
+      });
+      await billingService.prisma.building.delete({
+        where: { id: testBuildingForNoPin.id }
+      });
+    });
+
+    test('กรณีรหัส PIN ที่ส่งมาไม่ใช่ตัวเลข 6 หลัก ต้องปฏิเสธ 400 Bad Request', async () => {
+      const response = await request(app)
+        .post('/api/liff/auth/link-and-login')
+        .send({
+          phone: noPinPhone,
+          pin: '12',
+          buildingId: testBuildingForNoPin.id,
+          lineUserId: noPinLineUserId
+        });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.body.success).toBe(false);
+    });
+
+    test('กรณีบัญชียังไม่เคยตั้ง PIN ต้องบันทึก PIN ที่ส่งมาเป็น PIN ใหม่และเข้าสู่ระบบสำเร็จทันที (200 OK)', async () => {
+      const newPin = '135790';
+      const response = await request(app)
+        .post('/api/liff/auth/link-and-login')
+        .send({
+          phone: noPinPhone,
+          pin: newPin,
+          buildingId: testBuildingForNoPin.id,
+          lineUserId: noPinLineUserId
+        });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.pinCreated).toBe(true);
+      expect(response.body.data.accessToken).toBeDefined();
+
+      // ต้องบันทึก PIN ใหม่ลงฐานข้อมูลจริง และผูก UserLineAccount ให้ตึกนี้
+      const updatedTenant = await billingService.prisma.tenant.findUnique({
+        where: { id: noPinTenant.id }
+      });
+      expect(updatedTenant.pinHash).not.toBeNull();
+      expect(await bcrypt.compare(newPin, updatedTenant.pinHash)).toBe(true);
+
+      const linkedAccount = await billingService.prisma.userLineAccount.findUnique({
+        where: {
+          buildingId_lineUserId: {
+            buildingId: testBuildingForNoPin.id,
+            lineUserId: noPinLineUserId
+          }
+        }
+      });
+      expect(linkedAccount).toBeDefined();
+      expect(linkedAccount.tenantId).toBe(noPinTenant.id);
+    });
+
+    test('กรณีเข้าสู่ระบบซ้ำด้วย PIN ที่เพิ่งตั้งไว้ ต้องผ่านเป็นการยืนยัน PIN ปกติ ไม่สร้าง PIN ใหม่ซ้ำ (200 OK)', async () => {
+      const response = await request(app)
+        .post('/api/liff/auth/link-and-login')
+        .send({
+          phone: noPinPhone,
+          pin: '135790',
+          buildingId: testBuildingForNoPin.id,
+          lineUserId: noPinLineUserId
+        });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.pinCreated).toBe(false);
+    });
+  });
 });

@@ -545,6 +545,7 @@ class LiffController {
       return res.status(200).json({
         success: true,
         message: 'ผูกบัญชีลูกบ้านสำเร็จเรียบร้อยแล้ว',
+        hasPin: Boolean(updatedTenant.pinHash),
         data: {
           tenant: {
             id: updatedTenant.id,
@@ -556,7 +557,9 @@ class LiffController {
             linePictureUrl: updatedTenant.linePictureUrl,
             lineStatusMessage: updatedTenant.lineStatusMessage
           },
-          room: room ? { id: room.id, roomNumber: room.roomNumber } : null
+          room: room ? { id: room.id, roomNumber: room.roomNumber } : null,
+          // ระบุว่าบัญชีนี้ตั้งรหัส PIN ไว้แล้วหรือยัง เพื่อให้ฝั่ง Frontend พาไปตั้ง PIN ต่อทันทีหากยังไม่เคยตั้ง
+          hasPin: Boolean(updatedTenant.pinHash)
         }
       });
     } catch (error) {
@@ -1308,7 +1311,23 @@ class LiffController {
       return res.status(201).json({
         success: true,
         message: `ลงทะเบียนผู้เช่า ${firstName} ${lastName} และผูกเข้ากับห้อง ${result.room.roomNumber} เรียบร้อยแล้ว`,
-        data: result
+        hasPin: Boolean(result.tenant.pinHash),
+        data: {
+          ...result,
+          // ตัดฟิลด์อ่อนไหว (pinHash, passwordHash, ฯลฯ) ออกจาก tenant ก่อนส่งกลับให้ Frontend
+          // และระบุ hasPin ไว้เพื่อพาลูกบ้านที่ยังไม่เคยตั้ง PIN ไปตั้งค่าต่อทันทีหลังลงทะเบียน
+          tenant: {
+            id: result.tenant.id,
+            firstName: result.tenant.firstName,
+            lastName: result.tenant.lastName,
+            phone: result.tenant.phone,
+            lineUserId: result.tenant.lineUserId,
+            lineDisplayName: result.tenant.lineDisplayName,
+            linePictureUrl: result.tenant.linePictureUrl,
+            lineStatusMessage: result.tenant.lineStatusMessage
+          },
+          hasPin: Boolean(result.tenant.pinHash)
+        }
       });
     } catch (error) {
       next(error);
