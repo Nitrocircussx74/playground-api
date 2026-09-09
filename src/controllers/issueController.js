@@ -178,14 +178,43 @@ class IssueController {
   }
 
   /**
-   * ดึงรายละเอียดตั๋วแจ้งเหตุเดี่ยว
-   * GET /api/liff/issues/:id
+   * แอดมินดึงรายการแจ้งซ่อมและร้องเรียนทั้งหมด (CMS Backoffice)
+   * GET /api/admin/issues
    */
-  async getIssueDetail(req, res, next) {
+  async getAllIssuesForAdmin(req, res, next) {
     try {
-      const { id } = req.params;
-      const issue = await billingService.prisma.issueTicket.findUnique({
-        where: { id },
+      const { buildingId, category, status, search } = req.query;
+
+      const where = {};
+
+      if (buildingId) {
+        where.buildingId = buildingId;
+      }
+
+      if (category && category !== 'ALL') {
+        where.category = category.toUpperCase();
+      }
+
+      if (status && status !== 'ALL') {
+        where.status = status.toUpperCase();
+      }
+
+      if (search && search.trim()) {
+        const q = search.trim();
+        where.OR = [
+          { description: { contains: q, mode: 'insensitive' } },
+          { adminReply: { contains: q, mode: 'insensitive' } },
+          { room: { roomNumber: { contains: q, mode: 'insensitive' } } },
+          { user: { firstName: { contains: q, mode: 'insensitive' } } },
+          { user: { lastName: { contains: q, mode: 'insensitive' } } }
+        ];
+      }
+
+      const issues = await billingService.prisma.issueTicket.findMany({
+        where,
+        orderBy: {
+          createdAt: 'desc'
+        },
         include: {
           room: true,
           building: true,
@@ -194,27 +223,82 @@ class IssueController {
               id: true,
               firstName: true,
               lastName: true,
-              phone: true
+              phone: true,
+              lineDisplayName: true,
+              linePictureUrl: true
             }
           }
         }
       });
 
-      if (!issue) {
+      return res.status(200).json({
+        success: true,
+        data: issues
+      });
+    } catch (error) {
+      console.error('Error fetching admin issues:', error);
+      next(error);
+    }
+  }
+
+  /**
+   * แอดมินอัปเดตสถานะและตอบกลับเรื่องร้องเรียน/แจ้งซ่อม
+   * PUT /api/admin/issues/:id
+   */
+  async updateIssueByAdmin(req, res, next) {
+    try {
+      const { id } = req.params;
+      const { status, adminReply } = req.body;
+
+      const existing = await billingService.prisma.issueTicket.findUnique({
+        where: { id },
+        include: { user: true, room: true }
+      });
+
+      if (!existing) {
         return res.status(404).json({
           success: false,
-          message: 'ไม่พบข้อมูลการแจ้งเหตุ'
+          message: 'ไม่พบข้อมูลตั๋วแจ้งเหตุ'
         });
       }
 
+      const updateData = {};
+      if (status) {
+        updateData.status = status.toUpperCase();
+      }
+      if (adminReply !== undefined) {
+        updateData.adminReply = adminReply ? adminReply.trim() : null;
+      }
+
+      const updated = await billingService.prisma.issueTicket.update({
+        where: { id },
+        data: updateData,
+        include: {
+          room: true,
+          building: true,
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              phone: true,
+              lineDisplayName: true
+            }
+          }
+        }
+      });
+
       return res.status(200).json({
         success: true,
-        data: issue
+        message: 'อัปเดตสถานะและการตอบกลับเรียบร้อยแล้ว',
+        data: updated
       });
     } catch (error) {
+      console.error('Error updating issue ticket by admin:', error);
       next(error);
     }
   }
 }
 
 module.exports = new IssueController();
+

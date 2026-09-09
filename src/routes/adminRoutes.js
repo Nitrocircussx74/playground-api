@@ -40,4 +40,9 @@ router.delete('/users/:id', requireRole('OWNER', 'super_admin', 'superadmin'), (
   adminController.deleteAdminUser(req, res, next)
 );
 
+// Issue & Complaints Management (เรื่องร้องเรียนและแจ้งซ่อมจากลูกบ้าน)
+const issueController = require('../controllers/issueController');
+router.get('/issues', (req, res, next) => issueController.getAllIssuesForAdmin(req, res, next));
+router.put('/issues/:id', (req, res, next) => issueController.updateIssueByAdmin(req, res, next));
+
 module.exports = router;
