@@ -444,6 +444,9 @@ model Invoice {
   /// วันเวลาที่อัปเดตเรคคอร์ดล่าสุด
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  /// รายการแจ้งซ่อมที่ค่าซ่อม (payer=TENANT) ถูกรวมเข้าในบิลนี้แล้ว
+  billedMaintenanceRequests MaintenanceRequest[]
+
   @@index([slipHash])
   @@map("invoices")
 }
@@ -480,6 +483,13 @@ model MaintenanceRequest {
 
   /// ค่าซ่อมแซม/ค่าอะไหล่เพิ่มเติม
   repairCost Decimal @default(0) @map("repair_cost") @db.Decimal(10, 2)
+
+  /// ผู้รับผิดชอบค่าซ่อม (MANAGEMENT = นิติออกให้ [ค่าเริ่มต้น], TENANT = ลูกบ้านจ่ายเอง จะถูกรวมเข้าบิลค่าเช่ารอบถัดไปของห้องนี้โดยอัตโนมัติตอนออกบิล)
+  payer String @default("MANAGEMENT") @map("payer")
+
+  /// รหัสอ้างอิงใบแจ้งหนี้ที่ค่าซ่อมนี้ถูกรวมเข้าไปแล้ว (กันไม่ให้ถูกเรียกเก็บซ้ำสองครั้งเมื่อออกบิลรอบถัดๆ ไป)
+  billedInvoiceId String? @map("billed_invoice_id") @db.Uuid
+  billedInvoice Invoice? @relation(fields: [billedInvoiceId], references: [id])
 
   /// ข้อความตอบกลับ/บันทึกจากแอดมินหรือช่างซ่อม
   adminNote String? @map("admin_note") @db.Text

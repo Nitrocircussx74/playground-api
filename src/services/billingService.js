@@ -139,7 +139,25 @@ class BillingService {
 
     const roomPrice = Number(room.price);
     const finalCommonFee = waiveCommonFee ? 0 : (commonFee != null ? Number(commonFee) : DEFAULT_COMMON_FEE);
-    const finalOtherFee = Number(otherFee) || 0;
+
+    // ดึงค่าซ่อมที่ลูกบ้านต้องจ่ายเอง (payer=TENANT) ของห้องนี้ ที่ซ่อมเสร็จแล้วแต่ยังไม่เคยถูกรวมเข้าบิลไหนมาก่อน
+    // เพื่อรวมเข้าค่าบริการอื่นๆ ของบิลรอบนี้อัตโนมัติ (กันเรียกเก็บซ้ำด้วยเงื่อนไข billedInvoiceId: null)
+    const pendingTenantRepairs = await prisma.maintenanceRequest.findMany({
+      where: {
+        roomId,
+        payer: 'TENANT',
+        status: { in: ['resolved', 'completed'] },
+        billedInvoiceId: null,
+        repairCost: { gt: 0 }
+      }
+    });
+    const pendingRepairTotal = pendingTenantRepairs.reduce((sum, r) => sum + Number(r.repairCost), 0);
+    const pendingRepairNote = pendingTenantRepairs
+      .map((r) => `ค่าซ่อม: ${r.title} (฿${Number(r.repairCost).toLocaleString()})`)
+      .join(', ');
+
+    const finalOtherFee = (Number(otherFee) || 0) + pendingRepairTotal;
+    const finalOtherFeeNote = [otherFeeNote, pendingRepairNote].filter(Boolean).join(' | ') || null;
 
     const formattedCycle = billingCycle.replace('-', '');
     const invoiceNumber = `INV-${formattedCycle}-${room.roomNumber}`;
@@ -150,6 +168,8 @@ class BillingService {
         where: { roomId, billingCycle }
       });
 
+      let savedInvoice;
+
       if (existingInvoice && existingInvoice.status === 'paid') {
         throw new Error(`Invoice for room ${room.roomNumber} in cycle ${billingCycle} has already been paid and locked`);
       }
@@ -158,7 +178,7 @@ class BillingService {
         const existingLateFee = Number(existingInvoice.lateFeeCharge) || 0;
         const grandTotal = roomPrice + waterTotal + electricTotal + finalCommonFee + finalOtherFee + existingLateFee;
 
-        return await tx.invoice.update({
+        savedInvoice = await tx.invoice.update({
           where: { id: existingInvoice.id },
           data: {
             roomPrice,
@@ -166,35 +186,45 @@ class BillingService {
             electricTotal,
             commonFee: finalCommonFee,
             otherFee: finalOtherFee,
-            otherFeeNote: otherFeeNote || null,
+            otherFeeNote: finalOtherFeeNote,
             grandTotal,
+            dueDate: dueDate ? new Date(dueDate) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+          },
+          include: { room: true, tenant: true }
+        });
+      } else {
+        const grandTotal = roomPrice + waterTotal + electricTotal + finalCommonFee + finalOtherFee;
+
+        savedInvoice = await tx.invoice.create({
+          data: {
+            invoiceNumber,
+            roomId,
+            tenantId: room.tenantId,
+            billingCycle,
+            roomPrice,
+            waterTotal,
+            electricTotal,
+            commonFee: finalCommonFee,
+            otherFee: finalOtherFee,
+            otherFeeNote: finalOtherFeeNote,
+            lateFeeCharge: 0.00,
+            grandTotal,
+            status: 'pending',
             dueDate: dueDate ? new Date(dueDate) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
           },
           include: { room: true, tenant: true }
         });
       }
 
-      const grandTotal = roomPrice + waterTotal + electricTotal + finalCommonFee + finalOtherFee;
+      // ปิดสถานะรายการแจ้งซ่อมที่เพิ่งถูกรวมเข้าบิลนี้ กันไม่ให้ไปถูกดึงมารวมซ้ำในบิลรอบถัดไป
+      if (pendingTenantRepairs.length > 0) {
+        await tx.maintenanceRequest.updateMany({
+          where: { id: { in: pendingTenantRepairs.map((r) => r.id) } },
+          data: { billedInvoiceId: savedInvoice.id }
+        });
+      }
 
-      return await tx.invoice.create({
-        data: {
-          invoiceNumber,
-          roomId,
-          tenantId: room.tenantId,
-          billingCycle,
-          roomPrice,
-          waterTotal,
-          electricTotal,
-          commonFee: finalCommonFee,
-          otherFee: finalOtherFee,
-          otherFeeNote: otherFeeNote || null,
-          lateFeeCharge: 0.00,
-          grandTotal,
-          status: 'pending',
-          dueDate: dueDate ? new Date(dueDate) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-        },
-        include: { room: true, tenant: true }
-      });
+      return savedInvoice;
     });
 
     return invoice;

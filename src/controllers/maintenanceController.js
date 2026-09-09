@@ -105,12 +105,19 @@ class MaintenanceController {
    */
   async createMaintenanceRequest(req, res, next) {
     try {
-      const { title, description, roomId, lineUserId, technicianName, repairCost } = req.body;
+      const { title, description, roomId, lineUserId, technicianName, repairCost, payer } = req.body;
 
       if (!title || !description) {
         return res.status(400).json({
           success: false,
           message: 'Missing required parameters: title and description'
+        });
+      }
+
+      if (payer !== undefined && !['MANAGEMENT', 'TENANT'].includes(payer)) {
+        return res.status(400).json({
+          success: false,
+          message: 'payer ต้องเป็น MANAGEMENT หรือ TENANT เท่านั้น'
         });
       }
 
@@ -162,6 +169,7 @@ class MaintenanceController {
           photoUrl: imageUrl,
           technicianName: technicianName || null,
           repairCost: repairCost ? Number(repairCost) : 0,
+          payer: payer || 'MANAGEMENT',
           status: 'pending'
         },
         include: {
@@ -188,7 +196,14 @@ class MaintenanceController {
   async updateMaintenanceStatus(req, res, next) {
     try {
       const { id } = req.params;
-      const { status, adminNote, technicianName, repairCost } = req.body;
+      const { status, adminNote, technicianName, repairCost, payer } = req.body;
+
+      if (payer !== undefined && !['MANAGEMENT', 'TENANT'].includes(payer)) {
+        return res.status(400).json({
+          success: false,
+          message: 'payer ต้องเป็น MANAGEMENT หรือ TENANT เท่านั้น'
+        });
+      }
 
       const request = await billingService.prisma.maintenanceRequest.findUnique({
         where: { id },
@@ -200,6 +215,17 @@ class MaintenanceController {
 
       if (!request) {
         return res.status(404).json({ success: false, message: 'Maintenance request not found' });
+      }
+
+      // ถ้าค่าซ่อมนี้ถูกรวมเข้าบิลไปแล้ว ห้ามแก้ "ค่า" ของค่าซ่อม/ผู้จ่ายให้ต่างไปจากเดิม เพราะจะไม่ตรงกับยอดที่ออกบิลไปแล้วจริง
+      // (เทียบเฉพาะกรณีค่าที่ส่งมาต่างจากของเดิมเท่านั้น ไม่บล็อกการอัปเดตฟิลด์อื่น เช่น status/adminNote ตามปกติ)
+      const repairCostChanged = repairCost !== undefined && Number(repairCost) !== Number(request.repairCost);
+      const payerChanged = payer !== undefined && payer !== request.payer;
+      if (request.billedInvoiceId && (repairCostChanged || payerChanged)) {
+        return res.status(400).json({
+          success: false,
+          message: 'ค่าซ่อมนี้ถูกรวมเข้าบิลไปแล้ว ไม่สามารถแก้ไขค่าซ่อมหรือผู้รับผิดชอบค่าใช้จ่ายได้ กรุณาแก้ไขที่ใบแจ้งหนี้แทน'
+        });
       }
 
       const nextStatus = status || request.status;
@@ -218,6 +244,7 @@ class MaintenanceController {
           adminNote: adminNote !== undefined ? adminNote : request.adminNote,
           technicianName: technicianName !== undefined ? technicianName : request.technicianName,
           repairCost: repairCost !== undefined ? Number(repairCost) : request.repairCost,
+          payer: payer !== undefined ? payer : request.payer,
           resolvedAt
         },
         include: {
