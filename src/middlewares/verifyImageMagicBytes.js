@@ -22,41 +22,60 @@ function isAllowedImageBuffer(buffer) {
 }
 
 /**
- * Middleware ที่ต้องต่อจาก multer `upload.single('file')` เสมอ (ทำงานหลัง req.file ถูกเขียนลงดิสก์แล้ว)
+ * Middleware ที่ต้องต่อจาก multer เสมอ (ทำงานหลัง req.file หรือ req.files ถูกเขียนลงดิสก์แล้ว)
  * อ่านแค่ 12 byte แรกของไฟล์มาตรวจ Signature จริง ถ้าไม่ใช่รูปภาพที่อนุญาต จะลบไฟล์ทิ้งแล้วปฏิเสธ 400
  */
 const verifyImageMagicBytes = (req, res, next) => {
-  if (!req.file) {
+  const filesToCheck = [];
+  if (req.file) {
+    filesToCheck.push(req.file);
+  }
+  if (req.files) {
+    if (Array.isArray(req.files)) {
+      filesToCheck.push(...req.files);
+    } else if (typeof req.files === 'object') {
+      Object.values(req.files).forEach((f) => {
+        if (Array.isArray(f)) filesToCheck.push(...f);
+        else if (f) filesToCheck.push(f);
+      });
+    }
+  }
+
+  if (filesToCheck.length === 0) {
     return next();
   }
 
-  let fd;
-  try {
-    const header = Buffer.alloc(12);
-    fd = fs.openSync(req.file.path, 'r');
-    fs.readSync(fd, header, 0, 12, 0);
-    fs.closeSync(fd);
-    fd = undefined;
+  for (const file of filesToCheck) {
+    let fd;
+    try {
+      const header = Buffer.alloc(12);
+      fd = fs.openSync(file.path, 'r');
+      fs.readSync(fd, header, 0, 12, 0);
+      fs.closeSync(fd);
+      fd = undefined;
 
-    if (!isAllowedImageBuffer(header)) {
-      fs.unlink(req.file.path, () => {});
-      return res.status(400).json({
-        success: false,
-        message: 'ไฟล์ที่แนบมาไม่ใช่รูปภาพที่ถูกต้อง (jpg, jpeg, png, webp) กรุณาแนบไฟล์รูปภาพจริง'
-      });
-    }
-
-    next();
-  } catch (error) {
-    if (fd !== undefined) {
-      try {
-        fs.closeSync(fd);
-      } catch {
-        // ignore
+      if (!isAllowedImageBuffer(header)) {
+        filesToCheck.forEach((f) => {
+          fs.unlink(f.path, () => {});
+        });
+        return res.status(400).json({
+          success: false,
+          message: 'ไฟล์ที่แนบมาไม่ใช่รูปภาพที่ถูกต้อง (jpg, jpeg, png, webp) กรุณาแนบไฟล์รูปภาพจริง'
+        });
       }
+    } catch (error) {
+      if (fd !== undefined) {
+        try {
+          fs.closeSync(fd);
+        } catch {
+          // ignore
+        }
+      }
+      return next(error);
     }
-    next(error);
   }
+
+  next();
 };
 
 module.exports = verifyImageMagicBytes;

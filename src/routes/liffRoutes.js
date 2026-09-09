@@ -12,6 +12,7 @@ const announcementController = require('../controllers/announcementController');
 const maintenanceController = require('../controllers/maintenanceController');
 const invoiceController = require('../controllers/invoiceController');
 const parcelController = require('../controllers/parcelController');
+const issueController = require('../controllers/issueController');
 
 // Public Invite Code Verification (อนุญาตให้ตรวจสอบความถูกต้องของรหัสเชิญได้ทั้งในและนอก LINE App)
 router.get('/invites/verify/:code', (req, res, next) => liffController.verifyInviteCode(req, res, next));
@@ -80,6 +81,11 @@ router.post('/announcements/:id/read', (req, res, next) => announcementControlle
 // LIFF Maintenance Requests & Status Tracking
 router.get('/maintenance', (req, res, next) => maintenanceController.getMaintenanceRequestsForLiff(req, res, next));
 router.post('/maintenance', upload.single('file'), verifyImageMagicBytes, (req, res, next) => maintenanceController.createMaintenanceRequest(req, res, next));
+
+// LIFF Issue & Maintenance Tracking (แจ้งซ่อมและร้องเรียน)
+router.get('/issues', (req, res, next) => issueController.getIssuesForLiff(req, res, next));
+router.get('/issues/:id', (req, res, next) => issueController.getIssueDetail(req, res, next));
+router.post('/issues', upload.any(), verifyImageMagicBytes, (req, res, next) => issueController.createIssue(req, res, next));
 
 // LIFF Parcels
 router.get('/parcels', (req, res, next) => parcelController.getParcelsForLiff(req, res, next));

@@ -94,6 +94,7 @@ model Building {
   leaseContracts LeaseContract[]
   maintenanceRequests MaintenanceRequest[]
   lineAccounts UserLineAccount[]
+  issueTickets IssueTicket[]
 
   @@map("buildings")
 }
@@ -227,6 +228,7 @@ model Room {
   roomInvites RoomInvite[]
   parcels Parcel[]
   leaseContracts LeaseContract[]
+  issueTickets IssueTicket[]
 
   // แมปชื่อตารางในฐานข้อมูลเป็น snake_case และพหูพจน์
   @@unique([roomNumber, buildingId])
@@ -294,6 +296,7 @@ model Tenant {
   maintenanceRequests MaintenanceRequest[]
   lineAccounts UserLineAccount[]
   announcementReads AnnouncementRead[]
+  issueTickets IssueTicket[]
 
   @@map("tenants")
 }
@@ -793,4 +796,45 @@ model RefreshToken {
   createdAt DateTime @default(now()) @map("created_at")
 
   @@map("refresh_tokens")
+}
+
+/// ตารางแจ้งซ่อมและร้องเรียน (Issue & Maintenance Tracking)
+model IssueTicket {
+  /// รหัสอ้างอิงตั๋วแจ้งเหตุ (PK, UUID)
+  id String @id @default(uuid()) @db.Uuid
+
+  /// รหัสผู้ใช้งาน/ผู้เช่า (Foreign Key)
+  userId String @map("user_id") @db.Uuid
+  user Tenant @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// รหัสห้องพัก (Foreign Key)
+  roomId String @map("room_id") @db.Uuid
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  /// รหัสตึก/อาคาร (Foreign Key)
+  buildingId String @map("building_id") @db.Uuid
+  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  /// หมวดหมู่การแจ้งเหตุ (REPAIR = แจ้งซ่อม, COMPLAINT = ร้องเรียน, OTHER = เรื่องอื่นๆ)
+  category String @default("REPAIR")
+
+  /// รายละเอียดการแจ้งเหตุ
+  description String @db.Text
+
+  /// รายการลิงก์รูปภาพประกอบ (JSON Array เช่น ["/uploads/file-1.jpg"])
+  imageUrls Json? @default("[]") @map("image_urls")
+
+  /// สถานะการดำเนินงาน (PENDING, IN_PROGRESS, RESOLVED, CANCELLED)
+  status String @default("PENDING")
+
+  /// ข้อความตอบกลับจากแอดมินหรือช่าง
+  adminReply String? @map("admin_reply") @db.Text
+
+  /// วันเวลาที่สร้างเรคคอร์ด
+  createdAt DateTime @default(now()) @map("created_at")
+
+  /// วันเวลาที่อัปเดตเรคคอร์ดล่าสุด
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("issue_tickets")
 }
