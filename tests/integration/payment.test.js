@@ -142,6 +142,29 @@ describe('PromptPay Payment & Slip Upload Integration Tests', () => {
       expect(response.statusCode).toBe(403);
       expect(response.body.success).toBe(false);
     });
+
+    // ต้องเป็น attachment เสมอ ห้ามเป็น inline เด็ดขาด เพราะไฟล์นี้ถูกเปิดตรงผ่าน External Browser
+    // บน Android เมื่อใช้งานผ่าน LINE In-App Browser (ดู downloadHelper.js) ถ้าเป็น inline ผู้ใช้ Android
+    // จะดาวน์โหลดไฟล์ไม่ได้เพราะ Custom Tab/WebView บางตัวแสดงผลในหน้าเว็บแทนที่จะเปิด Native Download
+    test('GET /api/v1/liff/invoices/:id/invoice-pdf - ต้องส่ง Content-Disposition แบบ attachment เสมอ (ไม่ใช่ inline)', async () => {
+      const response = await request(app)
+        .get(`/api/v1/liff/invoices/${testInvoice.id}/invoice-pdf`)
+        .set('X-Line-Id-Token', testLineUserId);
+
+      expect(response.statusCode).toBe(200);
+      expect(response.headers['content-disposition']).toContain('attachment');
+      expect(response.headers['content-disposition']).not.toContain('inline');
+    });
+
+    test('GET /api/v1/liff/invoices/:id/receipt-pdf - ต้องส่ง Content-Disposition แบบ attachment เสมอ (ไม่ใช่ inline)', async () => {
+      const response = await request(app)
+        .get(`/api/v1/liff/invoices/${testInvoice.id}/receipt-pdf`)
+        .set('X-Line-Id-Token', testLineUserId);
+
+      expect(response.statusCode).toBe(200);
+      expect(response.headers['content-disposition']).toContain('attachment');
+      expect(response.headers['content-disposition']).not.toContain('inline');
+    });
   });
 
   describe('Slip Upload (Auto-Approve ปิดถาวรจนกว่าจะมีการตรวจสลิปจริง)', () => {

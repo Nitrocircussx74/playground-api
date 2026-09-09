@@ -351,7 +351,10 @@ class InvoiceController {
       const fonts = setupThaiFonts(doc);
 
       res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `inline; filename="Invoice-${invoice.invoiceNumber}.pdf"`);
+      // ใช้ attachment แทน inline เสมอ เพราะไฟล์นี้ถูกเปิดตรงผ่าน External Browser บน Android ในกรณี LINE In-App Browser
+      // (fallbackDirectUrl ใน downloadHelper.js) ถ้าเป็น inline บาง WebView/Custom Tab บน Android จะพยายามแสดงผลในหน้าเว็บ
+      // แทนที่จะเปิด Native Download ทำให้ผู้ใช้ดาวน์โหลดไฟล์ไม่ได้ (ต่างจาก iOS Safari ที่ยังกดปุ่มแชร์เพื่อเซฟได้)
+      res.setHeader('Content-Disposition', `attachment; filename="Invoice-${invoice.invoiceNumber}.pdf"`);
 
       doc.pipe(res);
 
@@ -504,7 +507,9 @@ class InvoiceController {
       const fonts = setupThaiFonts(doc);
 
       res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `inline; filename="Official-Receipt-${receiptNo}.pdf"`);
+      // เหตุผลเดียวกับ exportInvoicePdf: ใช้ attachment กันไฟล์ถูกแสดงผล inline บน Android WebView/Custom Tab
+      // แทนที่จะดาวน์โหลดจริง ตอนเปิดผ่าน External Browser จาก LINE In-App Browser
+      res.setHeader('Content-Disposition', `attachment; filename="Official-Receipt-${receiptNo}.pdf"`);
 
       doc.pipe(res);
 
