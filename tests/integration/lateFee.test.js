@@ -123,9 +123,9 @@ describe('Automated Late Fee System Integration Tests', () => {
   });
 
   describe('2. Building Settings API Integration (Late Fee Policy Persistence)', () => {
-    test('PUT /api/v1/buildings/:id/setting - บันทึกตั้งค่านโยบายค่าปรับ (DAILY / FLAT)', async () => {
+    test('PUT /api/v1/buildings/:id/settings - บันทึกตั้งค่านโยบายค่าปรับ (DAILY / FLAT)', async () => {
       const response = await request(app)
-        .put(`/api/v1/buildings/${testBuilding.id}/setting`)
+        .put(`/api/v1/buildings/${testBuilding.id}/settings`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({
           lateFeeType: 'DAILY',

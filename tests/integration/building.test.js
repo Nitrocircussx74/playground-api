@@ -77,9 +77,9 @@ describe('Multi-Building Architecture Integration Tests', () => {
       expect(response.body.data.length).toBeGreaterThan(0);
     });
 
-    test('PUT /api/v1/buildings/:id/setting - อัปเดต PromptPay QR Code ประจำตึก (200 OK)', async () => {
+    test('PUT /api/v1/buildings/:id/settings - อัปเดต PromptPay QR Code ประจำตึก (200 OK)', async () => {
       const response = await request(app)
-        .put(`/api/v1/buildings/${testBuilding.id}/setting`)
+        .put(`/api/v1/buildings/${testBuilding.id}/settings`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({
           promptpayNum: '0893334444',
