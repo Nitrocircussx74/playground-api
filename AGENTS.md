@@ -22,11 +22,12 @@
 - **API Documentation**: **Swagger UI** (`swagger-ui-express` & `swagger-jsdoc` at `/api-docs`)
 - **Logging Layer**: **Morgan** HTTP Request Logger (`morgan`)
 - **Data Validation Layer**: Zod (`src/validators/authValidator.js`, `src/validators/mainValidator.js`, `src/middlewares/validateMiddleware.js`)
-- **Database & Migrations**: PostgreSQL (`pg` Connection Pool) + Custom SQL Migration Runner (`yarn migrate`)
-- **Authentication**: JWT Best Practices (Dual Tokens: Access Token 15m ใน Body + Refresh Token 7d ใน HttpOnly, Secure, SameSite Cookie + Database Persistence `refresh_tokens` + Token Rotation & Revocation) + Google OAuth 2.0 (Passport.js)
+- **Database & Migrations**: **Prisma ORM (PostgreSQL)** เป็นตัวจัดการ Schema จริงของระบบหอพัก (`prisma/schema.prisma` → `npx prisma db push` + `npx prisma generate`) — ระบบ SQL Migration Runner เดิม (`yarn migrate`, `src/migrations/files/*.sql`) เป็นของเริ่มโปรเจกต์ก่อน Prisma เข้ามา มีแค่ไฟล์เดียว ไม่ได้ใช้จัดการตารางของระบบหอพักแล้ว
+- **Authentication**: JWT Best Practices (Dual Tokens: Access Token 15m ใน Body + Refresh Token 7d ใน HttpOnly, Secure, SameSite Cookie + Database Persistence `refresh_tokens` + Token Rotation & Revocation) + Google OAuth 2.0 (Passport.js) + LIFF Seamless PIN Login สำหรับลูกบ้าน (`authController.js`: `pinLogin`, `setupPin`, `linkAndLogin` — `linkAndLogin` ตั้ง PIN ใหม่ให้อัตโนมัติได้ถ้าบัญชียังไม่เคยตั้งมาก่อน)
 - **DevOps & Containerization**: Dockerfile (Node 20 Alpine) + Docker Compose + Colima Support
-- **Testing Coverage**: **100% Full API Integration Testing** (19/19 Test Cases Passed Across All Endpoints)
+- **Testing Coverage**: **Full API Integration & Unit Testing ด้วย Jest** (192/193 Test Cases Passed — ดูรายละเอียดล่าสุดใน `docs/ACTIVITY_LOG.md` Phase 12; ตัวเลข 19/19 เดิมคือช่วงเริ่มโปรเจกต์ก่อนขยายเป็นระบบหอพักเต็มรูปแบบ)
 - **Architecture**: Layered Clean Architecture (`src/config`, `src/routes`, `src/controllers`, `src/services`, `src/middlewares`, `src/validators`, `src/migrations`)
+- **Maintenance Billing**: `MaintenanceRequest` มีฟิลด์ `payer` (MANAGEMENT/TENANT) — ถ้า TENANT และสถานะ `resolved` แล้ว `billingService.generateInvoice()` จะรวมค่าซ่อมเข้า `otherFee` ของบิลรอบถัดไปอัตโนมัติ (mark ผ่าน `billedInvoiceId` กันเรียกเก็บซ้ำ)
 
 ---
 
@@ -57,7 +58,7 @@ yarn start
 # การรันระบบ Database Migrations
 yarn migrate
 
-# การรันชุดทดสอบทั้งหมด (19/19 Passed)
+# การรันชุดทดสอบทั้งหมด (192/193 Passed ล่าสุด)
 yarn test
 
 # การรันชุดทดสอบแบบ Watch Mode

@@ -7,6 +7,9 @@ describe('Account Linking & Onboarding Integration Tests', () => {
   let adminToken;
   let testTenant;
   let generatedInviteCode;
+  // เทสชุดนี้หยิบ tenant ตัวแรกในฐานข้อมูล (ไม่ใช่ fixture ที่สร้างเองแยกต่างหาก) มาทดลองผูก/ซิงค์บัญชี
+  // ซึ่งอาจไปโดนบัญชีจริงที่ใช้ร่วมกันอยู่ ต้องจดค่าเดิมไว้ก่อนแล้ว restore กลับให้ครบใน afterAll เสมอ
+  let originalTenantValues = null;
 
   beforeAll(async () => {
     const adminUser = await billingService.prisma.user.findFirst({
@@ -16,9 +19,25 @@ describe('Account Linking & Onboarding Integration Tests', () => {
 
     testTenant = await billingService.prisma.tenant.findFirst();
     if (testTenant) {
+      originalTenantValues = {
+        lineUserId: testTenant.lineUserId,
+        lineDisplayName: testTenant.lineDisplayName,
+        linePictureUrl: testTenant.linePictureUrl,
+        inviteCode: testTenant.inviteCode,
+        inviteExpiresAt: testTenant.inviteExpiresAt
+      };
       await billingService.prisma.tenant.update({
         where: { id: testTenant.id },
         data: { lineUserId: null, inviteCode: null, inviteExpiresAt: null }
+      });
+    }
+  });
+
+  afterAll(async () => {
+    if (testTenant && originalTenantValues) {
+      await billingService.prisma.tenant.update({
+        where: { id: testTenant.id },
+        data: originalTenantValues
       });
     }
   });
@@ -133,28 +152,102 @@ describe('Account Linking & Onboarding Integration Tests', () => {
       expect(response.statusCode).toBe(200);
       expect(response.body.data.tenant.lineDisplayName).toBe('Somchai LINE Display Name');
       expect(response.body.data.tenant.linePictureUrl).toBe('https://profile.line-scdn.net/sample_avatar.jpg');
+      // ต้องบอกสถานะ PIN กลับมาด้วย เพื่อให้ Frontend พาไปตั้ง PIN ต่อได้หากยังไม่เคยตั้ง
+      expect(typeof response.body.data.hasPin).toBe('boolean');
+      expect(response.body.data.hasPin).toBe(response.body.hasPin);
     });
   });
 
   describe('PATCH /api/v1/liff/auth/sync-profile', () => {
     test('อัปเดตซิงค์ข้อมูลโปรไฟล์ LINE ของลูกบ้านสำเร็จ (200 OK)', async () => {
+      // เทสนี้หยิบผู้เช่า "ตัวแรกที่มี lineUserId" ในฐานข้อมูลมาทดสอบ ซึ่งอาจไปโดนบัญชีจริง/ของเทสอื่นที่ใช้ร่วมกันอยู่
+      // ต้องจด lineDisplayName/linePictureUrl เดิมไว้ก่อน แล้ว restore กลับหลังเทสเสร็จเสมอ กันไม่ให้ข้อมูลเดิมหายถาวร
       const tenantWithLine = await billingService.prisma.tenant.findFirst({
         where: { lineUserId: { not: null } }
       });
       if (!tenantWithLine) return;
 
+      const originalValues = {
+        lineDisplayName: tenantWithLine.lineDisplayName,
+        linePictureUrl: tenantWithLine.linePictureUrl
+      };
+
+      try {
+        const response = await request(app)
+          .patch('/api/v1/liff/auth/sync-profile')
+          .set('X-Line-Id-Token', tenantWithLine.lineUserId)
+          .send({
+            lineDisplayName: 'Updated LINE Display Name',
+            linePictureUrl: 'https://profile.line-scdn.net/updated_avatar.jpg'
+          });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.body.success).toBe(true);
+        expect(response.body.data.lineDisplayName).toBe('Updated LINE Display Name');
+        expect(response.body.data.linePictureUrl).toBe('https://profile.line-scdn.net/updated_avatar.jpg');
+      } finally {
+        await billingService.prisma.tenant.update({
+          where: { id: tenantWithLine.id },
+          data: originalValues
+        });
+      }
+    });
+  });
+
+  describe('POST /api/v1/liff/register/invite - ลงทะเบียนผู้เช่าใหม่ด้วย Invite Code', () => {
+    const registerPhone = '0887770001';
+    const registerLineUserId = 'U_test_register_invite_pin_check';
+    let registerBuilding;
+    let registerRoom;
+    let registerInvite;
+
+    beforeAll(async () => {
+      registerBuilding = await billingService.prisma.building.create({
+        data: { name: 'หอพักทดสอบลงทะเบียน', address: '111 ถนนทดสอบ' }
+      });
+      registerRoom = await billingService.prisma.room.create({
+        data: {
+          buildingId: registerBuilding.id,
+          roomNumber: 'REG-101',
+          floor: 1,
+          price: 4000,
+          status: 'available'
+        }
+      });
+      registerInvite = await billingService.prisma.roomInvite.create({
+        data: {
+          roomId: registerRoom.id,
+          code: 'REGT01',
+          expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000)
+        }
+      });
+    });
+
+    afterAll(async () => {
+      await billingService.prisma.leaseContract.deleteMany({ where: { roomId: registerRoom.id } });
+      await billingService.prisma.roomInvite.deleteMany({ where: { roomId: registerRoom.id } });
+      await billingService.prisma.tenant.deleteMany({ where: { phone: registerPhone } });
+      await billingService.prisma.room.delete({ where: { id: registerRoom.id } });
+      await billingService.prisma.building.delete({ where: { id: registerBuilding.id } });
+    });
+
+    test('ลงทะเบียนสำเร็จ ต้องได้ hasPin เป็น false และไม่รั่ว pinHash ออกมาใน response (201 Created)', async () => {
       const response = await request(app)
-        .patch('/api/v1/liff/auth/sync-profile')
-        .set('X-Line-Id-Token', tenantWithLine.lineUserId)
+        .post('/api/v1/liff/register/invite')
+        .set('X-Line-Id-Token', registerLineUserId)
         .send({
-          lineDisplayName: 'Updated LINE Display Name',
-          linePictureUrl: 'https://profile.line-scdn.net/updated_avatar.jpg'
+          inviteCode: registerInvite.code,
+          firstName: 'ทดสอบ',
+          lastName: 'ลงทะเบียน',
+          phone: registerPhone
         });
 
-      expect(response.statusCode).toBe(200);
+      expect(response.statusCode).toBe(201);
       expect(response.body.success).toBe(true);
-      expect(response.body.data.lineDisplayName).toBe('Updated LINE Display Name');
-      expect(response.body.data.linePictureUrl).toBe('https://profile.line-scdn.net/updated_avatar.jpg');
+      expect(response.body.hasPin).toBe(false);
+      expect(response.body.data.hasPin).toBe(false);
+      expect(response.body.data.tenant.pinHash).toBeUndefined();
+      expect(response.body.data.tenant.phone).toBe(registerPhone);
     });
   });
 });
