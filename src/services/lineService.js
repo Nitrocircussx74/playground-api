@@ -1257,6 +1257,12 @@ class LineService {
       };
     } catch (error) {
       console.warn(`⚠️ ไม่สามารถดึง Profile จาก LINE Messaging API ได้ (${lineUserId}): ${error.message}`);
+      await this.logDelivery({
+        notificationType: 'PROFILE_FETCH',
+        messagePreview: `ดึงโปรไฟล์ LINE ไม่สำเร็จ (lineUserId: ${lineUserId})`,
+        status: 'FAILED',
+        errorReason: error.message
+      });
       return null;
     }
   }
@@ -1407,7 +1413,7 @@ class LineService {
    * @param {Object} params
    */
   async logDelivery({
-    buildingId,
+    buildingId = null,
     userId = null,
     tenantId = null,
     roomId = null,
@@ -1416,7 +1422,7 @@ class LineService {
     status = 'SUCCESS',
     errorReason = null
   }) {
-    if (!buildingId) return null;
+    // buildingId เป็น Nullable ได้ (เช่น AUTH_VERIFY/PROFILE_FETCH ที่ยังไม่รู้ตึกตอนเกิด Error)
     try {
       return await prisma.notificationLog.create({
         data: {

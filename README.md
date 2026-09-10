@@ -60,6 +60,8 @@
   - Rate Limiter เฉพาะทาง (8 ครั้ง/15 นาทีต่อ IP) ป้องกัน Brute Force บนทุก Endpoint ที่เกี่ยวกับ PIN/การผูกบัญชี LINE
   - Room Owner: กำหนดเจ้าของห้อง (`User`) แยกจากผู้เช่า พร้อม Scoped Access Control
   - Notification Log: บันทึกประวัติการส่งแจ้งเตือน LINE/SMS ทุกช่องทางพร้อมสถานะสำเร็จ/ล้มเหลว
+  - Smart Entry Gateway Router (`checkTenantStatus`) ผูก LINE ID เข้ากับ Tenant อัตโนมัติเฉพาะบัญชีที่ยังไม่เคยผูก LINE มาก่อนเท่านั้น กัน Account Takeover ผ่านการเดา Tenant ID
+  - Business Logic ทั้งหมดอยู่ใน Service Layer (`src/services/`) — Controller ไม่แตะ Prisma โดยตรง (Layered Architecture ตาม `CLAUDE.md`)
 
 ---
 
@@ -107,7 +109,7 @@ playground-api/
 │   ├── validators/           # Zod Validation Schemas
 │   ├── app.js
 │   └── server.js
-├── tests/                    # API Integration & Unit Tests (206/206 Passed)
+├── tests/                    # API Integration & Unit Tests (211/211 Passed)
 └── package.json
 ```
 

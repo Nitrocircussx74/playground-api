@@ -909,9 +909,9 @@ model NotificationLog {
   /// รหัสอ้างอิงบันทึกประวัติ (PK, UUID)
   id String @id @default(uuid()) @db.Uuid
 
-  /// รหัสตึก/อาคาร (Foreign Key)
-  buildingId String @map("building_id") @db.Uuid
-  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  /// รหัสตึก/อาคาร (Nullable — เหตุการณ์ระดับ Auth เช่น AUTH_VERIFY/PROFILE_FETCH อาจยังไม่รู้ตึกตอนที่เกิด Error)
+  buildingId String? @map("building_id") @db.Uuid
+  building Building? @relation(fields: [buildingId], references: [id], onDelete: SetNull)
 
   /// รหัสผู้ใช้งาน (Nullable)
   userId String? @map("user_id") @db.Uuid
@@ -925,7 +925,7 @@ model NotificationLog {
   roomId String? @map("room_id") @db.Uuid
   room Room? @relation(fields: [roomId], references: [id], onDelete: SetNull)
 
-  /// ประเภทการแจ้งเตือน (INVOICE = บิลค่าเช่า, PARCEL = พัสดุ, MAINTENANCE = แจ้งซ่อม, GENERAL = ทั่วไป)
+  /// ประเภทการแจ้งเตือน (INVOICE = บิลค่าเช่า, PARCEL = พัสดุ, MAINTENANCE = แจ้งซ่อม, GENERAL = ทั่วไป, AUTH_VERIFY = ตรวจสอบ LINE ID Token, PROFILE_FETCH = ดึงโปรไฟล์ LINE)
   notificationType String @default("GENERAL") @map("notification_type")
 
   /// ข้อความตัวอย่าง/หัวข้อสั้นๆ ของการแจ้งเตือน

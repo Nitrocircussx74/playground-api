@@ -10,7 +10,7 @@ describe('Full API Integration Tests (ทดสอบ Endpoints ทั้งห�
 
   beforeAll(async () => {
     const mockUser = {
-      id: 1,
+      id: '00000000-0000-0000-0000-000000000001',
       email: 'integration@test.com',
       name: 'Integration Test User',
       role: 'admin'

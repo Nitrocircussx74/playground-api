@@ -7,8 +7,8 @@
 ## 📅 ข้อมูลกิจกรรม (Activity Summary)
 
 - **วันที่ดำเนินการ**: 26 สิงหาคม 2026 (เริ่มโปรเจกต์) — อัปเดตล่าสุด 10 กันยายน 2026
-- **สถานะ**: ✅ สำเร็จเสร็จสมบูรณ์ 100% (Phase 1-11: โครงสร้างเริ่มต้น / Phase 12: PIN Verify + Maintenance Payer Billing + Android Download Fix / Phase 13: Account Takeover Security Fix + Room Owner + Notification Log)
-- **คำสั่งล่าสุด**: Audit & แก้ช่องโหว่ Account Takeover ใน LIFF PIN Flow, Room Owner, Notification Log (ดู Phase 13)
+- **สถานะ**: ✅ สำเร็จเสร็จสมบูรณ์ 100% (Phase 1-11: โครงสร้างเริ่มต้น / Phase 12: PIN Verify + Maintenance Payer Billing + Android Download Fix / Phase 13: Account Takeover Security Fix + Room Owner + Notification Log / Phase 14: Full Audit ระบบ HorHub + errorMiddleware statusCode Fix + Service Layer Refactor / Phase 15: Mock Mode / Dev Fallback Decoupling Fix + Brand Theme Color Default)
+- **คำสั่งล่าสุด**: แก้ `liffAuthMiddleware.js`/`liffController.js` ไม่ให้ `LINE_AUTH_MOCK_MODE` ปนกับ Logic "ปล่อยผ่านแบบไม่มี Token" อีกต่อไป (เปิดค้างบนเครื่อง Dev ได้ถาวรโดยไม่ทำ Test Suite พัง), เปลี่ยน Default `themeColor` ทั้งระบบจาก Blue `#3B82F6` เป็น HorHub Teal `#0E7490` (ดู Phase 15)
 - **Repository**: `https://github.com/Nitrocircussx74/playground-api`
 
 > ⚠️ หมายเหตุ: บันทึกนี้ (Phase 1-11) ครอบคลุมเฉพาะช่วงเริ่มต้นโปรเจกต์ (26 ส.ค. 2026) โค้ดเบสปัจจุบันมีระบบเพิ่มเติมอีกมาก (Prisma ORM, LINE LIFF Tenant Portal, Invoices, Maintenance, Parcels, Announcements ฯลฯ) ที่ยังไม่ได้บันทึกย้อนหลังไว้ที่นี่ทั้งหมด — Phase 12 เป็นการบันทึกงานเซสชันล่าสุดต่อจากสถานะปัจจุบันของโค้ดเบส ไม่ใช่ประวัติการสร้างระบบเหล่านั้นตั้งแต่ต้น
@@ -92,6 +92,45 @@
 - **แก้บั๊ก Web Login พังทุกครั้งแม้ PIN ถูกต้อง**: `WebLogin.vue` (Frontend) อ้างตัวแปร `tenant`/`user`/`rooms`/`building`/`accessToken` โดยไม่เคย Destructure จาก `res.data.data` เลย → ล็อกอินสำเร็จทุกครั้งแต่โยน `ReferenceError` แล้วโดน Catch กลืนไปแสดง "เบอร์โทรศัพท์หรือรหัส PIN ไม่ถูกต้อง"
 - **Test Verification**: รัน `yarn test` เต็ม Suite ผ่าน 206/206 (เพิ่มขึ้นจาก 192/193 เดิม)
 - **รวม Commit งาน Room Owner / Notification Log ที่ค้างอยู่**: Commit งานที่พัฒนาไว้ก่อนหน้าแต่ยังไม่เคย Commit เข้า Git History — เพิ่มโมเดล `NotificationLog` (ติดตามการส่งแจ้งเตือน LINE/SMS ราย Building/Tenant/Room), โมเดล `RoomResident` (ผู้อยู่อาศัยร่วมห้อง/Co-Resident), และความสัมพันธ์ `Room.owner` (User เจ้าของห้อง) พร้อม Controller/Service ที่ขยายรองรับ (`dashboardController`, `buildingController`, `roomController`, `maintenanceController`, `invoiceController`, `lineService`, `tenantService`) — ทดสอบผ่านครบก่อน Commit
+
+### Phase 14 (2026-09-10): Full Audit ระบบ HorHub (หอฮับ) + errorMiddleware statusCode Fix + Service Layer Refactor
+- **Audit ทั้งระบบ HorHub (LIFF Onboarding, Auth, Invite, Billing)**: ไล่ตรวจ Flow ทั้งหมดตั้งแต่ `authController.js`, `liffController.js`, `liffAuthMiddleware.js` จนถึง `prisma/schema.prisma` พบ 6 ประเด็น:
+  1. **🔴 Critical — Account Takeover ผ่าน `GET /api/v1/liff/check-status?tenantId=...`**: `checkTenantStatus` มี 3 ทางผูก `lineUserId` อัตโนมัติ (phone/roomNumber/tenantId) แต่ทาง `tenantId` ทางเดียวไม่เช็ค `!matched.lineUserId` ก่อนเขียนทับเหมือน 2 ทางที่เหลือ — ใครก็ตามที่ล็อกอิน LINE ของตัวเองแล้วรู้ `tenantId` (UUID) ของคนอื่น ยึดบัญชีได้ทันทีโดยไม่ต้องรู้เบอร์โทร/PIN เลย
+  2. **🟠 Payment Fallback ข้ามตึก**: `getSettingsForTenant` เดิมถ้า resolve ตึกของลูกบ้านไม่เจอ จะ Fallback ไป "ดึงตึกแรกในระบบ" แล้วส่ง PromptPay Number ของตึกนั้นกลับไปแทน เสี่ยงลูกบ้านโอนเงินผิดบัญชีข้ามตึก
+  3. **🟡 เงื่อนไขห้องว่างไม่ตรงกันระหว่าง `registerTenantWithInvite` กับ `verifyInviteCode`**: Endpoint แรกเช็ค `room.status !== 'available' && !room.tenantId` (ต้องทั้งคู่จริง) ส่วน Endpoint หลังเช็คแค่ `room.status !== 'available'` — ทำให้ verify ผ่านแต่ register จริงอาจไม่ผ่าน
+  4. **🟡 ระบบ Invite Code ซ้อนกัน 2 ระบบ**: `Tenant.inviteCode` (ผูกบัญชีเดิม, สุ่มด้วย `Math.random()`) กับ `RoomInvite.code` (ลงทะเบียนใหม่, สุ่มด้วย `crypto`) — ใช้ RNG ไม่เท่ากัน และมี `liffController.generateTenantInvite` เป็น Dead Code ซ้ำกับ `tenantService.generateInvite` (ไม่ได้ผูก Route ไหนเลย)
+  5. **🟢 โค้ด Normalize เบอร์โทรซ้ำ 6+ จุด** ใน `authController.js`/`liffController.js` และไม่ตรงกันเป๊ะทุกจุด (`loginWeb`/`verifyPhoneAndLinkTenant` ขาด Variant "ตัดเลข 0 นำหน้า" ที่อีก 4 จุดมี)
+  6. **🔴 `errorMiddleware.js` ไม่เคยอ่าน `err.statusCode`**: Error ที่ Service `throw` พร้อม `.statusCode` ตั้งใจไว้ (เช่น 404/403 ใน `tenantService.js`) กลายเป็น `500` เสมอเมื่อ Controller ส่งต่อด้วย `next(error)` — พบระหว่างรัน Test เต็ม Suite (ทำให้ `meterImportBatch.test.js` หลุดตอนรันรวมกับ Suite อื่น)
+- **แก้ครบทั้ง 6 ข้อ**:
+  - `checkTenantStatus`: เติม Guard `!matched.lineUserId` ก่อนผูก LINE ให้ Tenant จาก `tenantId`
+  - `getSettingsForTenant`: คืน `404` แทนการเดาตึกแรกในระบบ เมื่อมีการระบุตัวตนมาแล้วแต่ resolve ไม่เจอ (คงพฤติกรรม Fallback เดิมไว้เฉพาะกรณีไม่มีข้อมูลระบุตัวตนมาเลย)
+  - `registerTenantWithInvite`: ปรับเงื่อนไขห้องว่างให้ตรงกับ `verifyInviteCode`
+  - Invite Code: เปลี่ยน `Math.random()` → `crypto.randomInt()` ทั้งใน `tenantService.generateInvite` (ตัวจริงที่ Route ใช้งาน) และลบ `liffController.generateTenantInvite` (Dead Code) ทิ้ง
+  - เพิ่ม `src/utils/normalizePhone.js` (`getPhoneVariants`) รวม Logic Normalize เบอร์โทรเป็นจุดเดียว ใช้แทนของเดิมทั้ง 6 จุด (แก้ผลพลอยได้: Variant ที่ขาดหายไปด้วย)
+  - `errorMiddleware.js`: อ่าน `err.statusCode || err.status` ก่อนเสมอ พร้อม Pass ผ่าน `err.code`/`err.data` เพิ่มเติมถ้ามี (Backward-Compatible กับพฤติกรรมเดิม 100%)
+- **Refactor โครงสร้างตามกฎ `CLAUDE.md` ("ห้ามเขียน SQL/JWT Sign-Verify ใน Controller")**: `authController.js` (1300+ → 326 บรรทัด) และ `liffController.js` (1750+ → 437 บรรทัด) เดิมเรียก `prisma`/`billingService.prisma` ตรงๆ เกือบทุกเมธอด ย้าย Business Logic ทั้งหมดออกเป็น:
+  - **`src/services/tenantAuthService.js` (ใหม่)**: รวม Login/PIN/Link ทุกรูปแบบของ Tenant (`loginWithLine`, `pinLogin`, `setupOrResetPin`, `changePin`, `checkAuthStatus`, `verifyPhoneStatus`, `linkAndLogin`, `loginLocal`, `setupPassword`, `loginWeb`, `silentLogin`) คืนผลเป็น `{ statusCode, body, refreshToken }` ให้ Controller ส่งต่อโดยไม่เปลี่ยนรูป Response เดิมแม้แต่ Field เดียว
+  - **`src/services/tenantService.js` (ขยาย)**: เพิ่ม `checkTenantStatus`, `verifyPhoneAndLinkTenant`, `linkTenantAccountByInviteCode`, `syncLineProfile`, `getTenantProfileForLiff`, `updateTenantContactPhone`, `getBuildingSettingForTenant`, `registerTenantWithInvite`, `verifyInviteCode`, `createRoommateInvite`, `getBuildingPublicInfo`
+  - **`src/services/billingService.js` (ขยาย)**: เพิ่ม `getInvoiceForLiff`, `getInvoiceQrImage`, `uploadSlipFromLiff`
+  - **Circular Dependency ที่เจอระหว่าง Refactor**: `slipService.js` require `billingService.js` อยู่แล้ว ถ้าให้ `billingService.js` require `slipService.js` กลับตรงๆ ที่ Top-level จะวนลูปกันจนฝั่งใดฝั่งหนึ่งได้ Module ที่โหลดไม่ครบ (ขึ้นกับลำดับการโหลดตอน Start) — แก้ด้วยการ `require('./slipService')` แบบ Lazy ข้างในเมธอด `uploadSlipFromLiff` แทน
+  - พบบั๊กเล็กเป็นของแถมระหว่างย้ายโค้ด: `createRoommateInvite` เดิมอ้าง `targetRoom.building?.name` ที่ Query ไม่เคย `include` building มาด้วย เลย Fallback เป็น "อาคารหลัก" เสมอแม้ตึกมีชื่อจริง — แก้ให้อ่านจาก `invite.room.building` ที่ Query จริงมี
+- **Test Verification**: รัน `yarn jest --runInBand` เต็ม Suite ผ่าน **206/206** ทุกครั้งที่แก้ (ยืนยันไม่มี Behavior เปลี่ยนแปลงจากการย้ายโค้ดเข้า Service Layer)
+
+### Phase 15 (2026-09-10): Mock Mode / Dev Fallback Decoupling Fix + Brand Theme Color Default + NotificationLog ครอบคลุม LINE API Failure
+- **บริบท**: ผู้ใช้ทดสอบ LIFF Onboarding Flow จริงผ่าน Browser/Tunnel ต่อจาก Phase 14 แล้วเจอ Error "LINE ID Token ไม่ถูกต้องหรือหมดอายุแล้ว" ระหว่างตั้ง PIN — ไล่ Debug จนเจอปัญหาเชิงโครงสร้างที่ `LINE_AUTH_MOCK_MODE` (Flag สำหรับข้าม Network Call ไปตรวจ Token กับ LINE จริงตอน Dev/Test) ถูกใช้ปนกับ "อนุญาตให้ Request ที่ไม่มี Token เลยผ่านไปแบบ Anonymous" ในหลายจุด ทำให้เปิด Flag นี้ไว้ทดสอบผ่าน Browser ไม่ได้เลยโดยไม่ทำ Integration Test (`NODE_ENV=test`) ที่ตั้งใจเช็ค 401 พังไปด้วย (Test คนละเรื่องกับ Dev Fallback แต่ดันแชร์เงื่อนไขเดียวกัน)
+- **แก้ Decoupling ครบ 3 จุด**: แยก "ข้าม Verify กับ LINE จริง" (mockMode, ควรมีผลแค่ตอน**มี** token ส่งมา) ออกจาก "ปล่อยผ่านแบบไม่มี Token" (ควรผูกกับ `nodeEnv==='development'` อย่างเดียว)
+  - `src/middlewares/liffAuthMiddleware.js`: 2 จุด (ไม่มี `X-Line-Id-Token` Header เลย / `verifyLineIdToken` throw)
+  - `src/controllers/liffController.js` (`silentLogin`): 1 จุด (`isDevOrMock` ที่ส่งต่อไป `tenantAuthService.silentLogin`)
+  - ผลคือเปิด `LINE_AUTH_MOCK_MODE=true` ค้างไว้บนเครื่อง Dev ได้ถาวรแล้ว ไม่ต้องคอยเปิด-ปิดสลับไปมาก่อน/หลังรัน `yarn test` อีกต่อไป
+  - อัปเดต `tests/unit/middlewares/liffAuthMiddleware.test.js` ให้ปลอม `config.line.mockMode = false` คู่กับ `config.nodeEnv` เสมอ (เดิมปลอมแค่ nodeEnv พอ .env จริงมี mockMode=true ค้างอยู่ก็ Short-circuit เหมือนเดิมจนเทสต์พัง)
+- **เปลี่ยน Default Theme Color ทั้งระบบจาก Blue → HorHub Teal**: Sample สีจากโลโก้จริงด้วยสคริปต์อ่าน Pixel PNG ได้ Cluster สีหลัก `#1B6C7D`–`#239C93` เลือก `#0E7490` (ใกล้เคียง Tailwind `cyan-700` ที่สุด) เป็นค่า Default แทน `#3B82F6` (Blue-500) เดิมทุกจุดที่เป็น Fallback (ไม่แตะค่าที่เป็น Preset ตัวเลือกให้แอดมินเลือกเอง เช่น "น้ำเงิน (Blue)" ใน `BuildingSettingsView.vue`):
+  - `src/controllers/buildingController.js` (Default ตอนสร้างตึกใหม่ไม่ระบุสี), `src/services/tenantService.js` (7 จุด Fallback ตอนส่งข้อมูลให้ LIFF)
+- **ขยาย NotificationLog ให้ครอบคลุม LINE API Failure ระดับ Auth (ไม่ใช่แค่ Push Message)**: ตอบคำถาม "ควรมี api_log ไหม" — พบว่ามี `NotificationLog` + `lineService.logDelivery()` อยู่แล้วสำหรับ Push Message แต่ `verifyLineIdToken` (Token Verify) กับ `getUserProfile` (Profile Fetch) ไม่เคย Log เลย ถ้า LINE API มีปัญหาจะไม่มีทางรู้ย้อนหลัง
+  - `prisma/schema.prisma`: เปลี่ยน `NotificationLog.buildingId` เป็น Nullable (`onDelete: SetNull`) เพราะเหตุการณ์ระดับ Auth มักยังไม่รู้ตึก — Push ผ่าน `prisma db push` แล้ว
+  - `src/middlewares/liffAuthMiddleware.js`: Log `AUTH_VERIFY/FAILED` เฉพาะ Network Error หรือ HTTP 5xx/429 (Outage/Rate Limit ฝั่ง LINE จริง) **ไม่ Log** กรณี Token หมดอายุ/ไม่ถูกต้องแบบ 400 ปกติ (พฤติกรรมผู้ใช้งานทั่วไป ไม่ใช่ปัญหา LINE API กันรก Log)
+  - `src/services/lineService.js` (`getUserProfile`): Log `PROFILE_FETCH/FAILED` ทุกครั้งที่ดึงโปรไฟล์ไม่สำเร็จ
+  - Query ดู LINE API Failure ทั้งหมดได้จากที่เดียว: `notification_logs WHERE notification_type IN ('AUTH_VERIFY','PROFILE_FETCH') AND status='FAILED'`
+- **Test Verification**: รัน `yarn jest --runInBand` ผ่าน 211/211 ทุกครั้งที่แก้ (เพิ่มจาก 206 เดิมด้วย Unit Test ใหม่ 5 เคสคุม Logic การตัดสินใจ Log ของ `verifyLineIdToken`)
 
 ---
 

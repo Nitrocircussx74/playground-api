@@ -1,4 +1,9 @@
 const prisma = require('../config/prisma');
+const lineService = require('./lineService');
+// หมายเหตุ: require('./slipService') แบบ Lazy (ในเมธอดที่ใช้) แทนการ require ที่ Top-level ของไฟล์
+// เพราะ slipService.js เองก็ require('./billingService') อยู่แล้ว — ถ้า require กันตรงๆ ที่ Top-level
+// ทั้งคู่จะเกิด Circular Dependency กันเข้ารอบ ทำให้ module.exports ฝั่งใดฝั่งหนึ่งได้ Object ที่โหลดไม่ครบ
+// (ขึ้นกับลำดับการโหลด) require แบบ Lazy ข้างในฟังก์ชันจะปลอดภัยเพราะถูกเรียกตอน Runtime ที่ทุกโมดูลโหลดเสร็จแล้ว
 
 // Rate Constants (No Magic Numbers)
 const WATER_MINIMUM_UNITS = 5;
@@ -274,6 +279,133 @@ class BillingService {
     });
 
     return updatedInvoice;
+  }
+
+  /**
+   * ดึงข้อมูลบิลพร้อม PromptPay QR สำหรับแสดงผลใน LIFF App (ตรวจสิทธิ์เจ้าของบิลถ้ามี lineUserId)
+   */
+  async getInvoiceForLiff({ id, lineUserId }) {
+    const invoice = await prisma.invoice.findUnique({
+      where: { id },
+      include: { room: { include: { building: { include: { setting: true } } } }, tenant: true }
+    });
+
+    if (!invoice) {
+      const error = new Error('ไม่พบข้อมูลใบแจ้งหนี้');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    // ตรวจสอบสิทธิ์การเข้าถึง: หากมี lineUserId ให้ตรวจสอบว่าเป็นเจ้าของบิลหรือห้องพักนี้จริง
+    if (lineUserId) {
+      const callerTenant = await prisma.tenant.findUnique({
+        where: { lineUserId },
+        include: { rooms: true, leaseContracts: { where: { status: 'ACTIVE' }, include: { room: true } } }
+      });
+
+      const callerRoomIds = [];
+      if (callerTenant?.rooms) callerTenant.rooms.forEach((r) => callerRoomIds.push(r.id));
+      if (callerTenant?.leaseContracts) callerTenant.leaseContracts.forEach((c) => callerRoomIds.push(c.roomId));
+
+      const isOwner =
+        invoice.tenant?.lineUserId === lineUserId ||
+        (callerTenant && invoice.tenantId === callerTenant.id) ||
+        callerRoomIds.includes(invoice.roomId);
+
+      if (!isOwner && invoice.tenant?.lineUserId && invoice.tenant.lineUserId !== lineUserId) {
+        const error = new Error('ปฏิเสธการเข้าถึง: คุณไม่มีสิทธิ์ดูใบแจ้งหนี้ของผู้อื่น');
+        error.statusCode = 403;
+        throw error;
+      }
+    }
+
+    const buildingPromptPay = invoice.room?.building?.setting?.promptpayNum || null;
+    const qrData = await lineService.generatePromptPayQr(invoice.grandTotal, buildingPromptPay);
+
+    return { invoice, qrData };
+  }
+
+  /**
+   * สร้างไฟล์รูปภาพ PromptPay QR Code (PNG Buffer) ของใบแจ้งหนี้โดยตรง
+   */
+  async getInvoiceQrImage(id) {
+    const invoice = await prisma.invoice.findUnique({
+      where: { id },
+      include: { room: { include: { building: { include: { setting: true } } } } }
+    });
+
+    if (!invoice) {
+      const error = new Error('ไม่พบข้อมูลใบแจ้งหนี้');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    const buildingPromptPay = invoice.room?.building?.setting?.promptpayNum || null;
+    const targetPromptPay = buildingPromptPay || process.env.PROMPTPAY_NUMBER || '0812345678';
+    const numAmount = Number(invoice.grandTotal) || 0;
+
+    const generatePayload = require('promptpay-qr');
+    const QRCode = require('qrcode');
+    const payload = generatePayload(targetPromptPay, { amount: numAmount });
+    const buffer = await QRCode.toBuffer(payload, { type: 'png', margin: 2, width: 600 });
+
+    return { buffer, filename: `promptpay-qr-${invoice.invoiceNumber || id}.png` };
+  }
+
+  /**
+   * รับไฟล์สลิปการโอนเงินจาก LIFF App: ตรวจสิทธิ์เจ้าของบิล -> ตรวจสลิปอัตโนมัติ -> อัปเดตสถานะบิล -> แจ้งเตือน LINE
+   */
+  async uploadSlipFromLiff({ id, lineUserId, file, declaredAmount, slipUrl }) {
+    // Lazy require กัน Circular Dependency กับ slipService (ดูหมายเหตุด้านบนไฟล์)
+    const slipService = require('./slipService');
+
+    const invoice = await prisma.invoice.findUnique({ where: { id }, include: { tenant: true, room: true } });
+
+    if (!invoice) {
+      const error = new Error('ไม่พบข้อมูลใบแจ้งหนี้');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    if (lineUserId && invoice.tenant?.lineUserId && invoice.tenant.lineUserId !== lineUserId) {
+      const callerTenant = await prisma.tenant.findUnique({
+        where: { lineUserId },
+        include: { rooms: true, leaseContracts: { where: { status: 'ACTIVE' } } }
+      });
+      const callerRoomIds = (callerTenant?.rooms || []).map((r) => r.id);
+      (callerTenant?.leaseContracts || []).forEach((c) => callerRoomIds.push(c.roomId));
+
+      const isOwner = (callerTenant && invoice.tenantId === callerTenant.id) || callerRoomIds.includes(invoice.roomId);
+
+      if (!isOwner) {
+        const error = new Error('ปฏิเสธการเข้าถึง: คุณไม่มีสิทธิ์แนบสลิปสำหรับบิลของผู้อื่น');
+        error.statusCode = 403;
+        throw error;
+      }
+    }
+
+    // Trigger Auto Slip Verification Engine
+    const verification = await slipService.verifyAndProcessSlip(invoice, file, declaredAmount);
+
+    const updateData = { slipUrl, slipHash: verification.fileHash, status: verification.status };
+    if (verification.autoApproved) {
+      updateData.paidAt = new Date();
+    }
+
+    const updatedInvoice = await prisma.invoice.update({ where: { id }, data: updateData, include: { tenant: true, room: true } });
+
+    const recipientLineId = invoice.tenant?.lineUserId || lineUserId;
+    if (recipientLineId) {
+      if (verification.autoApproved) {
+        lineService.sendPaymentSuccessNotification(updatedInvoice).catch((err) => {
+          console.warn('⚠️ ไม่สามารถส่ง LINE Payment Success Push Message ได้:', err.message);
+        });
+      } else {
+        await lineService.pushSlipReceivedNotification(recipientLineId, invoice.invoiceNumber);
+      }
+    }
+
+    return { updatedInvoice, verification };
   }
 }
 

@@ -1,9 +1,7 @@
 const billingService = require('../services/billingService');
-const lineService = require('../services/lineService');
-const slipService = require('../services/slipService');
-const authService = require('../services/authService');
+const tenantService = require('../services/tenantService');
+const tenantAuthService = require('../services/tenantAuthService');
 const config = require('../config/env');
-const { verifyLineIdToken } = require('../middlewares/liffAuthMiddleware');
 
 class LiffController {
   /**
@@ -15,112 +13,20 @@ class LiffController {
    */
   async silentLogin(req, res, next) {
     try {
-      const lineIdToken = req.body?.lineIdToken || req.body?.idToken || req.headers['x-line-id-token'];
-      const authHeader = req.headers['authorization'];
-
-      let lineUserId = req.lineUserId;
-      let profileData = null;
-
-      // 1. ถ้าส่ง LINE ID Token มา ให้ Verify ลายเซ็นกับ LINE API
-      if (lineIdToken) {
-        try {
-          const verified = await verifyLineIdToken(lineIdToken);
-          lineUserId = verified.sub;
-          profileData = {
-            displayName: verified.name || req.body?.lineDisplayName || null,
-            pictureUrl: verified.picture || req.body?.linePictureUrl || null,
-            email: verified.email || null
-          };
-        } catch (verifyErr) {
-          return res.status(401).json({
-            success: false,
-            code: 'LINE_TOKEN_INVALID',
-            message: 'LINE ID Token ไม่ถูกต้องหรือหมดอายุแล้ว กรุณาเข้าสู่ระบบใหม่'
-          });
-        }
-      }
-
-      // 2. ถ้ามี Bearer Token เดิมที่ส่งมา (กรณี fallback)
-      if (!lineUserId && authHeader && authHeader.startsWith('Bearer ')) {
-        try {
-          const decoded = authService.verifyAccessToken(authHeader.split(' ')[1]);
-          if (decoded && (decoded.lineUserId || decoded.id)) {
-            lineUserId = decoded.lineUserId;
-          }
-        } catch {
-          // Token expired
-        }
-      }
-
-      // Dev Mode Fallback
-      if (!lineUserId && (config.nodeEnv === 'development' || config.line.mockMode)) {
-        lineUserId = req.headers['x-line-user-id'] || req.body?.lineUserId || 'dev_line_user';
-      }
-
-      if (!lineUserId) {
-        return res.status(401).json({
-          success: false,
-          code: 'UNAUTHORIZED',
-          message: 'ไม่พบ LINE ID Token สำหรับยืนยันตัวตน'
-        });
-      }
-
-      // 3. ค้นหาผู้เช่าในระบบ
-      let tenant = await billingService.prisma.tenant.findFirst({
-        where: { lineUserId },
-        include: {
-          rooms: {
-            include: {
-              building: true
-            }
-          }
-        }
+      const result = await tenantAuthService.silentLogin({
+        lineIdToken: req.body?.lineIdToken || req.body?.idToken || req.headers['x-line-id-token'],
+        authHeader: req.headers['authorization'],
+        lineDisplayName: req.body?.lineDisplayName,
+        linePictureUrl: req.body?.linePictureUrl,
+        lineUserIdFromRequest: req.lineUserId,
+        devLineUserId: req.headers['x-line-user-id'] || req.body?.lineUserId,
+        // ⚠️ เจตนาใช้แค่ nodeEnv==='development' (ไม่รวม mockMode) เหมือน liffAuthMiddleware.js —
+        // นี่คือ "ไม่มี Token เลย ปล่อยผ่านเป็น Anonymous Dev User" ซึ่งเป็นคนละเรื่องกับ mockMode
+        // ที่มีไว้ข้ามการยิง Network ไปตรวจ Token ที่ "มี" ส่งมาจริง (อยู่ใน verifyLineIdToken() แล้ว)
+        isDevOrMock: config.nodeEnv === 'development',
+        accessExpiresIn: config.jwt.accessExpiresIn
       });
-
-      if (!tenant) {
-        return res.status(404).json({
-          success: false,
-          isRegistered: false,
-          code: 'TENANT_NOT_FOUND',
-          message: 'ไม่พบข้อมูลลูกบ้านที่ผูกกับบัญชี LINE นี้'
-        });
-      }
-
-      // Sync Profile information if provided
-      if (profileData && (profileData.displayName || profileData.pictureUrl)) {
-        await billingService.prisma.tenant.update({
-          where: { id: tenant.id },
-          data: {
-            ...(profileData.displayName && { lineDisplayName: profileData.displayName }),
-            ...(profileData.pictureUrl && { linePictureUrl: profileData.pictureUrl })
-          }
-        }).catch((err) => console.warn('Silent Login profile sync warning:', err.message));
-      }
-
-      // 4. ออก Backend JWT Access Token ใหม่สำหรับเซสชันลูกบ้าน
-      const accessToken = authService.generateAccessToken({
-        id: tenant.id,
-        tenantId: tenant.id,
-        email: tenant.email || `tenant_${tenant.id}@dorm.local`,
-        name: tenant.name,
-        displayName: tenant.lineDisplayName || tenant.name,
-        role: 'tenant',
-        lineUserId: tenant.lineUserId,
-        roomId: tenant.rooms?.[0]?.id,
-        buildingId: tenant.rooms?.[0]?.buildingId
-      });
-
-      return res.status(200).json({
-        success: true,
-        message: 'ต่ออายุเซสชัน LIFF อัตโนมัติสำเร็จ (Silent Re-Auth Success)',
-        accessToken,
-        token: accessToken,
-        data: {
-          tenant,
-          accessToken,
-          expiresIn: config.jwt.accessExpiresIn
-        }
-      });
+      return res.status(result.statusCode).json(result.body);
     } catch (error) {
       next(error);
     }
@@ -131,172 +37,17 @@ class LiffController {
    */
   async checkTenantStatus(req, res, next) {
     try {
-      const lineUserId = req.lineUserId;
-      const { phone, roomNumber, inviteCode, tenantId } = req.query || {};
-
-      if (!lineUserId) {
-        return res.status(200).json({
-          success: true,
-          isRegistered: false,
-          data: null
-        });
-      }
-
-      // 1. ค้นหาผู้เช่าที่ผูกกับ lineUserId อยู่แล้ว
-      let tenant = await billingService.prisma.tenant.findFirst({
-        where: { lineUserId },
-        include: { rooms: { include: { building: true } } }
+      const { phone, roomNumber, tenantId } = req.query || {};
+      const result = await tenantService.checkTenantStatus({
+        lineUserId: req.lineUserId,
+        phone,
+        roomNumber,
+        tenantId,
+        lineUser: req.lineUser
       });
-
-      // 2. หากยังไม่พบ และมีการส่ง phone / roomNumber / tenantId เข้ามา ให้ทำการผูก lineUserId เข้ากับ Tenant ทันที
-      if (!tenant && phone) {
-        const cleanPhone = String(phone).trim();
-        tenant = await billingService.prisma.tenant.findFirst({
-          where: { phone: cleanPhone },
-          include: { rooms: { include: { building: true } } }
-        });
-        if (tenant && !tenant.lineUserId) {
-          tenant = await billingService.prisma.tenant.update({
-            where: { id: tenant.id },
-            data: {
-              lineUserId,
-              lineDisplayName: req.lineUser?.displayName || tenant.lineDisplayName,
-              linePictureUrl: req.lineUser?.pictureUrl || tenant.linePictureUrl
-            },
-            include: { rooms: { include: { building: true } } }
-          });
-        }
-      }
-
-      if (!tenant && roomNumber) {
-        const room = await billingService.prisma.room.findFirst({
-          where: { roomNumber: String(roomNumber).trim() },
-          include: { tenant: { include: { rooms: { include: { building: true } } } } }
-        });
-        if (room?.tenant) {
-          tenant = room.tenant;
-          if (!tenant.lineUserId) {
-            tenant = await billingService.prisma.tenant.update({
-              where: { id: tenant.id },
-              data: {
-                lineUserId,
-                lineDisplayName: req.lineUser?.displayName || tenant.lineDisplayName,
-                linePictureUrl: req.lineUser?.pictureUrl || tenant.linePictureUrl
-              },
-              include: { rooms: { include: { building: true } } }
-            });
-          }
-        }
-      }
-
-      if (!tenant && tenantId) {
-        const matched = await billingService.prisma.tenant.findUnique({
-          where: { id: tenantId },
-          include: { rooms: { include: { building: true } } }
-        });
-        if (matched) {
-          tenant = await billingService.prisma.tenant.update({
-            where: { id: matched.id },
-            data: {
-              lineUserId,
-              lineDisplayName: req.lineUser?.displayName || matched.lineDisplayName,
-              linePictureUrl: req.lineUser?.pictureUrl || matched.linePictureUrl
-            },
-            include: { rooms: { include: { building: true } } }
-          });
-        }
-      }
-
-      if (!tenant) {
-        return res.status(200).json({
-          success: true,
-          isRegistered: false,
-          data: null
-        });
-      }
-
-      // Sync LINE profile หากมีการเปลี่ยนแปลง
-      if (req.lineUser) {
-        if ((req.lineUser.displayName && req.lineUser.displayName !== tenant.lineDisplayName) ||
-            (req.lineUser.pictureUrl && req.lineUser.pictureUrl !== tenant.linePictureUrl)) {
-          await billingService.prisma.tenant.update({
-            where: { id: tenant.id },
-            data: {
-              lineDisplayName: req.lineUser.displayName || tenant.lineDisplayName,
-              linePictureUrl: req.lineUser.pictureUrl || tenant.linePictureUrl
-            }
-          }).catch(() => {});
-        }
-      }
-
-      const room = tenant.rooms && tenant.rooms.length > 0 ? tenant.rooms[0] : null;
-      const building = room && room.building ? room.building : null;
-
-      return res.status(200).json({
-        success: true,
-        isRegistered: true,
-        data: {
-          tenant: {
-            id: tenant.id,
-            firstName: tenant.firstName,
-            lastName: tenant.lastName,
-            phone: tenant.phone,
-            lineUserId: tenant.lineUserId,
-            lineDisplayName: tenant.lineDisplayName,
-            linePictureUrl: tenant.linePictureUrl,
-            lineStatusMessage: tenant.lineStatusMessage
-          },
-          room: room ? { id: room.id, roomNumber: room.roomNumber, price: room.price } : null,
-          building: building ? { id: building.id, name: building.name } : null
-        }
-      });
+      return res.status(200).json({ success: true, ...result });
     } catch (error) {
       console.error('checkTenantStatus error:', error);
-      next(error);
-    }
-  }
-
-  /**
-   * สร้างรหัสเชิญ (Invite Code) 6 หลักสำหรับผู้เช่า (Admin API)
-   */
-  async generateTenantInvite(req, res, next) {
-    try {
-      const { id } = req.params;
-
-      const tenant = await billingService.prisma.tenant.findUnique({
-        where: { id }
-      });
-
-      if (!tenant) {
-        return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลผู้เช่ารายนี้' });
-      }
-
-      const characters = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-      let inviteCode = '';
-      for (let i = 0; i < 6; i++) {
-        inviteCode += characters.charAt(Math.floor(Math.random() * characters.length));
-      }
-
-      const inviteExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-
-      const updatedTenant = await billingService.prisma.tenant.update({
-        where: { id },
-        data: {
-          inviteCode,
-          inviteExpiresAt
-        }
-      });
-
-      return res.status(200).json({
-        success: true,
-        message: 'สร้างรหัสเชิญสำเร็จ',
-        data: {
-          tenantId: updatedTenant.id,
-          inviteCode: updatedTenant.inviteCode,
-          inviteExpiresAt: updatedTenant.inviteExpiresAt
-        }
-      });
-    } catch (error) {
       next(error);
     }
   }
@@ -308,194 +59,16 @@ class LiffController {
   async verifyPhoneAndLinkTenant(req, res, next) {
     try {
       const { phone, roomNumber, buildingId, building, lineDisplayName, linePictureUrl, lineStatusMessage } = req.body;
-      const lineUserId = req.lineUserId;
-
-      if (!phone) {
-        return res.status(400).json({
-          success: false,
-          message: 'กรุณาระบุหมายเลขโทรศัพท์ที่ลงทะเบียนไว้'
-        });
-      }
-
-      const cleanPhone = String(phone).replace(/[^0-9]/g, '');
-
-      // Resolve buildingId หากส่งมาเป็น name หรือ UUID
-      let resolvedBuildingId = buildingId || null;
-      if (!resolvedBuildingId && building) {
-        const trimmedBuilding = String(building).trim();
-        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmedBuilding);
-        const b = await billingService.prisma.building.findFirst({
-          where: isUuid
-            ? { id: trimmedBuilding }
-            : {
-                OR: [
-                  { name: { equals: trimmedBuilding, mode: 'insensitive' } },
-                  { name: { contains: trimmedBuilding, mode: 'insensitive' } }
-                ]
-              },
-          select: { id: true }
-        });
-        if (b) resolvedBuildingId = b.id;
-      }
-
-      const phoneConditions = [
-        { phone: cleanPhone },
-        { phone: cleanPhone.startsWith('0') ? cleanPhone : `0${cleanPhone}` },
-        { phone: cleanPhone.startsWith('66') ? `0${cleanPhone.slice(2)}` : cleanPhone }
-      ];
-
-      const tenantWhere = {
-        OR: phoneConditions
-      };
-
-      if (resolvedBuildingId) {
-        tenantWhere.AND = [
-          {
-            OR: [
-              { rooms: { some: { buildingId: resolvedBuildingId } } },
-              { leaseContracts: { some: { room: { buildingId: resolvedBuildingId } } } }
-            ]
-          }
-        ];
-      }
-
-      // ค้นหาผู้เช่าจากเบอร์โทรศัพท์ (และตึกที่ระบุถ้ามี)
-      let tenant = await billingService.prisma.tenant.findFirst({
-        where: tenantWhere,
-        include: {
-          rooms: { include: { building: true } },
-          leaseContracts: { where: { status: 'ACTIVE' }, include: { room: { include: { building: true } } } }
-        }
-      });
-
-      // หากมีระบุ roomNumber เพิ่มเติม ช่วยค้นหา
-      if (!tenant && roomNumber) {
-        const roomWhere = { roomNumber: String(roomNumber).trim() };
-        if (resolvedBuildingId) {
-          roomWhere.buildingId = resolvedBuildingId;
-        }
-
-        const room = await billingService.prisma.room.findFirst({
-          where: roomWhere,
-          include: {
-            tenant: {
-              include: {
-                rooms: { include: { building: true } },
-                leaseContracts: { where: { status: 'ACTIVE' }, include: { room: { include: { building: true } } } }
-              }
-            }
-          }
-        });
-        if (room?.tenant) {
-          tenant = room.tenant;
-        }
-      }
-
-      if (!tenant) {
-        return res.status(404).json({
-          success: false,
-          message: `ไม่พบข้อมูลผู้เช่าที่ลงทะเบียนด้วยเบอร์โทร ${phone} ในระบบ กรุณาตรวจสอบเบอร์โทรศัพท์หรือติดต่อผู้ดูแลตึก`
-        });
-      }
-
-      // ป้องกัน Account Takeover: ถ้าบัญชีนี้ผูกกับ LINE คนอื่นไว้แล้ว ห้ามให้ LINE ปัจจุบัน
-      // (ที่แค่รู้เบอร์โทรของเจ้าของบัญชี) มาแย่งผูกทับแทนเจ้าของตัวจริง
-      if (tenant.lineUserId && lineUserId && tenant.lineUserId !== lineUserId) {
-        return res.status(403).json({
-          success: false,
-          code: 'ACCOUNT_ALREADY_LINKED',
-          message: 'บัญชีนี้ผูกกับ LINE อื่นไว้แล้ว กรุณาติดต่อนิติบุคคลประจำหอพักเพื่อยกเลิกการผูกก่อน'
-        });
-      }
-
-      // ตรวจสอบว่า lineUserId นี้เคยผูกกับผู้เช่ารายอื่นหรือไม่
-      if (lineUserId) {
-        const existingTenant = await billingService.prisma.tenant.findUnique({
-          where: { lineUserId }
-        });
-        if (existingTenant && existingTenant.id !== tenant.id) {
-          await billingService.prisma.tenant.update({
-            where: { id: existingTenant.id },
-            data: { lineUserId: null }
-          }).catch(() => {});
-        }
-      }
-
-      // ดึงโปรไฟล์ LINE จริง
-      let realDisplayName = req.lineUser?.displayName || lineDisplayName || tenant.lineDisplayName;
-      let realPictureUrl = req.lineUser?.pictureUrl || linePictureUrl || tenant.linePictureUrl;
-      let realStatusMessage = lineStatusMessage || tenant.lineStatusMessage;
-
-      if (lineUserId) {
-        try {
-          const liveProfile = await lineService.getUserProfile(lineUserId);
-          if (liveProfile) {
-            realDisplayName = liveProfile.displayName || realDisplayName;
-            realPictureUrl = liveProfile.pictureUrl || realPictureUrl;
-            realStatusMessage = liveProfile.statusMessage || realStatusMessage;
-          }
-        } catch (err) {
-          console.warn('Could not fetch live LINE profile:', err.message);
-        }
-      }
-
-      const updatedTenant = await billingService.prisma.tenant.update({
-        where: { id: tenant.id },
-        data: {
-          lineUserId: lineUserId || tenant.lineUserId,
-          lineDisplayName: realDisplayName || null,
-          linePictureUrl: realPictureUrl || null,
-          lineStatusMessage: realStatusMessage || null
-        },
-        include: {
-          rooms: { include: { building: true } },
-          leaseContracts: { where: { status: 'ACTIVE' }, include: { room: { include: { building: true } } } }
-        }
-      });
-
-      const room = updatedTenant.rooms && updatedTenant.rooms.length > 0 ? updatedTenant.rooms[0] : null;
-      const targetBuildingId = room?.buildingId || resolvedBuildingId;
-
-      // Upsert UserLineAccount ประจำตึก
-      if (lineUserId && targetBuildingId) {
-        await billingService.prisma.userLineAccount.upsert({
-          where: {
-            buildingId_lineUserId: {
-              buildingId: targetBuildingId,
-              lineUserId
-            }
-          },
-          update: {
-            tenantId: updatedTenant.id,
-            lineDisplayName: realDisplayName || null,
-            linePictureUrl: realPictureUrl || null,
-            lineStatusMessage: realStatusMessage || null
-          },
-          create: {
-            buildingId: targetBuildingId,
-            lineUserId,
-            tenantId: updatedTenant.id,
-            lineDisplayName: realDisplayName || null,
-            linePictureUrl: realPictureUrl || null,
-            lineStatusMessage: realStatusMessage || null
-          }
-        }).catch((err) => console.warn('UserLineAccount upsert warning:', err.message));
-      }
-
-      if (lineUserId) {
-        lineService.sendWelcomeFlexMessage(lineUserId, updatedTenant).catch(() => {});
-      }
-
-      const accessToken = authService.generateAccessToken({
-        id: updatedTenant.id,
-        tenantId: updatedTenant.id,
-        email: updatedTenant.email || `tenant_${updatedTenant.id}@dorm.local`,
-        name: updatedTenant.name,
-        displayName: updatedTenant.lineDisplayName || updatedTenant.name,
-        role: 'tenant',
-        lineUserId: updatedTenant.lineUserId,
-        roomId: room?.id,
-        buildingId: targetBuildingId
+      const { tenant: updatedTenant, room, accessToken } = await tenantService.verifyPhoneAndLinkTenant({
+        phone,
+        roomNumber,
+        buildingId,
+        building,
+        lineDisplayName,
+        linePictureUrl,
+        lineStatusMessage,
+        lineUserId: req.lineUserId,
+        lineUser: req.lineUser
       });
 
       return res.status(200).json({
@@ -529,94 +102,15 @@ class LiffController {
   async linkTenantAccount(req, res, next) {
     try {
       const { inviteCode, phoneLast4, lineDisplayName, linePictureUrl, lineStatusMessage } = req.body;
-      const lineUserId = req.lineUserId;
-
-      if (!inviteCode || !phoneLast4) {
-        return res.status(400).json({
-          success: false,
-          message: 'กรุณาระบุรหัสเชิญ 6 หลัก และเบอร์โทรศัพท์ 4 ตัวท้าย'
-        });
-      }
-
-      const cleanInviteCode = String(inviteCode).trim().toUpperCase();
-      const cleanPhoneLast4 = String(phoneLast4).trim();
-
-      const tenant = await billingService.prisma.tenant.findFirst({
-        where: { inviteCode: cleanInviteCode },
-        include: { rooms: true }
+      const { tenant: updatedTenant, room } = await tenantService.linkTenantAccountByInviteCode({
+        inviteCode,
+        phoneLast4,
+        lineDisplayName,
+        linePictureUrl,
+        lineStatusMessage,
+        lineUserId: req.lineUserId,
+        lineUser: req.lineUser
       });
-
-      if (!tenant) {
-        return res.status(400).json({
-          success: false,
-          message: 'รหัสเชิญไม่ถูกต้อง หรือถูกใช้งานไปแล้ว'
-        });
-      }
-
-      if (tenant.inviteExpiresAt && new Date() > new Date(tenant.inviteExpiresAt)) {
-        return res.status(400).json({
-          success: false,
-          message: 'รหัสเชิญนี้หมดอายุแล้ว กรุณาติดต่อแอดมินเพื่อขอรหัสใหม่'
-        });
-      }
-
-      const tenantPhone = tenant.phone ? tenant.phone.trim() : '';
-      const actualLast4 = tenantPhone.slice(-4);
-      if (actualLast4 !== cleanPhoneLast4) {
-        return res.status(400).json({
-          success: false,
-          message: 'เบอร์โทรศัพท์ 4 ตัวท้ายไม่ตรงกับข้อมูลในระบบ'
-        });
-      }
-
-      if (lineUserId) {
-        const existingTenant = await billingService.prisma.tenant.findUnique({
-          where: { lineUserId }
-        });
-        if (existingTenant && existingTenant.id !== tenant.id) {
-          return res.status(400).json({
-            success: false,
-            message: 'บัญชี LINE นี้ถูกนำไปผูกกับผู้เช่ารายอื่นในระบบแล้ว'
-          });
-        }
-      }
-
-      // ดึงข้อมูลโปรไฟล์ LINE จริง (จาก Verified Token Payload หรือ LINE Messaging API)
-      let realDisplayName = req.lineUser?.displayName || lineDisplayName || tenant.lineDisplayName;
-      let realPictureUrl = req.lineUser?.pictureUrl || linePictureUrl || tenant.linePictureUrl;
-      let realStatusMessage = lineStatusMessage || tenant.lineStatusMessage;
-
-      if (lineUserId) {
-        try {
-          const liveProfile = await lineService.getUserProfile(lineUserId);
-          if (liveProfile) {
-            realDisplayName = liveProfile.displayName || realDisplayName;
-            realPictureUrl = liveProfile.pictureUrl || realPictureUrl;
-            realStatusMessage = liveProfile.statusMessage || realStatusMessage;
-          }
-        } catch (err) {
-          console.warn('Could not fetch live LINE profile:', err.message);
-        }
-      }
-
-      const updatedTenant = await billingService.prisma.tenant.update({
-        where: { id: tenant.id },
-        data: {
-          lineUserId: lineUserId || tenant.lineUserId,
-          lineDisplayName: realDisplayName || null,
-          linePictureUrl: realPictureUrl || null,
-          lineStatusMessage: realStatusMessage || null,
-          inviteCode: null,
-          inviteExpiresAt: null
-        },
-        include: { rooms: true }
-      });
-
-      if (lineUserId) {
-        lineService.sendWelcomeFlexMessage(lineUserId, updatedTenant).catch(() => {});
-      }
-
-      const room = updatedTenant.rooms && updatedTenant.rooms.length > 0 ? updatedTenant.rooms[0] : null;
 
       return res.status(200).json({
         success: true,
@@ -649,76 +143,16 @@ class LiffController {
   async syncLineProfile(req, res, next) {
     try {
       const { lineDisplayName, linePictureUrl, lineStatusMessage, tenantId, phone, roomNumber } = req.body;
-      const lineUserId = req.lineUserId || req.body.lineUserId;
-
-      let tenant = null;
-
-      // 1. ค้นหาด้วย lineUserId
-      if (lineUserId) {
-        tenant = await billingService.prisma.tenant.findUnique({
-          where: { lineUserId }
-        });
-      }
-
-      // 2. ค้นหาด้วย tenantId (ถ้าส่งมา)
-      if (!tenant && tenantId) {
-        tenant = await billingService.prisma.tenant.findUnique({
-          where: { id: tenantId }
-        });
-      }
-
-      // 3. ค้นหาด้วย phone (ถ้าส่งมา)
-      if (!tenant && phone) {
-        tenant = await billingService.prisma.tenant.findFirst({
-          where: { phone: String(phone).trim() }
-        });
-      }
-
-      // 4. ค้นหาด้วย roomNumber (ถ้าส่งมา)
-      if (!tenant && roomNumber) {
-        const room = await billingService.prisma.room.findFirst({
-          where: { roomNumber: String(roomNumber).trim() },
-          include: { tenant: true }
-        });
-        tenant = room?.tenant || null;
-      }
-
-      // 5. Fallback ใน Dev/Mock Mode
-      if (!tenant && (process.env.NODE_ENV !== 'production' || config.line.mockMode)) {
-        tenant = await billingService.prisma.tenant.findFirst({
-          where: { lineUserId: null }
-        });
-      }
-
-      if (!tenant) {
-        return res.status(404).json({ success: false, message: 'ไม่พบผู้เช่าที่ผูกกับบัญชี LINE นี้' });
-      }
-
-      let realDisplayName = lineDisplayName !== undefined ? lineDisplayName : (req.lineUser?.displayName || tenant.lineDisplayName);
-      let realPictureUrl = linePictureUrl !== undefined ? linePictureUrl : (req.lineUser?.pictureUrl || tenant.linePictureUrl);
-      let realStatusMessage = lineStatusMessage !== undefined ? lineStatusMessage : tenant.lineStatusMessage;
-
-      if (lineUserId) {
-        try {
-          const liveProfile = await lineService.getUserProfile(lineUserId);
-          if (liveProfile) {
-            realDisplayName = liveProfile.displayName || realDisplayName;
-            realPictureUrl = liveProfile.pictureUrl || realPictureUrl;
-            realStatusMessage = liveProfile.statusMessage || realStatusMessage;
-          }
-        } catch (err) {
-          console.warn('Could not fetch live LINE profile:', err.message);
-        }
-      }
-
-      const updatedTenant = await billingService.prisma.tenant.update({
-        where: { id: tenant.id },
-        data: {
-          lineUserId: lineUserId || tenant.lineUserId,
-          lineDisplayName: realDisplayName || tenant.lineDisplayName,
-          linePictureUrl: realPictureUrl || tenant.linePictureUrl,
-          lineStatusMessage: realStatusMessage || tenant.lineStatusMessage
-        }
+      const updatedTenant = await tenantService.syncLineProfile({
+        lineDisplayName,
+        linePictureUrl,
+        lineStatusMessage,
+        tenantId,
+        phone,
+        roomNumber,
+        lineUserId: req.lineUserId || req.body.lineUserId,
+        lineUser: req.lineUser,
+        isDevOrMockFallback: process.env.NODE_ENV !== 'production' || config.line.mockMode
       });
 
       return res.status(200).json({
@@ -746,65 +180,9 @@ class LiffController {
       const { tenantId, room: queryRoomNumber, roomNumber: queryRoomNumberAlt } = req.query || {};
       const targetRoomNumber = queryRoomNumber || queryRoomNumberAlt;
 
-      let tenant = null;
+      const profile = await tenantService.getTenantProfileForLiff({ lineUserId, tenantId, roomNumber: targetRoomNumber });
 
-      // 1. ค้นหาจาก lineUserId ที่ยืนยันตัวตนผ่าน LIFF Token หรือ Query
-      const tenantInclude = {
-        rooms: {
-          include: {
-            building: true,
-            residents: { where: { status: 'ACTIVE' }, include: { tenant: true } }
-          }
-        },
-        roomResidents: {
-          where: { status: 'ACTIVE' },
-          include: {
-            room: {
-              include: {
-                building: true,
-                residents: { where: { status: 'ACTIVE' }, include: { tenant: true } }
-              }
-            }
-          }
-        },
-        leaseContracts: {
-          where: { status: 'ACTIVE' },
-          include: { room: { include: { building: true } } },
-          orderBy: { createdAt: 'desc' }
-        }
-      };
-
-      if (lineUserId) {
-        tenant = await billingService.prisma.tenant.findUnique({
-          where: { lineUserId },
-          include: tenantInclude
-        });
-      }
-
-      // 2. ค้นหาจาก tenantId (ถ้ามีการส่งมา)
-      if (!tenant && tenantId) {
-        tenant = await billingService.prisma.tenant.findUnique({
-          where: { id: tenantId },
-          include: tenantInclude
-        });
-      }
-
-      // 3. ค้นหาจากหมายเลขห้องพัก (กรณีระบุ roomNumber ใน dev mode)
-      if (!tenant && targetRoomNumber) {
-        const room = await billingService.prisma.room.findFirst({
-          where: { roomNumber: targetRoomNumber },
-          include: {
-            tenant: {
-              include: tenantInclude
-            }
-          }
-        });
-        if (room?.tenant) {
-          tenant = room.tenant;
-        }
-      }
-
-      if (!tenant) {
+      if (!profile) {
         return res.status(200).json({
           success: true,
           isRegistered: false,
@@ -814,149 +192,7 @@ class LiffController {
         });
       }
 
-      // รวมรายชื่อห้องพักทั้งหมดที่ผู้เช่าถือครอง หรือเป็นผู้อยู่อาศัยร่วม
-      const roomsMap = new Map();
-      const allRoomResidents = [];
-
-      if (tenant.rooms && tenant.rooms.length > 0) {
-        tenant.rooms.forEach((r) => {
-          roomsMap.set(r.id, {
-            id: r.id,
-            roomNumber: r.roomNumber,
-            floor: r.floor,
-            price: Number(r.price),
-            status: r.status,
-            unitType: r.unitType,
-            buildingId: r.buildingId,
-            buildingName: r.building?.name || 'อาคารหลัก',
-            themeColor: r.building?.themeColor || '#3B82F6',
-            theme_color: r.building?.themeColor || '#3B82F6',
-            logoUrl: r.building?.logoUrl || null,
-            logo_url: r.building?.logoUrl || null
-          });
-          if (r.residents) {
-            allRoomResidents.push(...r.residents);
-          }
-        });
-      }
-
-      if (tenant.roomResidents && tenant.roomResidents.length > 0) {
-        tenant.roomResidents.forEach((rr) => {
-          if (rr.room && !roomsMap.has(rr.room.id)) {
-            roomsMap.set(rr.room.id, {
-              id: rr.room.id,
-              roomNumber: rr.room.roomNumber,
-              floor: rr.room.floor,
-              price: Number(rr.room.price),
-              status: rr.room.status,
-              unitType: rr.room.unitType,
-              buildingId: rr.room.buildingId,
-              buildingName: rr.room.building?.name || 'อาคารหลัก',
-              themeColor: rr.room.building?.themeColor || '#3B82F6',
-              theme_color: rr.room.building?.themeColor || '#3B82F6',
-              logoUrl: rr.room.building?.logoUrl || null,
-              logo_url: rr.room.building?.logoUrl || null
-            });
-            if (rr.room.residents) {
-              allRoomResidents.push(...rr.room.residents);
-            }
-          }
-        });
-      }
-
-      if (tenant.leaseContracts && tenant.leaseContracts.length > 0) {
-        tenant.leaseContracts.forEach((c) => {
-          if (c.room && !roomsMap.has(c.room.id)) {
-            roomsMap.set(c.room.id, {
-              id: c.room.id,
-              roomNumber: c.room.roomNumber,
-              floor: c.room.floor,
-              price: Number(c.room.price),
-              status: c.room.status,
-              unitType: c.room.unitType,
-              buildingId: c.room.buildingId,
-              buildingName: c.room.building?.name || 'อาคารหลัก',
-              themeColor: c.room.building?.themeColor || '#3B82F6',
-              theme_color: c.room.building?.themeColor || '#3B82F6',
-              logoUrl: c.room.building?.logoUrl || null,
-              logo_url: c.room.building?.logoUrl || null
-            });
-          }
-        });
-      }
-
-      const roomsList = Array.from(roomsMap.values());
-      const roomNumbers = roomsList.map((r) => r.roomNumber).join(', ') || '-';
-      const primaryRoomNumber = roomsList.length > 0 ? roomsList[0].roomNumber : '-';
-      const primaryRoom = roomsList.length > 0 ? roomsList[0] : null;
-      const primaryThemeColor = primaryRoom?.themeColor || '#3B82F6';
-      const primaryLogoUrl = primaryRoom?.logoUrl || null;
-      const primaryBuildingName = primaryRoom?.buildingName || 'อาคารหลัก';
-      const primaryBuildingId = primaryRoom?.buildingId || null;
-
-      // คำนวณ Role และ Roommates
-      const isDirectRoomOwner = tenant.rooms && tenant.rooms.some((r) => r.tenantId === tenant.id);
-      const myResidentRecord = tenant.roomResidents?.find((rr) => rr.status === 'ACTIVE');
-      const residentRole = isDirectRoomOwner ? 'PRIMARY' : (myResidentRecord?.role || 'PRIMARY');
-      const isPrimaryTenant = residentRole === 'PRIMARY';
-
-      // กรองรายชื่อรูมเมท (คนอื่นๆ ในห้องที่ไม่ใช่ตัวเอง)
-      const roommatesMap = new Map();
-      allRoomResidents.forEach((res) => {
-        if (res.tenant && res.tenantId !== tenant.id) {
-          roommatesMap.set(res.tenantId, {
-            id: res.tenant.id,
-            firstName: res.tenant.firstName,
-            lastName: res.tenant.lastName,
-            name: `${res.tenant.firstName} ${res.tenant.lastName}`.trim(),
-            phone: res.tenant.phone,
-            role: res.role,
-            lineDisplayName: res.tenant.lineDisplayName,
-            linePictureUrl: res.tenant.linePictureUrl,
-            joinedAt: res.joinedAt
-          });
-        }
-      });
-      const roommates = Array.from(roommatesMap.values());
-
-      let contractEndDate = '31 ธันวาคม 2026';
-      const activeContract = tenant.leaseContracts?.find((c) => c.status === 'ACTIVE');
-      if (activeContract?.expectedEndDate) {
-        contractEndDate = new Date(activeContract.expectedEndDate).toLocaleDateString('th-TH', {
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric'
-        });
-      }
-
-      return res.status(200).json({
-        success: true,
-        data: {
-          id: tenant.id,
-          firstName: tenant.firstName,
-          lastName: tenant.lastName,
-          phone: tenant.phone,
-          idCard: tenant.idCard,
-          lineUserId: tenant.lineUserId,
-          lineDisplayName: tenant.lineDisplayName,
-          linePictureUrl: tenant.linePictureUrl,
-          lineStatusMessage: tenant.lineStatusMessage,
-          roomNumber: primaryRoomNumber,
-          roomNumbers,
-          rooms: roomsList,
-          totalRooms: roomsList.length,
-          contractEndDate,
-          buildingId: primaryBuildingId,
-          buildingName: primaryBuildingName,
-          themeColor: primaryThemeColor,
-          theme_color: primaryThemeColor,
-          logoUrl: primaryLogoUrl,
-          logo_url: primaryLogoUrl,
-          residentRole,
-          isPrimaryTenant,
-          roommates
-        }
-      });
+      return res.status(200).json({ success: true, data: profile });
     } catch (error) {
       next(error);
     }
@@ -968,39 +204,10 @@ class LiffController {
   async updateTenantProfile(req, res, next) {
     try {
       const { phone, lineUserId, tenantId } = req.body || {};
-      const effectiveLineUserId = req.lineUserId || lineUserId;
-      const effectiveTenantId = req.tenantId || tenantId;
-
-      if (!phone) {
-        return res.status(400).json({ success: false, message: 'กรุณาระบุเบอร์โทรศัพท์' });
-      }
-
-      // Validation เบื้องต้น: เบอร์โทรศัพท์เป็นตัวเลข 9-10 หลัก
-      const phoneRegex = /^[0-9]{9,10}$/;
-      const cleanPhone = String(phone).replace(/[^0-9]/g, '');
-      if (!phoneRegex.test(cleanPhone)) {
-        return res.status(400).json({
-          success: false,
-          message: 'เบอร์โทรศัพท์ไม่ถูกต้อง ต้องเป็นตัวเลขความยาว 9-10 หลัก'
-        });
-      }
-
-      let targetTenantId = effectiveTenantId;
-
-      if (!targetTenantId && effectiveLineUserId) {
-        const tenant = await billingService.prisma.tenant.findUnique({
-          where: { lineUserId: effectiveLineUserId }
-        });
-        if (tenant) targetTenantId = tenant.id;
-      }
-
-      if (!targetTenantId) {
-        return res.status(404).json({ success: false, message: 'ไม่พบผู้เช่าในระบบ' });
-      }
-
-      const updatedTenant = await billingService.prisma.tenant.update({
-        where: { id: targetTenantId },
-        data: { phone: cleanPhone }
+      const updatedTenant = await tenantService.updateTenantContactPhone({
+        phone,
+        lineUserId: req.lineUserId || lineUserId,
+        tenantId: req.tenantId || tenantId
       });
 
       return res.status(200).json({
@@ -1025,72 +232,16 @@ class LiffController {
       const lineUserId = req.lineUserId || req.query.lineUserId;
       const { tenantId, roomId } = req.lineUserId ? {} : req.query;
 
-      let targetRoom = null;
+      const settings = await tenantService.getBuildingSettingForTenant({ lineUserId, tenantId, roomId });
 
-      if (roomId) {
-        targetRoom = await billingService.prisma.room.findUnique({
-          where: { id: roomId },
-          include: { building: { include: { setting: true } } }
+      if (!settings) {
+        return res.status(404).json({
+          success: false,
+          message: 'ไม่พบข้อมูลห้องพัก/ตึกที่ผูกกับบัญชีนี้'
         });
       }
 
-      if (!targetRoom && lineUserId) {
-        const tenant = await billingService.prisma.tenant.findUnique({
-          where: { lineUserId },
-          include: {
-            rooms: {
-              include: { building: { include: { setting: true } } }
-            }
-          }
-        });
-        if (tenant && tenant.rooms.length > 0) {
-          targetRoom = tenant.rooms[0];
-        }
-      }
-
-      if (!targetRoom && tenantId) {
-        const tenant = await billingService.prisma.tenant.findUnique({
-          where: { id: tenantId },
-          include: {
-            rooms: {
-              include: { building: { include: { setting: true } } }
-            }
-          }
-        });
-        if (tenant && tenant.rooms.length > 0) {
-          targetRoom = tenant.rooms[0];
-        }
-      }
-
-      // Fallback: ดึงตึกแรกในระบบ
-      if (!targetRoom) {
-        targetRoom = await billingService.prisma.room.findFirst({
-          include: { building: { include: { setting: true } } }
-        });
-      }
-
-      let buildingSetting = targetRoom?.building?.setting;
-
-      if (!buildingSetting) {
-        buildingSetting = await billingService.prisma.buildingSetting.findFirst();
-      }
-
-      const buildingThemeColor = targetRoom?.building?.themeColor || '#3B82F6';
-      const buildingLogoUrl = targetRoom?.building?.logoUrl || null;
-
-      return res.status(200).json({
-        success: true,
-        data: {
-          buildingId: targetRoom?.building?.id || null,
-          buildingName: targetRoom?.building?.name || 'หอพักหลัก',
-          themeColor: buildingThemeColor,
-          theme_color: buildingThemeColor,
-          logoUrl: buildingLogoUrl,
-          logo_url: buildingLogoUrl,
-          promptpayNum: buildingSetting?.promptpayNum || '0812345678',
-          paymentQrUrl: buildingSetting?.paymentQrUrl || 'https://images.unsplash.com/photo-1559526324-4b87b5e36e44?auto=format&fit=crop&w=600&q=80'
-        }
-      });
+      return res.status(200).json({ success: true, data: settings });
     } catch (error) {
       next(error);
     }
@@ -1103,65 +254,8 @@ class LiffController {
     try {
       const { id } = req.params;
       const lineUserId = req.lineUserId || req.query?.lineUserId;
-
-      const invoice = await billingService.prisma.invoice.findUnique({
-        where: { id },
-        include: {
-          room: {
-            include: {
-              building: {
-                include: { setting: true }
-              }
-            }
-          },
-          tenant: true
-        }
-      });
-
-      if (!invoice) {
-        return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลใบแจ้งหนี้' });
-      }
-
-      // ตรวจสอบสิทธิ์การเข้าถึง: หากมี lineUserId ให้ตรวจสอบว่าเป็นเจ้าของบิลหรือห้องพักนี้จริง
-      if (lineUserId) {
-        const callerTenant = await billingService.prisma.tenant.findUnique({
-          where: { lineUserId },
-          include: {
-            rooms: true,
-            leaseContracts: {
-              where: { status: 'ACTIVE' },
-              include: { room: true }
-            }
-          }
-        });
-
-        const callerRoomIds = [];
-        if (callerTenant?.rooms) callerTenant.rooms.forEach((r) => callerRoomIds.push(r.id));
-        if (callerTenant?.leaseContracts) callerTenant.leaseContracts.forEach((c) => callerRoomIds.push(c.roomId));
-
-        const isOwner =
-          invoice.tenant?.lineUserId === lineUserId ||
-          (callerTenant && invoice.tenantId === callerTenant.id) ||
-          callerRoomIds.includes(invoice.roomId);
-
-        if (!isOwner && invoice.tenant?.lineUserId && invoice.tenant.lineUserId !== lineUserId) {
-          return res.status(403).json({
-            success: false,
-            message: 'ปฏิเสธการเข้าถึง: คุณไม่มีสิทธิ์ดูใบแจ้งหนี้ของผู้อื่น'
-          });
-        }
-      }
-
-      const buildingPromptPay = invoice.room?.building?.setting?.promptpayNum || null;
-      const qrData = await lineService.generatePromptPayQr(invoice.grandTotal, buildingPromptPay);
-
-      return res.status(200).json({
-        success: true,
-        data: {
-          invoice,
-          qrData
-        }
-      });
+      const { invoice, qrData } = await billingService.getInvoiceForLiff({ id, lineUserId });
+      return res.status(200).json({ success: true, data: { invoice, qrData } });
     } catch (error) {
       next(error);
     }
@@ -1174,32 +268,10 @@ class LiffController {
   async getInvoiceQrImage(req, res, next) {
     try {
       const { id } = req.params;
-      const invoice = await billingService.prisma.invoice.findUnique({
-        where: { id },
-        include: {
-          room: {
-            include: {
-              building: { include: { setting: true } }
-            }
-          }
-        }
-      });
-
-      if (!invoice) {
-        return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลใบแจ้งหนี้' });
-      }
-
-      const buildingPromptPay = invoice.room?.building?.setting?.promptpayNum || null;
-      const targetPromptPay = buildingPromptPay || process.env.PROMPTPAY_NUMBER || '0812345678';
-      const numAmount = Number(invoice.grandTotal) || 0;
-
-      const generatePayload = require('promptpay-qr');
-      const QRCode = require('qrcode');
-      const payload = generatePayload(targetPromptPay, { amount: numAmount });
-      const buffer = await QRCode.toBuffer(payload, { type: 'png', margin: 2, width: 600 });
+      const { buffer, filename } = await billingService.getInvoiceQrImage(id);
 
       res.setHeader('Content-Type', 'image/png');
-      res.setHeader('Content-Disposition', `attachment; filename="promptpay-qr-${invoice.invoiceNumber || id}.png"`);
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
       return res.send(buffer);
     } catch (error) {
       next(error);
@@ -1218,71 +290,14 @@ class LiffController {
         return res.status(400).json({ success: false, message: 'กรุณาแนบไฟล์รูปภาพสลิปโอนเงิน' });
       }
 
-      const invoice = await billingService.prisma.invoice.findUnique({
-        where: { id },
-        include: { tenant: true, room: true }
+      const slipUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+      const { updatedInvoice, verification } = await billingService.uploadSlipFromLiff({
+        id,
+        lineUserId,
+        file: req.file,
+        declaredAmount: req.body.declaredAmount,
+        slipUrl
       });
-
-      if (!invoice) {
-        return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลใบแจ้งหนี้' });
-      }
-
-      if (lineUserId && invoice.tenant?.lineUserId && invoice.tenant.lineUserId !== lineUserId) {
-        const callerTenant = await billingService.prisma.tenant.findUnique({
-          where: { lineUserId },
-          include: { rooms: true, leaseContracts: { where: { status: 'ACTIVE' } } }
-        });
-        const callerRoomIds = (callerTenant?.rooms || []).map((r) => r.id);
-        (callerTenant?.leaseContracts || []).forEach((c) => callerRoomIds.push(c.roomId));
-
-        const isOwner =
-          (callerTenant && invoice.tenantId === callerTenant.id) ||
-          callerRoomIds.includes(invoice.roomId);
-
-        if (!isOwner) {
-          return res.status(403).json({
-            success: false,
-            message: 'ปฏิเสธการเข้าถึง: คุณไม่มีสิทธิ์แนบสลิปสำหรับบิลของผู้อื่น'
-          });
-        }
-      }
-
-      const protocol = req.protocol;
-      const host = req.get('host');
-      const slipUrl = `${protocol}://${host}/uploads/${req.file.filename}`;
-
-      // Trigger Auto Slip Verification Engine
-      const verification = await slipService.verifyAndProcessSlip(invoice, req.file, req.body.declaredAmount);
-
-      const updateData = {
-        slipUrl,
-        slipHash: verification.fileHash,
-        status: verification.status
-      };
-
-      if (verification.autoApproved) {
-        updateData.paidAt = new Date();
-      }
-
-      const updatedInvoice = await billingService.prisma.invoice.update({
-        where: { id },
-        data: updateData,
-        include: { tenant: true, room: true }
-      });
-
-      const recipientLineId = invoice.tenant?.lineUserId || lineUserId;
-      if (recipientLineId) {
-        if (verification.autoApproved) {
-          lineService.sendPaymentSuccessNotification(updatedInvoice).catch((err) => {
-            console.warn('⚠️ ไม่สามารถส่ง LINE Payment Success Push Message ได้:', err.message);
-          });
-        } else {
-          await lineService.pushSlipReceivedNotification(
-            recipientLineId,
-            invoice.invoiceNumber
-          );
-        }
-      }
 
       return res.status(200).json({
         success: true,
@@ -1306,229 +321,20 @@ class LiffController {
   async registerTenantWithInvite(req, res, next) {
     try {
       const { inviteCode, firstName, lastName, phone, idCard, lineDisplayName, linePictureUrl, lineStatusMessage } = req.body;
-      const lineUserId = req.lineUserId;
-
-      if (!inviteCode || !firstName || !lastName || !phone) {
-        return res.status(400).json({
-          success: false,
-          message: 'กรุณากรอกข้อมูล inviteCode, firstName, lastName และ phone ให้ครบถ้วน'
-        });
-      }
-
-      const normalizedCode = String(inviteCode).trim().toUpperCase();
-
-      const invite = await billingService.prisma.roomInvite.findUnique({
-        where: { code: normalizedCode },
-        include: {
-          room: {
-            include: {
-              building: {
-                include: { setting: true }
-              }
-            }
-          }
-        }
+      const result = await tenantService.registerTenantWithInvite({
+        inviteCode,
+        firstName,
+        lastName,
+        phone,
+        idCard,
+        lineDisplayName,
+        linePictureUrl,
+        lineStatusMessage,
+        lineUserId: req.lineUserId,
+        lineUser: req.lineUser
       });
 
-      if (!invite) {
-        return res.status(404).json({
-          success: false,
-          message: 'รหัสเชิญ (Invite Code) ไม่ถูกต้อง'
-        });
-      }
-
-      if (invite.isUsed) {
-        return res.status(400).json({
-          success: false,
-          message: 'รหัสเชิญนี้ถูกใช้งานไปแล้ว'
-        });
-      }
-
-      if (new Date() > new Date(invite.expiresAt)) {
-        return res.status(400).json({
-          success: false,
-          message: 'รหัสเชิญนี้หมดอายุแล้ว (เกิน 48 ชั่วโมง)'
-        });
-      }
-
-      if (invite.role !== 'CO_RESIDENT' && invite.room.status !== 'available' && !invite.room.tenantId) {
-        return res.status(400).json({
-          success: false,
-          message: `ห้อง ${invite.room.roomNumber} ไม่ว่างหรือถูกลงทะเบียนไปแล้ว`
-        });
-      }
-
-      // ดึงข้อมูลโปรไฟล์ LINE จริง (จาก Verified Token Payload หรือ LINE Messaging API)
-      let realDisplayName = req.lineUser?.displayName || lineDisplayName || null;
-      let realPictureUrl = req.lineUser?.pictureUrl || linePictureUrl || null;
-      let realStatusMessage = lineStatusMessage || null;
-
-      if (lineUserId) {
-        try {
-          const liveProfile = await lineService.getUserProfile(lineUserId);
-          if (liveProfile) {
-            realDisplayName = liveProfile.displayName || realDisplayName;
-            realPictureUrl = liveProfile.pictureUrl || realPictureUrl;
-            realStatusMessage = liveProfile.statusMessage || realStatusMessage;
-          }
-        } catch (err) {
-          console.warn('Could not fetch live LINE profile:', err.message);
-        }
-      }
-
-      // ตรวจสอบว่ามีผู้เช่าเดิมที่ผูกกับ LINE ID หรือเบอร์โทรศัพท์นี้อยู่แล้วหรือไม่ (Multi-Room Linking)
-      let existingTenant = null;
-      if (lineUserId) {
-        existingTenant = await billingService.prisma.tenant.findUnique({
-          where: { lineUserId },
-          include: { rooms: true }
-        });
-      }
-      if (!existingTenant && phone) {
-        const cleanPhone = String(phone).trim();
-        existingTenant = await billingService.prisma.tenant.findFirst({
-          where: { phone: cleanPhone },
-          include: { rooms: true }
-        });
-      }
-      if (!existingTenant && invite.role !== 'CO_RESIDENT' && invite.room.tenantId) {
-        existingTenant = await billingService.prisma.tenant.findUnique({
-          where: { id: invite.room.tenantId },
-          include: { rooms: true }
-        });
-      }
-
-      const isCoResident = invite.role === 'CO_RESIDENT';
-
-      const result = await billingService.prisma.$transaction(async (tx) => {
-        let tenantRecord = existingTenant;
-
-        if (tenantRecord) {
-          // อัปเดตข้อมูลผู้เช่าเดิมหากมีข้อมูลใหม่
-          tenantRecord = await tx.tenant.update({
-            where: { id: tenantRecord.id },
-            data: {
-              firstName: firstName || tenantRecord.firstName,
-              lastName: lastName || tenantRecord.lastName,
-              phone: phone || tenantRecord.phone,
-              idCard: idCard || tenantRecord.idCard,
-              lineUserId: lineUserId || tenantRecord.lineUserId,
-              lineDisplayName: realDisplayName || tenantRecord.lineDisplayName,
-              linePictureUrl: realPictureUrl || tenantRecord.linePictureUrl,
-              lineStatusMessage: realStatusMessage || tenantRecord.lineStatusMessage
-            }
-          });
-        } else {
-          // สร้างผู้เช่าใหม่
-          tenantRecord = await tx.tenant.create({
-            data: {
-              firstName,
-              lastName,
-              phone,
-              idCard: idCard || null,
-              lineUserId: lineUserId || null,
-              lineDisplayName: realDisplayName || null,
-              linePictureUrl: realPictureUrl || null,
-              lineStatusMessage: realStatusMessage || null
-            }
-          });
-        }
-
-        let updatedRoom = invite.room;
-        let lease = null;
-
-        if (isCoResident) {
-          // บันทึกความสัมพันธ์ผู้อยู่อาศัยร่วมใน RoomResident
-          await tx.roomResident.upsert({
-            where: {
-              roomId_tenantId: {
-                roomId: invite.roomId,
-                tenantId: tenantRecord.id
-              }
-            },
-            create: {
-              roomId: invite.roomId,
-              tenantId: tenantRecord.id,
-              role: 'CO_RESIDENT',
-              isPayer: false,
-              status: 'ACTIVE'
-            },
-            update: {
-              role: 'CO_RESIDENT',
-              status: 'ACTIVE',
-              leftAt: null
-            }
-          });
-        } else {
-          // ผู้เช่าหลัก
-          updatedRoom = await tx.room.update({
-            where: { id: invite.roomId },
-            data: {
-              tenantId: tenantRecord.id,
-              status: 'occupied'
-            }
-          });
-
-          await tx.roomResident.upsert({
-            where: {
-              roomId_tenantId: {
-                roomId: invite.roomId,
-                tenantId: tenantRecord.id
-              }
-            },
-            create: {
-              roomId: invite.roomId,
-              tenantId: tenantRecord.id,
-              role: 'PRIMARY',
-              isPayer: true,
-              status: 'ACTIVE'
-            },
-            update: {
-              role: 'PRIMARY',
-              isPayer: true,
-              status: 'ACTIVE',
-              leftAt: null
-            }
-          });
-
-          // 📝 คำนวณเงินประกันจาก Building Setting หากมี
-          const depositMonths = invite.room.building?.setting?.depositMonths || 0;
-          const roomPrice = Number(invite.room.price) || 0;
-          const depositAmount = depositMonths > 0 ? depositMonths * roomPrice : 0;
-
-          // 📝 สร้างสัญญาเช่าเริ่มต้น (Active Lease Contract) สำหรับห้องใหม่
-          const startDate = new Date();
-          const expectedEndDate = new Date(startDate);
-          expectedEndDate.setFullYear(expectedEndDate.getFullYear() + 1);
-
-          lease = await tx.leaseContract.create({
-            data: {
-              roomId: invite.roomId,
-              tenantId: tenantRecord.id,
-              buildingId: invite.room.buildingId || null,
-              startDate,
-              expectedEndDate,
-              depositAmount,
-              status: 'ACTIVE',
-              adminNote: existingTenant
-                ? 'เพิ่มห้องพักเพิ่มเติมสำหรับผู้เช่าเดิมผ่าน LINE LIFF (Invite Code)'
-                : 'ลงทะเบียนเข้าพักผ่านระบบ LINE LIFF (Invite Code)'
-            }
-          });
-        }
-
-        await tx.roomInvite.update({
-          where: { id: invite.id },
-          data: { isUsed: true }
-        });
-
-        return { tenant: tenantRecord, room: updatedRoom, lease, role: invite.role };
-      });
-
-      // 📲 ส่ง LINE Welcome Flex Message หากมี LINE User ID
-      if (lineUserId) {
-        lineService.sendWelcomeFlexMessage(lineUserId, result.tenant).catch(() => {});
-      }
+      const isCoResident = result.role === 'CO_RESIDENT';
 
       return res.status(201).json({
         success: true,
@@ -1562,47 +368,7 @@ class LiffController {
   async verifyInviteCode(req, res, next) {
     try {
       const { code } = req.params;
-      const normalizedCode = String(code).trim().toUpperCase();
-
-      const invite = await billingService.prisma.roomInvite.findUnique({
-        where: { code: normalizedCode },
-        include: {
-          room: {
-            include: {
-              building: true
-            }
-          }
-        }
-      });
-
-      if (!invite) {
-        return res.status(404).json({
-          success: false,
-          message: 'ไม่พบรหัสเชิญ (Invite Code) นี้ในระบบ'
-        });
-      }
-
-      if (invite.isUsed) {
-        return res.status(400).json({
-          success: false,
-          message: 'รหัสเชิญนี้ถูกใช้งานไปแล้ว'
-        });
-      }
-
-      if (new Date() > new Date(invite.expiresAt)) {
-        return res.status(400).json({
-          success: false,
-          message: 'รหัสเชิญนี้หมดอายุแล้ว'
-        });
-      }
-
-      // ถ้าเป็นผู้เช่าหลัก ต้องเช็คว่าห้องว่าง แต่ถ้าเป็นรูมเมท (CO_RESIDENT) ห้องต้องมีผู้เช่าอยู่แล้ว
-      if (invite.role !== 'CO_RESIDENT' && invite.room.status !== 'available') {
-        return res.status(400).json({
-          success: false,
-          message: `ห้อง ${invite.room.roomNumber} มีผู้เช่าอยู่แล้ว`
-        });
-      }
+      const invite = await tenantService.verifyInviteCode(code);
 
       return res.status(200).json({
         success: true,
@@ -1628,51 +394,19 @@ class LiffController {
    */
   async createRoommateInvite(req, res, next) {
     try {
-      const lineUserId = req.lineUserId;
-      const tenantId = req.tenantId;
-
-      const tenant = await billingService.prisma.tenant.findFirst({
-        where: lineUserId ? { lineUserId } : { id: tenantId },
-        include: {
-          rooms: true,
-          roomResidents: { where: { status: 'ACTIVE' }, include: { room: true } }
-        }
-      });
-
-      if (!tenant) {
-        return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลผู้เช่า' });
-      }
-
-      // ตรวจสอบว่าผู้เช่ามีห้องพักหรือไม่
-      const targetRoom = tenant.rooms?.[0] || tenant.roomResidents?.[0]?.room;
-      if (!targetRoom) {
-        return res.status(400).json({ success: false, message: 'ไม่พบห้องพักที่ผูกกับบัญชีนี้' });
-      }
-
-      const crypto = require('crypto');
-      const code = crypto.randomBytes(3).toString('hex').toUpperCase();
-      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 วัน
-
-      const invite = await billingService.prisma.roomInvite.create({
-        data: {
-          roomId: targetRoom.id,
-          code,
-          role: 'CO_RESIDENT',
-          invitedByTenantId: tenant.id,
-          expiresAt,
-          isUsed: false
-        },
-        include: { room: { include: { building: true } } }
+      const { invite, targetRoom } = await tenantService.createRoommateInvite({
+        lineUserId: req.lineUserId,
+        tenantId: req.tenantId
       });
 
       return res.status(201).json({
         success: true,
-        message: `สร้างรหัสเชิญรูมเมท ${code} สำหรับห้อง ${targetRoom.roomNumber} สำเร็จ`,
+        message: `สร้างรหัสเชิญรูมเมท ${invite.code} สำหรับห้อง ${targetRoom.roomNumber} สำเร็จ`,
         data: {
           code: invite.code,
           role: invite.role,
           roomNumber: targetRoom.roomNumber,
-          buildingName: targetRoom.building?.name || 'อาคารหลัก',
+          buildingName: invite.room?.building?.name || 'อาคารหลัก',
           expiresAt: invite.expiresAt
         }
       });
@@ -1695,38 +429,8 @@ class LiffController {
         });
       }
 
-      const trimmed = String(buildingParam).trim();
-      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed);
-
-      const building = await billingService.prisma.building.findFirst({
-        where: isUuid
-          ? { id: trimmed }
-          : {
-              OR: [
-                { name: { equals: trimmed, mode: 'insensitive' } },
-                { name: { contains: trimmed, mode: 'insensitive' } }
-              ]
-            },
-        select: {
-          id: true,
-          name: true,
-          address: true,
-          themeColor: true,
-          logoUrl: true
-        }
-      });
-
-      if (!building) {
-        return res.status(404).json({
-          success: false,
-          message: 'ไม่พบข้อมูลตึกตามที่ระบุ'
-        });
-      }
-
-      return res.status(200).json({
-        success: true,
-        data: building
-      });
+      const building = await tenantService.getBuildingPublicInfo(buildingParam);
+      return res.status(200).json({ success: true, data: building });
     } catch (error) {
       next(error);
     }

@@ -60,7 +60,7 @@ class BuildingController {
         data: {
           name,
           address: address || null,
-          themeColor: themeColor || '#3B82F6',
+          themeColor: themeColor || '#0E7490',
           logoUrl: logoUrl || null,
           setting: {
             create: {
