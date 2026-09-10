@@ -6,9 +6,9 @@
 
 ## 📅 ข้อมูลกิจกรรม (Activity Summary)
 
-- **วันที่ดำเนินการ**: 26 สิงหาคม 2026 (เริ่มโปรเจกต์) — อัปเดตล่าสุด 9 กันยายน 2026
-- **สถานะ**: ✅ สำเร็จเสร็จสมบูรณ์ 100% (Phase 1-11: โครงสร้างเริ่มต้น / Phase 12: PIN Verify + Maintenance Payer Billing + Android Download Fix)
-- **คำสั่งล่าสุด**: PIN Verify-and-Set Flow, Maintenance Repair Cost Payer & Auto-Billing, Android/LINE PDF Download Fix (ดู Phase 12)
+- **วันที่ดำเนินการ**: 26 สิงหาคม 2026 (เริ่มโปรเจกต์) — อัปเดตล่าสุด 10 กันยายน 2026
+- **สถานะ**: ✅ สำเร็จเสร็จสมบูรณ์ 100% (Phase 1-11: โครงสร้างเริ่มต้น / Phase 12: PIN Verify + Maintenance Payer Billing + Android Download Fix / Phase 13: Account Takeover Security Fix + Room Owner + Notification Log)
+- **คำสั่งล่าสุด**: Audit & แก้ช่องโหว่ Account Takeover ใน LIFF PIN Flow, Room Owner, Notification Log (ดู Phase 13)
 - **Repository**: `https://github.com/Nitrocircussx74/playground-api`
 
 > ⚠️ หมายเหตุ: บันทึกนี้ (Phase 1-11) ครอบคลุมเฉพาะช่วงเริ่มต้นโปรเจกต์ (26 ส.ค. 2026) โค้ดเบสปัจจุบันมีระบบเพิ่มเติมอีกมาก (Prisma ORM, LINE LIFF Tenant Portal, Invoices, Maintenance, Parcels, Announcements ฯลฯ) ที่ยังไม่ได้บันทึกย้อนหลังไว้ที่นี่ทั้งหมด — Phase 12 เป็นการบันทึกงานเซสชันล่าสุดต่อจากสถานะปัจจุบันของโค้ดเบส ไม่ใช่ประวัติการสร้างระบบเหล่านั้นตั้งแต่ต้น
@@ -81,6 +81,17 @@
   - เพิ่มเทสคุมใน `tests/integration/payment.test.js` (2 เคสใหม่) assert ว่า Content-Disposition ต้องเป็น `attachment` เสมอ กันกลับไปเป็น `inline` อีกในอนาคต
 - **Test Verification**: รัน `yarn test` เต็ม Suite ผ่าน 192/193 (เหลือ 1 เทสเดิมที่ Flaky อยู่ก่อนแล้วใน `liffAccountLinking.test.js` เพราะ Test Design ใช้ `tenant.findFirst()` แบบไม่เจาะจง ไม่เกี่ยวกับงานเซสชันนี้)
 - **⚠️ พบและแก้ไข Data Corruption ระหว่างตรวจงาน**: การรัน `liffAccountLinking.test.js` ซ้ำหลายรอบทำให้ tenant ทดสอบ ("sear sear", phone `0895556677`) ถูก Test เขียนทับ `lineDisplayName`/`linePictureUrl` ด้วยข้อมูลปลอมค้างไว้ (ไม่มี `afterAll` restore เดิม) — เคลียร์ข้อมูลกลับเป็น `null` ให้แล้ว และแก้ไฟล์เทสให้จด-restore ค่าเดิมเสมอ (`beforeAll`/`afterAll` + `try/finally`) กันไม่ให้เกิดซ้ำ
+
+### Phase 13 (2026-09-10): Audit & แก้ช่องโหว่ Account Takeover ใน LIFF PIN Flow + Room Owner / Notification Log
+- **Audit Flow การ Login ของลูกบ้านผ่าน LINE และ Web**: ไล่ตรวจทุก Endpoint ที่เกี่ยวกับ PIN/การผูกบัญชี (`pinLogin`, `setupPin`/`reset-pin`, `linkAndLogin`, `verifyPhoneAndLinkTenant`, `loginWeb`) พบช่องโหว่ระดับ Critical: รู้แค่เบอร์โทรของลูกบ้านก็ยึดบัญชีได้ทันที ไม่ต้องพิสูจน์ความเป็นเจ้าของเบอร์เลย
+  - **`src/controllers/authController.js` (`setupPin`/`reset-pin`)**: เดิมค้นหา Tenant จากเบอร์โทรอย่างเดียวแล้วเขียนทับ PIN + ออก JWT ให้เลย — แก้ให้ต้องมี Identity ที่ Verify แล้ว (LINE ID Token จริง หรือ Session JWT) ก่อนเสมอ, เลิกเชื่อ `req.body.lineUserId` ที่ไม่ผ่านการ Verify, ปฏิเสธ `403 ACCOUNT_ALREADY_LINKED` ถ้าบัญชีตั้ง PIN และผูก LINE คนอื่นไว้แล้ว
+  - **`src/controllers/authController.js` (`linkAndLogin`)**: เดิมถ้า Tenant ยังไม่เคยตั้ง PIN จะเอา PIN ที่ Client ส่งมาตั้งเป็นของจริงทันที (ไม่ต้องเดา PIN เลย) — แก้ให้ต้องมี LINE ID Token ที่ Verify ผ่านจริงเสมอ และตอบ `400 PIN_NOT_SET` เหมือน `pinLogin` แทน (ไม่เช็ค `tenant.lineUserId` ซ้ำ เพราะ Endpoint นี้ตั้งใจรองรับ Centralized Multi-Building Identity อยู่แล้ว)
+  - **`src/controllers/liffController.js` (`verifyPhoneAndLinkTenant`)**: ปฏิเสธ `403 ACCOUNT_ALREADY_LINKED` ถ้าเบอร์โทรตรงกับ Tenant ที่ผูก LINE คนอื่นไว้แล้ว แทนที่จะเขียนทับเงียบๆ
+  - **`src/routes/authRoutes.js`, `src/routes/liffRoutes.js`**: เพิ่ม Rate Limiter (8 ครั้ง/15 นาที ต่อ IP) ให้ `pin-login`, `setup-pin`, `reset-pin`, `link-and-login`, `verify-phone-status`, `verify-phone`, `login/local`, `web/login` ทั้งสองเส้นทาง (ปิดใน Test Env กัน Integration Test ติด 429)
+  - ปรับ `tests/integration/hybridAuth.test.js` และ `tests/integration/liffSmartEntry.test.js` (รวม 2 เทสใหม่ที่ assert พฤติกรรมความปลอดภัยใหม่แทนพฤติกรรมช่องโหว่เดิม)
+- **แก้บั๊ก Web Login พังทุกครั้งแม้ PIN ถูกต้อง**: `WebLogin.vue` (Frontend) อ้างตัวแปร `tenant`/`user`/`rooms`/`building`/`accessToken` โดยไม่เคย Destructure จาก `res.data.data` เลย → ล็อกอินสำเร็จทุกครั้งแต่โยน `ReferenceError` แล้วโดน Catch กลืนไปแสดง "เบอร์โทรศัพท์หรือรหัส PIN ไม่ถูกต้อง"
+- **Test Verification**: รัน `yarn test` เต็ม Suite ผ่าน 206/206 (เพิ่มขึ้นจาก 192/193 เดิม)
+- **รวม Commit งาน Room Owner / Notification Log ที่ค้างอยู่**: Commit งานที่พัฒนาไว้ก่อนหน้าแต่ยังไม่เคย Commit เข้า Git History — เพิ่มโมเดล `NotificationLog` (ติดตามการส่งแจ้งเตือน LINE/SMS ราย Building/Tenant/Room), โมเดล `RoomResident` (ผู้อยู่อาศัยร่วมห้อง/Co-Resident), และความสัมพันธ์ `Room.owner` (User เจ้าของห้อง) พร้อม Controller/Service ที่ขยายรองรับ (`dashboardController`, `buildingController`, `roomController`, `maintenanceController`, `invoiceController`, `lineService`, `tenantService`) — ทดสอบผ่านครบก่อน Commit
 
 ---
 

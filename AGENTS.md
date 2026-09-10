@@ -23,11 +23,12 @@
 - **Logging Layer**: **Morgan** HTTP Request Logger (`morgan`)
 - **Data Validation Layer**: Zod (`src/validators/authValidator.js`, `src/validators/mainValidator.js`, `src/middlewares/validateMiddleware.js`)
 - **Database & Migrations**: **Prisma ORM (PostgreSQL)** เป็นตัวจัดการ Schema จริงของระบบหอพัก (`prisma/schema.prisma` → `npx prisma db push` + `npx prisma generate`) — ระบบ SQL Migration Runner เดิม (`yarn migrate`, `src/migrations/files/*.sql`) เป็นของเริ่มโปรเจกต์ก่อน Prisma เข้ามา มีแค่ไฟล์เดียว ไม่ได้ใช้จัดการตารางของระบบหอพักแล้ว
-- **Authentication**: JWT Best Practices (Dual Tokens: Access Token 15m ใน Body + Refresh Token 7d ใน HttpOnly, Secure, SameSite Cookie + Database Persistence `refresh_tokens` + Token Rotation & Revocation) + Google OAuth 2.0 (Passport.js) + LIFF Seamless PIN Login สำหรับลูกบ้าน (`authController.js`: `pinLogin`, `setupPin`, `linkAndLogin` — `linkAndLogin` ตั้ง PIN ใหม่ให้อัตโนมัติได้ถ้าบัญชียังไม่เคยตั้งมาก่อน)
+- **Authentication**: JWT Best Practices (Dual Tokens: Access Token 15m ใน Body + Refresh Token 7d ใน HttpOnly, Secure, SameSite Cookie + Database Persistence `refresh_tokens` + Token Rotation & Revocation) + Google OAuth 2.0 (Passport.js) + LIFF Seamless PIN Login สำหรับลูกบ้าน (`authController.js`: `pinLogin`, `setupPin`/`reset-pin`, `linkAndLogin`, `loginWeb` — ทุกเส้นทางที่ค้นหา Tenant ด้วยเบอร์โทรต้องมี Identity ที่ Verify แล้ว (LINE ID Token จริง/Session JWT) เสมอก่อนแตะ PIN, ปฏิเสธ `403 ACCOUNT_ALREADY_LINKED` ถ้าบัญชีถูกผูก LINE คนอื่นไว้แล้ว, และมี Rate Limiter 8 ครั้ง/15 นาทีต่อ IP กัน Brute Force — ดูรายละเอียดช่องโหว่ที่แก้ใน `docs/ACTIVITY_LOG.md` Phase 13)
 - **DevOps & Containerization**: Dockerfile (Node 20 Alpine) + Docker Compose + Colima Support
-- **Testing Coverage**: **Full API Integration & Unit Testing ด้วย Jest** (192/193 Test Cases Passed — ดูรายละเอียดล่าสุดใน `docs/ACTIVITY_LOG.md` Phase 12; ตัวเลข 19/19 เดิมคือช่วงเริ่มโปรเจกต์ก่อนขยายเป็นระบบหอพักเต็มรูปแบบ)
+- **Testing Coverage**: **Full API Integration & Unit Testing ด้วย Jest** (206/206 Test Cases Passed — ดูรายละเอียดล่าสุดใน `docs/ACTIVITY_LOG.md` Phase 13; ตัวเลข 19/19 เดิมคือช่วงเริ่มโปรเจกต์ก่อนขยายเป็นระบบหอพักเต็มรูปแบบ)
 - **Architecture**: Layered Clean Architecture (`src/config`, `src/routes`, `src/controllers`, `src/services`, `src/middlewares`, `src/validators`, `src/migrations`)
 - **Maintenance Billing**: `MaintenanceRequest` มีฟิลด์ `payer` (MANAGEMENT/TENANT) — ถ้า TENANT และสถานะ `resolved` แล้ว `billingService.generateInvoice()` จะรวมค่าซ่อมเข้า `otherFee` ของบิลรอบถัดไปอัตโนมัติ (mark ผ่าน `billedInvoiceId` กันเรียกเก็บซ้ำ)
+- **Room Ownership & Notification Log**: `Room.owner` (FK → `User`) สำหรับกำหนดเจ้าของห้องแยกจากผู้เช่า, `RoomResident` รองรับผู้อยู่อาศัยร่วมห้อง (Co-Resident), `NotificationLog` เก็บประวัติการส่งแจ้งเตือน LINE/SMS ทุกช่องทาง (Invoice, Maintenance, Parcel, General) ราย Building/Tenant/Room พร้อมสถานะ SUCCESS/FAILED
 
 ---
 
@@ -58,7 +59,7 @@ yarn start
 # การรันระบบ Database Migrations
 yarn migrate
 
-# การรันชุดทดสอบทั้งหมด (192/193 Passed ล่าสุด)
+# การรันชุดทดสอบทั้งหมด (206/206 Passed ล่าสุด)
 yarn test
 
 # การรันชุดทดสอบแบบ Watch Mode

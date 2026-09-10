@@ -57,6 +57,9 @@
   - Token Rotation & DB Session Revocation
   - Role-Based Access Control (Super Admin, Owner, Manager, Admin)
   - Audit Log Viewer บันทึกประวัติการแก้ไขข้อมูลสำคัญ
+  - Rate Limiter เฉพาะทาง (8 ครั้ง/15 นาทีต่อ IP) ป้องกัน Brute Force บนทุก Endpoint ที่เกี่ยวกับ PIN/การผูกบัญชี LINE
+  - Room Owner: กำหนดเจ้าของห้อง (`User`) แยกจากผู้เช่า พร้อม Scoped Access Control
+  - Notification Log: บันทึกประวัติการส่งแจ้งเตือน LINE/SMS ทุกช่องทางพร้อมสถานะสำเร็จ/ล้มเหลว
 
 ---
 
@@ -64,7 +67,7 @@
 - **🔑 ลงทะเบียน & ผูกบัญชี (Onboarding & Linking)**:
   - ลงทะเบียนเข้าพักใหม่ผ่าน Invite Code 6 หลัก
   - ผูกบัญชี LINE กับห้องพักเดิมด้วยเบอร์โทรศัพท์ 4 ตัวท้าย
-  - ยืนยันตัวตนข้ามอาคาร (Multi-Building) ด้วยเบอร์โทร + PIN — หากบัญชีนั้นยังไม่เคยตั้งรหัส PIN มาก่อน ระบบจะให้ตั้ง PIN ใหม่พร้อมกันในขั้นตอนยืนยันตัวตนนี้ได้เลยโดยไม่ต้องแยกไปตั้งภายหลัง
+  - ยืนยันตัวตนข้ามอาคาร (Multi-Building Centralized Identity) ด้วยเบอร์โทร + PIN ที่ตั้งไว้แล้ว — ต้องผ่าน LINE ID Token ที่ Verify จริงเสมอ และห้ามอาคารที่ยังไม่เคยตั้ง PIN สร้าง PIN ใหม่ผ่านช่องทางนี้ (ต้องตั้งผ่าน Invite Code เท่านั้น กัน Account Takeover ด้วยเบอร์โทรอย่างเดียว)
   - Auto-Sync โปรไฟล์ LINE (ชื่อ, รูปภาพ, Status)
   - ส่ง Welcome Flex Message ต้อนรับเมื่อผูกบัญชีสำเร็จ
 - **🆔 บัตรประจำตัวลูกบ้านดิจิทัล (Digital Tenant Hub)**:
@@ -104,7 +107,7 @@ playground-api/
 │   ├── validators/           # Zod Validation Schemas
 │   ├── app.js
 │   └── server.js
-├── tests/                    # API Integration Tests (44/44 Passed)
+├── tests/                    # API Integration & Unit Tests (206/206 Passed)
 └── package.json
 ```
 
