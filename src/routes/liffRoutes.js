@@ -17,6 +17,7 @@ const config = require('../config/env');
 
 // Public Invite Code Verification (อนุญาตให้ตรวจสอบความถูกต้องของรหัสเชิญได้ทั้งในและนอก LINE App)
 router.get('/invites/verify/:code', (req, res, next) => liffController.verifyInviteCode(req, res, next));
+router.get('/building-info', (req, res, next) => liffController.getBuildingPublicInfo(req, res, next));
 
 // จำกัดจำนวนครั้งการลอง PIN/เบอร์โทรต่อ IP เพื่อป้องกัน Brute Force (ใช้ค่าเดียวกับ linkAccountLimiter ด้านล่าง)
 // ปิดใน Test Env เพื่อไม่ให้ Integration Test ที่ยิงซ้ำๆ ติด 429 เอง
@@ -70,12 +71,14 @@ router.get('/check-status', (req, res, next) => liffController.checkTenantStatus
 router.get('/profile', (req, res, next) => liffController.getTenantProfile(req, res, next));
 router.get('/profile/me', (req, res, next) => liffController.getTenantProfile(req, res, next));
 router.put('/profile', (req, res, next) => liffController.updateTenantProfile(req, res, next));
+router.post('/invites/roommate', (req, res, next) => liffController.createRoommateInvite(req, res, next));
 
 // LIFF Invoices & Payment
 router.get('/invoices/history', (req, res, next) => invoiceController.getPaidInvoicesForLiff(req, res, next));
 router.get('/invoices/:id/receipt-pdf', (req, res, next) => invoiceController.exportReceiptPdf(req, res, next));
 router.get('/invoices/:id/invoice-pdf', (req, res, next) => invoiceController.exportInvoicePdf(req, res, next));
 router.get('/invoices/:id/pdf', (req, res, next) => invoiceController.exportInvoicePdf(req, res, next));
+router.get('/invoices/:id/qr-image', (req, res, next) => liffController.getInvoiceQrImage(req, res, next));
 router.get('/invoices/:id', (req, res, next) => liffController.getInvoiceForLiff(req, res, next));
 router.post('/invoices/:id/slip', upload.single('file'), verifyImageMagicBytes, (req, res, next) => liffController.uploadSlipFromLiff(req, res, next));
 

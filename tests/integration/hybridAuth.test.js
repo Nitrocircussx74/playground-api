@@ -546,4 +546,58 @@ describe('Hybrid Authentication (LINE SSO + Local Password) Integration Tests', 
       expect(linkedAccount.tenantId).toBe(noPinTenant.id);
     });
   });
+
+  describe('POST /api/auth/web/login (Web Browser Direct Login for Non-LINE Users)', () => {
+    test('กรณีไม่ระบุเบอร์โทรหรือ PIN ต้องตอบกลับ 400 Bad Request', async () => {
+      const response = await request(app)
+        .post('/api/auth/web/login')
+        .send({
+          phoneNumber: testPhone
+        });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.body.success).toBe(false);
+    });
+
+    test('กรณีไม่พบเบอร์โทรศัพท์ในระบบ ต้องตอบกลับ 401 Unauthorized', async () => {
+      const response = await request(app)
+        .post('/api/auth/web/login')
+        .send({
+          phoneNumber: '0987654321',
+          pin: '123456'
+        });
+
+      expect(response.statusCode).toBe(401);
+      expect(response.body.success).toBe(false);
+    });
+
+    test('กรณีระบุรหัส PIN ไม่ถูกต้อง ต้องตอบกลับ 401 Unauthorized', async () => {
+      const response = await request(app)
+        .post('/api/auth/web/login')
+        .send({
+          phoneNumber: testPhone,
+          pin: '000000'
+        });
+
+      expect(response.statusCode).toBe(401);
+      expect(response.body.success).toBe(false);
+    });
+
+    test('กรณีระบุเบอร์โทรศัพท์และ PIN ถูกต้อง ต้องเข้าสู่ระบบสำเร็จและได้รับ JWT (200 OK)', async () => {
+      // testTenant has pin 987654 from earlier change-pin tests
+      const response = await request(app)
+        .post('/api/auth/web/login')
+        .send({
+          phoneNumber: testPhone,
+          pin: '987654'
+        });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.accessToken).toBeDefined();
+      expect(response.body.data.user).toBeDefined();
+      expect(response.body.data.user.phone).toBe(testPhone);
+    });
+  });
 });
+

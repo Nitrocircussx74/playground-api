@@ -141,6 +141,35 @@ class AdminController {
   }
 
   /**
+   * GET /api/admin/room-owners
+   * ดึงรายชื่อผู้ใช้งานที่มีสิทธิ์เป็นเจ้าของห้อง (Room Owner / Investor)
+   */
+  async getRoomOwners(req, res, next) {
+    try {
+      const owners = await billingService.prisma.user.findMany({
+        where: {
+          role: { in: ['ROOM_OWNER', 'room_owner', 'INVESTOR', 'investor'] }
+        },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          phone: true
+        },
+        orderBy: { name: 'asc' }
+      });
+
+      return res.status(200).json({
+        success: true,
+        data: owners
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * POST /api/admin/users
    * สร้างบัญชีแอดมินใหม่ (เฉพาะ OWNER / super_admin)
    */

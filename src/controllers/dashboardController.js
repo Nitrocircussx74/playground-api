@@ -10,9 +10,15 @@ class DashboardController {
   async getSummary(req, res, next) {
     try {
       const { buildingId } = req.query;
+      const userRole = (req.user?.role || '').toLowerCase();
+      const userId = req.user?.id;
+      const isRoomOwner = ['room_owner', 'investor'].includes(userRole);
 
       // 1. Occupancy Rate (คำนวณอัตราการครองห้องด้วย Prisma groupBy)
-      const roomWhere = buildingId ? { buildingId } : {};
+      const roomWhere = {
+        ...(buildingId && { buildingId }),
+        ...(isRoomOwner && userId && { ownerId: userId })
+      };
       const roomStats = await billingService.prisma.room.groupBy({
         by: ['status'],
         where: roomWhere,
@@ -41,16 +47,21 @@ class DashboardController {
       const prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
       const prevCycle = formatBillingCycle(prevDate);
 
+      const roomScope = {
+        ...(buildingId && { buildingId }),
+        ...(isRoomOwner && userId && { ownerId: userId })
+      };
+
       const currentInvoiceWhere = {
         status: 'paid',
         billingCycle: currentCycle,
-        ...(buildingId && { room: { buildingId } })
+        ...(Object.keys(roomScope).length > 0 && { room: roomScope })
       };
 
       const prevInvoiceWhere = {
         status: 'paid',
         billingCycle: prevCycle,
-        ...(buildingId && { room: { buildingId } })
+        ...(Object.keys(roomScope).length > 0 && { room: roomScope })
       };
 
       const currentRevenue = await billingService.prisma.invoice.aggregate({
@@ -80,7 +91,7 @@ class DashboardController {
       // 3. Debt Tracking (ยอดหนี้ค้างชำระและรายการลูกหนี้ด้วย Prisma aggregate)
       const debtInvoiceWhere = {
         status: { in: ['pending', 'overdue', 'reviewing'] },
-        ...(buildingId && { room: { buildingId } })
+        ...(Object.keys(roomScope).length > 0 && { room: roomScope })
       };
 
       const debtStats = await billingService.prisma.invoice.aggregate({
@@ -103,7 +114,8 @@ class DashboardController {
         where: {
           status: 'ACTIVE',
           expectedEndDate: { gte: now, lte: in30Days },
-          ...(buildingId && { buildingId })
+          ...(buildingId && { buildingId }),
+          ...(isRoomOwner && userId && { room: { ownerId: userId } })
         },
         orderBy: { expectedEndDate: 'asc' },
         include: { room: true, tenant: true, building: true }
@@ -113,7 +125,7 @@ class DashboardController {
       const pendingMaintenanceCount = await billingService.prisma.maintenanceRequest.count({
         where: {
           status: { in: ['pending', 'in_progress'] },
-          ...(buildingId && { room: { buildingId } })
+          ...(Object.keys(roomScope).length > 0 && { room: roomScope })
         }
       });
 
@@ -122,22 +134,29 @@ class DashboardController {
       if (!buildingId) {
         const buildings = await billingService.prisma.building.findMany({
           include: {
-            rooms: true
+            rooms: {
+              where: isRoomOwner && userId ? { ownerId: userId } : {}
+            }
           }
         });
 
         buildingBreakdown = await Promise.all(
-          buildings.map(async (b) => {
-            const bTotalRooms = b.rooms.length;
-            const bOccupied = b.rooms.filter((r) => r.status === 'occupied').length;
-            const bRate = bTotalRooms > 0 ? Number(((bOccupied / bTotalRooms) * 100).toFixed(1)) : 0;
+          buildings
+            .filter((b) => !isRoomOwner || b.rooms.length > 0)
+            .map(async (b) => {
+              const bTotalRooms = b.rooms.length;
+              const bOccupied = b.rooms.filter((r) => r.status === 'occupied').length;
+              const bRate = bTotalRooms > 0 ? Number(((bOccupied / bTotalRooms) * 100).toFixed(1)) : 0;
 
-            const bRev = await billingService.prisma.invoice.aggregate({
-              where: {
-                status: 'paid',
-                billingCycle: currentCycle,
-                room: { buildingId: b.id }
-              },
+              const bRev = await billingService.prisma.invoice.aggregate({
+                where: {
+                  status: 'paid',
+                  billingCycle: currentCycle,
+                  room: {
+                    buildingId: b.id,
+                    ...(isRoomOwner && userId && { ownerId: userId })
+                  }
+                },
               _sum: { grandTotal: true }
             });
 
@@ -236,6 +255,10 @@ class DashboardController {
   async getRevenueTrend(req, res, next) {
     try {
       const { buildingId } = req.query;
+      const userRole = (req.user?.role || '').toLowerCase();
+      const userId = req.user?.id;
+      const isRoomOwner = ['room_owner', 'investor'].includes(userRole);
+
       const now = new Date();
       const trends = [];
 
@@ -247,7 +270,10 @@ class DashboardController {
           where: {
             status: 'paid',
             billingCycle: cycle,
-            ...(buildingId && { room: { buildingId } })
+            room: {
+              ...(buildingId && { buildingId }),
+              ...(isRoomOwner && userId && { ownerId: userId })
+            }
           },
           _sum: {
             grandTotal: true,
@@ -282,11 +308,24 @@ class DashboardController {
    */
   async exportCsv(req, res, next) {
     try {
-      const { billingCycle, status } = req.query;
+      const { billingCycle, status, buildingId } = req.query;
+      const userRole = (req.user?.role || '').toLowerCase();
+      const userId = req.user?.id;
+      const isRoomOwner = ['room_owner', 'investor'].includes(userRole);
+
       const whereClause = {};
 
       if (billingCycle) whereClause.billingCycle = billingCycle;
       if (status) whereClause.status = status;
+
+      if (isRoomOwner && userId) {
+        whereClause.room = {
+          ownerId: userId,
+          ...(buildingId && { buildingId })
+        };
+      } else if (buildingId) {
+        whereClause.room = { buildingId };
+      }
 
       const invoices = await billingService.prisma.invoice.findMany({
         where: whereClause,

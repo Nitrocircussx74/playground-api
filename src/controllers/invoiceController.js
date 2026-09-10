@@ -7,12 +7,23 @@ class InvoiceController {
   async getInvoices(req, res, next) {
     try {
       const { billingCycle, status, roomId, buildingId } = req.query;
+      const userRole = (req.user?.role || '').toLowerCase();
+      const userId = req.user?.id;
 
       const where = {};
       if (billingCycle) where.billingCycle = billingCycle;
       if (status) where.status = status;
       if (roomId) where.roomId = roomId;
-      if (buildingId) where.room = { buildingId };
+
+      if (['room_owner', 'investor'].includes(userRole) && userId) {
+        where.room = {
+          ...(where.room || {}),
+          ownerId: userId,
+          ...(buildingId && { buildingId })
+        };
+      } else if (buildingId) {
+        where.room = { buildingId };
+      }
 
       const invoices = await billingService.prisma.invoice.findMany({
         where,

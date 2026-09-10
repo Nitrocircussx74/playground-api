@@ -8,6 +8,10 @@ const requireRole = require('../middlewares/roleMiddleware');
 router.get('/', (req, res, next) => buildingController.getBuildings(req, res, next));
 router.get('/:id', (req, res, next) => buildingController.getBuildingById(req, res, next));
 router.get('/:buildingId/settings', (req, res, next) => buildingController.getBuildingSettings(req, res, next));
+router.get('/:id/line-quota', (req, res, next) => buildingController.getLineQuota(req, res, next));
+router.get('/:buildingId/line-quota', (req, res, next) => buildingController.getLineQuota(req, res, next));
+router.get('/:id/notification-logs', (req, res, next) => buildingController.getNotificationLogs(req, res, next));
+router.get('/:buildingId/notification-logs', (req, res, next) => buildingController.getNotificationLogs(req, res, next));
 
 // Meter Reading & Invoice Generation Endpoints
 router.get('/:buildingId/meters/draft', (req, res, next) => meterInvoiceController.getMetersDraft(req, res, next));

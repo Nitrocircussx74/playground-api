@@ -1178,6 +1178,127 @@ class AuthController {
     }
   }
 
+  /**
+   * เข้าสู่ระบบผ่าน Web Browser ปกติ (Dual-Mode Login สำหรับลูกบ้านที่ไม่ใช้ LINE)
+   * POST /api/auth/web/login หรือ POST /api/v1/auth/web/login
+   */
+  async loginWeb(req, res, next) {
+    try {
+      const phoneNumber = req.body.phone_number || req.body.phone || req.body.phoneNumber;
+      const pin = req.body.pin || req.body.password;
+
+      if (!phoneNumber || !pin) {
+        return res.status(400).json({
+          success: false,
+          message: 'กรุณาระบุหมายเลขโทรศัพท์และรหัส PIN 6 หลัก'
+        });
+      }
+
+      const cleanPhone = String(phoneNumber).replace(/[^0-9]/g, '');
+      const phoneConditions = [
+        { phone: cleanPhone },
+        { phone: cleanPhone.startsWith('0') ? cleanPhone : `0${cleanPhone}` },
+        { phone: cleanPhone.startsWith('66') ? `0${cleanPhone.slice(2)}` : cleanPhone }
+      ];
+
+      // ค้นหาในตาราง Tenant
+      let tenant = await prisma.tenant.findFirst({
+        where: { OR: phoneConditions },
+        include: {
+          rooms: {
+            include: {
+              building: {
+                include: { setting: true }
+              }
+            }
+          },
+          leaseContracts: {
+            where: { status: 'ACTIVE' },
+            include: {
+              room: {
+                include: {
+                  building: {
+                    include: { setting: true }
+                  }
+                }
+              }
+            }
+          }
+        }
+      });
+
+      let isValidPin = false;
+      let userAccount = null;
+
+      if (tenant) {
+        const pinHash = tenant.pinHash || tenant.passwordHash;
+        if (pinHash) {
+          isValidPin = await bcrypt.compare(String(pin).trim(), pinHash);
+        }
+      } else {
+        // Fallback: ค้นหาในตาราง User
+        userAccount = await prisma.user.findFirst({
+          where: { OR: phoneConditions }
+        });
+        if (userAccount && userAccount.passwordHash) {
+          isValidPin = await bcrypt.compare(String(pin).trim(), userAccount.passwordHash);
+        }
+      }
+
+      if (!isValidPin) {
+        return res.status(401).json({
+          success: false,
+          message: 'เบอร์โทรศัพท์หรือรหัส PIN ไม่ถูกต้อง'
+        });
+      }
+
+      // จัดเตรียม Payload และออก Dual JWT Tokens
+      const activeRoom = tenant?.rooms?.[0] || tenant?.leaseContracts?.[0]?.room || null;
+      const building = activeRoom?.building || null;
+
+      const userPayload = tenant
+        ? {
+            id: tenant.id,
+            role: 'tenant',
+            name: `${tenant.firstName} ${tenant.lastName}`.trim(),
+            phone: tenant.phone,
+            email: `${tenant.phone}@tenant.dorm.com`,
+            isTenant: true,
+            isWebLogin: true,
+            buildingId: building?.id || null
+          }
+        : {
+            id: userAccount.id,
+            role: userAccount.role || 'tenant',
+            name: userAccount.name,
+            phone: userAccount.phone,
+            email: userAccount.email,
+            isTenant: true,
+            isWebLogin: true
+          };
+
+      const accessToken = authService.generateAccessToken(userPayload);
+      const refreshToken = authService.generateRefreshToken(userPayload);
+
+      await authService.saveRefreshToken(userPayload.id, refreshToken);
+      setRefreshTokenCookie(res, refreshToken, req);
+
+      return res.status(200).json({
+        success: true,
+        message: 'เข้าสู่ระบบสำเร็จ',
+        data: {
+          accessToken,
+          user: userPayload,
+          tenant: tenant || null,
+          rooms: tenant?.rooms || [],
+          building: building || null
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async getProfile(req, res, next) {
     try {
       return res.status(200).json({ success: true, user: req.user });

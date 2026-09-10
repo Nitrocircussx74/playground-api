@@ -27,6 +27,7 @@ router.post('/tenants/:id/unlink-line', requireRole('OWNER', 'MANAGER', 'super_a
 router.post('/tenants/:id/generate-invite', (req, res, next) => tenantController.generateInvite(req, res, next));
 
 // Admin User & Permission Management (Restricted to OWNER / super_admin)
+router.get('/room-owners', (req, res, next) => adminController.getRoomOwners(req, res, next));
 router.get('/users', requireRole('OWNER', 'super_admin', 'superadmin'), (req, res, next) =>
   adminController.getAdminUsers(req, res, next)
 );

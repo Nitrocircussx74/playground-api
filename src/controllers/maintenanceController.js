@@ -8,17 +8,26 @@ class MaintenanceController {
   async getMaintenanceRequests(req, res, next) {
     try {
       const { status, roomId, buildingId } = req.query;
+      const userRole = (req.user?.role || '').toLowerCase();
+      const userId = req.user?.id;
 
       const where = {};
       if (status) where.status = status;
       if (roomId) where.roomId = roomId;
 
-      const targetBuildingId = buildingId || req.params.buildingId;
-      if (targetBuildingId) {
-        where.OR = [
-          { buildingId: targetBuildingId },
-          { room: { buildingId: targetBuildingId } }
-        ];
+      if (['room_owner', 'investor'].includes(userRole) && userId) {
+        where.room = {
+          ownerId: userId,
+          ...(buildingId && { buildingId })
+        };
+      } else {
+        const targetBuildingId = buildingId || req.params.buildingId;
+        if (targetBuildingId) {
+          where.OR = [
+            { buildingId: targetBuildingId },
+            { room: { buildingId: targetBuildingId } }
+          ];
+        }
       }
 
       const requests = await billingService.prisma.maintenanceRequest.findMany({

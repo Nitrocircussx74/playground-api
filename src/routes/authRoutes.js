@@ -88,6 +88,12 @@ router.post('/liff/link-and-login', pinAttemptLimiter, authController.linkAndLog
 router.post('/login/local', pinAttemptLimiter, authController.loginLocal);
 
 /**
+ * @route   POST /auth/web/login (and alias /api/auth/web/login, /api/v1/auth/web/login)
+ * @desc    เข้าสู่ระบบสำหรับลูกบ้านบน Web Browser ปกติด้วยเบอร์โทรศัพท์ + รหัส PIN 6 หลัก (Dual-Mode Login)
+ */
+router.post('/web/login', pinAttemptLimiter, authController.loginWeb);
+
+/**
  * @route   POST /auth/setup-password
  * @desc    ตั้งค่ารหัสผ่านใหม่หรือเปลี่ยนรหัสผ่านสำหรับลูกบ้าน
  */

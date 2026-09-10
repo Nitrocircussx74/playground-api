@@ -122,7 +122,16 @@ const liffAuthMiddleware = async (req, res, next) => {
     console.warn(`⚠️ LINE ID Token verification failed: ${error.message}`);
     // ใน dev mode หาก verify กับ LINE ล้มเหลว (เช่น รันออฟไลน์ หรือใช้ mock token) ให้ fallback ได้
     if (config.nodeEnv === 'development' || config.line.mockMode) {
-      const fallbackUserId = req.headers['x-line-user-id'] || req.query?.lineUserId || idToken || 'dev_line_user';
+      let fallbackUserId = req.headers['x-line-user-id'] || req.query?.lineUserId;
+      if (!fallbackUserId && idToken && typeof idToken === 'string' && idToken.startsWith('eyJ')) {
+        try {
+          const decoded = jwt.decode(idToken);
+          if (decoded?.sub) {
+            fallbackUserId = decoded.sub;
+          }
+        } catch (_) {}
+      }
+      fallbackUserId = fallbackUserId || (typeof idToken === 'string' && !idToken.startsWith('eyJ') ? idToken : 'dev_line_user');
       req.lineUserId = fallbackUserId;
       req.lineUser = { lineUserId: fallbackUserId, displayName: 'Dev LINE User' };
       return next();

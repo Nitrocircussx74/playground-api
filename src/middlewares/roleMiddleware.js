@@ -14,17 +14,28 @@ const requireRole = (...allowedRoles) => {
     const userRole = (req.user.role || 'tenant').toLowerCase();
     const normalizedAllowed = allowedRoles.map((r) => r.toLowerCase());
 
-    const isSuperOrOwner = ['super_admin', 'superadmin', 'owner', 'admin'].includes(userRole);
+    const isHighAdmin = ['super_admin', 'superadmin', 'owner'].includes(userRole);
+    const isStaffOrManager = ['admin', 'manager'].includes(userRole);
 
-    // Block explicit manager or tenant from owner endpoints if allowedRoles contains 'owner' or 'super_admin'
-    if (normalizedAllowed.includes('owner') && (userRole === 'manager' || userRole === 'tenant')) {
+    // Block non-owners from strict owner-only endpoints (e.g. user management, full system audit log)
+    const requiresOwner =
+      normalizedAllowed.includes('owner') ||
+      normalizedAllowed.includes('super_admin') ||
+      normalizedAllowed.includes('superadmin');
+
+    if (requiresOwner && !isHighAdmin) {
       return res.status(403).json({
         success: false,
         message: `ปฏิเสธการเข้าถึง: คุณไม่มีสิทธิ์ใช้งานส่วนนี้ (Required role: [${allowedRoles.join(', ')}], Current role: [${userRole}])`
       });
     }
 
-    if (isSuperOrOwner || normalizedAllowed.includes(userRole)) {
+    // Allow manager and staff for standard admin actions (such as sending LINE notifications, reminders, meter, invoices, parcels)
+    if (normalizedAllowed.includes('admin') && (isHighAdmin || isStaffOrManager)) {
+      return next();
+    }
+
+    if (isHighAdmin || isStaffOrManager || normalizedAllowed.includes(userRole)) {
       return next();
     }
 

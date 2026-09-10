@@ -46,6 +46,7 @@ router.use('/api/v1/features', featureRoutes);
 router.use('/api/v1/buildings', authenticateJWT, buildingRoutes);
 router.use('/api/admin/buildings', authenticateJWT, buildingRoutes);
 router.use('/api/v1/rooms', authenticateJWT, roomRoutes);
+router.use('/api/admin/rooms', authenticateJWT, roomRoutes);
 router.use('/api/v1/meter-records', authenticateJWT, meterRoutes);
 router.use('/api/v1/invoices', authenticateJWT, invoiceRoutes);
 router.use('/api/admin/invoices', authenticateJWT, invoiceRoutes);
