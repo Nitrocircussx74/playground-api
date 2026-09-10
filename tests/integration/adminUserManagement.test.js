@@ -17,6 +17,17 @@ describe('Admin User & Profile Management Integration Tests (/api/admin)', () =>
     managerUser = await billingService.prisma.user.findFirst({
       where: { role: { in: ['MANAGER', 'manager', 'TENANT', 'tenant'] } }
     });
+
+    if (managerUser) {
+      const crypto = require('crypto');
+      const salt = crypto.randomBytes(16).toString('hex');
+      const hash = crypto.pbkdf2Sync('password123', salt, 1000, 64, 'sha512').toString('hex');
+      await billingService.prisma.user.update({
+        where: { id: managerUser.id },
+        data: { passwordHash: `${salt}:${hash}` }
+      });
+    }
+
     targetBuilding = await billingService.prisma.building.findFirst();
 
     superAdminToken = authService.generateAccessToken(superAdminUser);

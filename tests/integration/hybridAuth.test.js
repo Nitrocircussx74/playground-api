@@ -376,7 +376,7 @@ describe('Hybrid Authentication (LINE SSO + Local Password) Integration Tests', 
           phone: testPhone,
           pin: '000000',
           buildingId: testBuilding2.id,
-          lineUserId: building2LineUserId
+          lineIdToken: building2LineUserId
         });
 
       expect(response.statusCode).toBe(401);
@@ -392,7 +392,7 @@ describe('Hybrid Authentication (LINE SSO + Local Password) Integration Tests', 
           phone: testPhone,
           pin: currentPin,
           buildingId: testBuilding2.id,
-          lineUserId: building2LineUserId,
+          lineIdToken: building2LineUserId,
           lineDisplayName: 'Hybrid User Building 2',
           linePictureUrl: 'https://example.com/pic2.jpg',
           lineStatusMessage: 'อยู่ในสาขา 2'
@@ -476,35 +476,63 @@ describe('Hybrid Authentication (LINE SSO + Local Password) Integration Tests', 
           phone: noPinPhone,
           pin: '12',
           buildingId: testBuildingForNoPin.id,
-          lineUserId: noPinLineUserId
+          lineIdToken: noPinLineUserId
         });
 
       expect(response.statusCode).toBe(400);
       expect(response.body.success).toBe(false);
     });
 
-    test('กรณีบัญชียังไม่เคยตั้ง PIN ต้องบันทึก PIN ที่ส่งมาเป็น PIN ใหม่และเข้าสู่ระบบสำเร็จทันที (200 OK)', async () => {
+    // ⚠️ Security Fix: เดิม endpoint นี้ถ้ายังไม่เคยตั้ง PIN จะเอา PIN ที่ Client ส่งมาตั้งเป็นของจริงทันที
+    // (แค่รู้เบอร์โทรก็ Takeover บัญชีได้ ไม่ต้องเดา PIN เลย) — ต้องปฏิเสธ 400 PIN_NOT_SET เหมือน pinLogin แทน
+    test('กรณีบัญชียังไม่เคยตั้ง PIN ต้องปฏิเสธ 400 PIN_NOT_SET (ป้องกัน Account Takeover ด้วยเบอร์โทรอย่างเดียว)', async () => {
+      const response = await request(app)
+        .post('/api/liff/auth/link-and-login')
+        .send({
+          phone: noPinPhone,
+          pin: '135790',
+          buildingId: testBuildingForNoPin.id,
+          lineIdToken: noPinLineUserId
+        });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.body.success).toBe(false);
+      expect(response.body.code).toBe('PIN_NOT_SET');
+
+      // ต้องไม่มีการสร้าง PIN ขึ้นมาเองในฐานข้อมูล
+      const untouchedTenant = await billingService.prisma.tenant.findUnique({
+        where: { id: noPinTenant.id }
+      });
+      expect(untouchedTenant.pinHash).toBeNull();
+    });
+
+    test('กรณีตั้ง PIN ผ่านช่องทางที่ยืนยันตัวตนจริง (reset-pin ด้วย LINE เดียวกัน) แล้วค่อยล็อกอินด้วย link-and-login ควรสำเร็จ (200 OK)', async () => {
       const newPin = '135790';
+
+      // ตั้ง PIN ครั้งแรกผ่าน setup-pin/reset-pin ด้วย LINE ID เดียวกัน (เส้นทางที่ต้องมี Identity ที่ Verify แล้ว)
+      const setupRes = await request(app)
+        .post('/api/v1/liff/auth/reset-pin')
+        .send({
+          phone: noPinPhone,
+          lineIdToken: noPinLineUserId,
+          newPin
+        });
+      expect(setupRes.statusCode).toBe(200);
+      expect(setupRes.body.success).toBe(true);
+
       const response = await request(app)
         .post('/api/liff/auth/link-and-login')
         .send({
           phone: noPinPhone,
           pin: newPin,
           buildingId: testBuildingForNoPin.id,
-          lineUserId: noPinLineUserId
+          lineIdToken: noPinLineUserId
         });
 
       expect(response.statusCode).toBe(200);
       expect(response.body.success).toBe(true);
-      expect(response.body.pinCreated).toBe(true);
+      expect(response.body.pinCreated).toBe(false);
       expect(response.body.data.accessToken).toBeDefined();
-
-      // ต้องบันทึก PIN ใหม่ลงฐานข้อมูลจริง และผูก UserLineAccount ให้ตึกนี้
-      const updatedTenant = await billingService.prisma.tenant.findUnique({
-        where: { id: noPinTenant.id }
-      });
-      expect(updatedTenant.pinHash).not.toBeNull();
-      expect(await bcrypt.compare(newPin, updatedTenant.pinHash)).toBe(true);
 
       const linkedAccount = await billingService.prisma.userLineAccount.findUnique({
         where: {
@@ -517,20 +545,59 @@ describe('Hybrid Authentication (LINE SSO + Local Password) Integration Tests', 
       expect(linkedAccount).toBeDefined();
       expect(linkedAccount.tenantId).toBe(noPinTenant.id);
     });
+  });
 
-    test('กรณีเข้าสู่ระบบซ้ำด้วย PIN ที่เพิ่งตั้งไว้ ต้องผ่านเป็นการยืนยัน PIN ปกติ ไม่สร้าง PIN ใหม่ซ้ำ (200 OK)', async () => {
+  describe('POST /api/auth/web/login (Web Browser Direct Login for Non-LINE Users)', () => {
+    test('กรณีไม่ระบุเบอร์โทรหรือ PIN ต้องตอบกลับ 400 Bad Request', async () => {
       const response = await request(app)
-        .post('/api/liff/auth/link-and-login')
+        .post('/api/auth/web/login')
         .send({
-          phone: noPinPhone,
-          pin: '135790',
-          buildingId: testBuildingForNoPin.id,
-          lineUserId: noPinLineUserId
+          phoneNumber: testPhone
+        });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.body.success).toBe(false);
+    });
+
+    test('กรณีไม่พบเบอร์โทรศัพท์ในระบบ ต้องตอบกลับ 401 Unauthorized', async () => {
+      const response = await request(app)
+        .post('/api/auth/web/login')
+        .send({
+          phoneNumber: '0987654321',
+          pin: '123456'
+        });
+
+      expect(response.statusCode).toBe(401);
+      expect(response.body.success).toBe(false);
+    });
+
+    test('กรณีระบุรหัส PIN ไม่ถูกต้อง ต้องตอบกลับ 401 Unauthorized', async () => {
+      const response = await request(app)
+        .post('/api/auth/web/login')
+        .send({
+          phoneNumber: testPhone,
+          pin: '000000'
+        });
+
+      expect(response.statusCode).toBe(401);
+      expect(response.body.success).toBe(false);
+    });
+
+    test('กรณีระบุเบอร์โทรศัพท์และ PIN ถูกต้อง ต้องเข้าสู่ระบบสำเร็จและได้รับ JWT (200 OK)', async () => {
+      // testTenant has pin 987654 from earlier change-pin tests
+      const response = await request(app)
+        .post('/api/auth/web/login')
+        .send({
+          phoneNumber: testPhone,
+          pin: '987654'
         });
 
       expect(response.statusCode).toBe(200);
       expect(response.body.success).toBe(true);
-      expect(response.body.pinCreated).toBe(false);
+      expect(response.body.data.accessToken).toBeDefined();
+      expect(response.body.data.user).toBeDefined();
+      expect(response.body.data.user.phone).toBe(testPhone);
     });
   });
 });
+

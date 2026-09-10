@@ -38,6 +38,8 @@ model User {
 
   buildingPermissions UserBuildingPermission[]
   auditLogs AuditLog[]
+  ownedRooms Room[] @relation("RoomOwner")
+  notificationLogs NotificationLog[]
 
   @@map("users")
 }
@@ -95,6 +97,7 @@ model Building {
   maintenanceRequests MaintenanceRequest[]
   lineAccounts UserLineAccount[]
   issueTickets IssueTicket[]
+  notificationLogs NotificationLog[]
 
   @@map("buildings")
 }
@@ -215,6 +218,10 @@ model Room {
   tenantId String? @map("tenant_id") @db.Uuid
   tenant Tenant? @relation(fields: [tenantId], references: [id])
 
+  /// รหัสเจ้าของห้อง (Foreign Key ไปยังตาราง User)
+  ownerId String? @map("owner_id") @db.Uuid
+  owner User? @relation("RoomOwner", fields: [ownerId], references: [id])
+
   /// วันเวลาที่สร้างเรคคอร์ด
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -222,6 +229,7 @@ model Room {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   // ความสัมพันธ์ (Relations)
+  residents RoomResident[]
   meterRecords MeterRecord[]
   invoices Invoice[]
   maintenanceRequests MaintenanceRequest[]
@@ -229,6 +237,7 @@ model Room {
   parcels Parcel[]
   leaseContracts LeaseContract[]
   issueTickets IssueTicket[]
+  notificationLogs NotificationLog[]
 
   // แมปชื่อตารางในฐานข้อมูลเป็น snake_case และพหูพจน์
   @@unique([roomNumber, buildingId])
@@ -290,6 +299,7 @@ model Tenant {
 
   // ความสัมพันธ์ (Relations)
   rooms Room[]
+  roomResidents RoomResident[]
   invoices Invoice[]
   parcels Parcel[]
   leaseContracts LeaseContract[]
@@ -297,6 +307,7 @@ model Tenant {
   lineAccounts UserLineAccount[]
   announcementReads AnnouncementRead[]
   issueTickets IssueTicket[]
+  notificationLogs NotificationLog[]
 
   @@map("tenants")
 }
@@ -521,6 +532,12 @@ model RoomInvite {
   /// รหัสเชิญลงทะเบียน (เช่น X9K2P4, INV101)
   code String @unique
 
+  /// บทบาทของรหัสเชิญ (PRIMARY = ผู้เช่าหลัก, CO_RESIDENT = ผู้อยู่อาศัยร่วม)
+  role String @default("PRIMARY") @map("role")
+
+  /// ผู้เช่าหลักที่สร้างรหัสเชิญนี้ (กรณีเชิญรูมเมท)
+  invitedByTenantId String? @map("invited_by_tenant_id") @db.Uuid
+
   /// วันเวลาหมดอายุของรหัสเชิญ
   expiresAt DateTime @map("expires_at")
 
@@ -534,6 +551,44 @@ model RoomInvite {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("room_invites")
+}
+
+/// ตารางความสัมพันธ์ผู้อยู่อาศัยในห้องพัก (Room Residents - รองรับหลายคนต่อ 1 ห้อง)
+model RoomResident {
+  /// รหัสอ้างอิงผู้อยู่อาศัย (PK, UUID)
+  id String @id @default(uuid()) @db.Uuid
+
+  /// รหัสอ้างอิงห้องพัก (Foreign Key)
+  roomId String @map("room_id") @db.Uuid
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  /// รหัสอ้างอิงผู้เช่า/ผู้อยู่อาศัย (Foreign Key)
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// บทบาทในห้องพัก (PRIMARY = ผู้เช่าหลัก/คู่สัญญา, CO_RESIDENT = ผู้อยู่อาศัยร่วม/รูมเมท)
+  role String @default("CO_RESIDENT") @map("role")
+
+  /// สิทธิ์ในการเป็นผู้ชำระเงินหลัก
+  isPayer Boolean @default(false) @map("is_payer")
+
+  /// สถานะการอยู่อาศัย (ACTIVE = กำลังอยู่อาศัย, MOVED_OUT = ย้ายออกแล้ว, INACTIVE = ยกเลิก)
+  status String @default("ACTIVE")
+
+  /// วันที่เริ่มเข้าอยู่อาศัย
+  joinedAt DateTime @default(now()) @map("joined_at")
+
+  /// วันที่ย้ายออก
+  leftAt DateTime? @map("left_at")
+
+  /// วันเวลาที่สร้างเรคคอร์ด
+  createdAt DateTime @default(now()) @map("created_at")
+
+  /// วันเวลาที่อัปเดตเรคคอร์ดล่าสุด
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([roomId, tenantId])
+  @@map("room_residents")
 }
 
 /// ตารางข่าวสารและประกาศจากแอดมินหอพัก (Announcements & Broadcasts)
@@ -847,4 +902,45 @@ model IssueTicket {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("issue_tickets")
+}
+
+/// ตารางประวัติการส่งข้อความแจ้งเตือน LINE (LINE Notification / Delivery Logs)
+model NotificationLog {
+  /// รหัสอ้างอิงบันทึกประวัติ (PK, UUID)
+  id String @id @default(uuid()) @db.Uuid
+
+  /// รหัสตึก/อาคาร (Foreign Key)
+  buildingId String @map("building_id") @db.Uuid
+  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  /// รหัสผู้ใช้งาน (Nullable)
+  userId String? @map("user_id") @db.Uuid
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  /// รหัสผู้เช่า (Nullable)
+  tenantId String? @map("tenant_id") @db.Uuid
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+
+  /// รหัสห้องพัก (Nullable)
+  roomId String? @map("room_id") @db.Uuid
+  room Room? @relation(fields: [roomId], references: [id], onDelete: SetNull)
+
+  /// ประเภทการแจ้งเตือน (INVOICE = บิลค่าเช่า, PARCEL = พัสดุ, MAINTENANCE = แจ้งซ่อม, GENERAL = ทั่วไป)
+  notificationType String @default("GENERAL") @map("notification_type")
+
+  /// ข้อความตัวอย่าง/หัวข้อสั้นๆ ของการแจ้งเตือน
+  messagePreview String @map("message_preview") @db.Text
+
+  /// สถานะการส่ง (SUCCESS = ส่งสำเร็จ, FAILED = ส่งล้มเหลว)
+  status String @default("SUCCESS")
+
+  /// สาเหตุข้อผิดพลาด (ถ้ามี เช่น บล็อกบอท, Token หมดอายุ)
+  errorReason String? @map("error_reason") @db.Text
+
+  /// วันเวลาที่ส่งข้อความ
+  sentAt DateTime @default(now()) @map("sent_at")
+
+  @@index([buildingId, sentAt])
+  @@index([buildingId, status])
+  @@map("notification_logs")
 }

@@ -57,6 +57,8 @@ const verifyPhoneSchema = z.object({
     .trim()
     .min(9, { message: 'เบอร์โทรศัพท์ต้องมีความยาวอย่างน้อย 9-10 หลัก' }),
   roomNumber: z.string().trim().optional(),
+  buildingId: z.string().trim().optional(),
+  building: z.string().trim().optional(),
   idCardLast4: z.string().trim().optional(),
   lineDisplayName: z.string().trim().max(500).nullish(),
   linePictureUrl: z.string().trim().nullish().or(z.literal('')),

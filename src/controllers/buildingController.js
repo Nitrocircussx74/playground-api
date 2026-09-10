@@ -1,4 +1,5 @@
 const billingService = require('../services/billingService');
+const lineService = require('../services/lineService');
 
 class BuildingController {
   /**
@@ -239,6 +240,52 @@ class BuildingController {
   async getBuildingSettings(req, res, next) {
     req.params.id = req.params.buildingId || req.params.id;
     return this.getBuildingById(req, res, next);
+  }
+
+  /**
+   * ดึงข้อมูลโควต้าและการใช้งาน LINE OA ประจำตึก (LINE Messaging Quota Monitor)
+   * GET /api/admin/buildings/:id/line-quota หรือ GET /api/v1/buildings/:id/line-quota
+   */
+  async getLineQuota(req, res, next) {
+    try {
+      const buildingId = req.params.id || req.params.buildingId;
+      const data = await lineService.getMessageQuota(buildingId);
+
+      return res.status(200).json({
+        success: true,
+        data
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * ดึงประวัติการส่งแจ้งเตือน LINE ประจำตึก (LINE Delivery Logs)
+   * GET /api/admin/buildings/:id/notification-logs
+   */
+  async getNotificationLogs(req, res, next) {
+    try {
+      const buildingId = req.params.id || req.params.buildingId;
+      const { page, limit, status, notificationType, search } = req.query;
+
+      const result = await lineService.getNotificationLogs({
+        buildingId,
+        page,
+        limit,
+        status,
+        notificationType,
+        search
+      });
+
+      return res.status(200).json({
+        success: true,
+        data: result.logs,
+        pagination: result.pagination
+      });
+    } catch (error) {
+      next(error);
+    }
   }
 }
 

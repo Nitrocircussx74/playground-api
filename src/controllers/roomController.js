@@ -9,13 +9,19 @@ class RoomController {
       const userId = req.user?.id;
 
       const isFullAdmin = ['super_admin', 'superadmin', 'owner'].includes(userRole);
+      const isRoomOwner = ['room_owner', 'investor'].includes(userRole);
       let where = {};
 
       if (unitType) {
         where.unitType = unitType;
       }
 
-      if (buildingId) {
+      if (isRoomOwner && userId) {
+        where.ownerId = userId;
+        if (buildingId) {
+          where.buildingId = buildingId;
+        }
+      } else if (buildingId) {
         if (!isFullAdmin && userId) {
           const perm = await billingService.prisma.userBuildingPermission.findUnique({
             where: { userId_buildingId: { userId, buildingId } }
@@ -42,7 +48,13 @@ class RoomController {
         orderBy: { roomNumber: 'asc' },
         include: {
           building: true,
-          tenant: true
+          tenant: true,
+          owner: { select: { id: true, name: true, email: true, phone: true } },
+          residents: {
+            where: { status: 'ACTIVE' },
+            include: { tenant: true },
+            orderBy: [{ role: 'asc' }, { joinedAt: 'asc' }]
+          }
         }
       });
 
@@ -58,10 +70,19 @@ class RoomController {
   async getRoomById(req, res, next) {
     try {
       const { id } = req.params;
+      const userRole = (req.user?.role || '').toLowerCase();
+      const userId = req.user?.id;
+
       const room = await billingService.prisma.room.findUnique({
         where: { id },
         include: {
           tenant: true,
+          owner: { select: { id: true, name: true, email: true, phone: true } },
+          residents: {
+            where: { status: 'ACTIVE' },
+            include: { tenant: true },
+            orderBy: [{ role: 'asc' }, { joinedAt: 'asc' }]
+          },
           meterRecords: { orderBy: { recordedAt: 'desc' }, take: 10 },
           invoices: { orderBy: { createdAt: 'desc' }, take: 10 },
           roomInvites: { orderBy: { createdAt: 'desc' }, take: 5 }
@@ -70,6 +91,10 @@ class RoomController {
 
       if (!room) {
         return res.status(404).json({ success: false, message: 'Room not found' });
+      }
+
+      if (['room_owner', 'investor'].includes(userRole) && userId && room.ownerId !== userId) {
+        return res.status(403).json({ success: false, message: 'คุณไม่มีสิทธิ์เข้าถึงข้อมูลห้องพักนี้' });
       }
 
       return res.status(200).json({
@@ -134,6 +159,7 @@ class RoomController {
           price: Number(price),
           status: status || 'available',
           buildingId: targetBuildingId,
+          ownerId: req.body.ownerId || null,
           unitType: unitType || 'residential',
           areaSqm: areaSqm != null ? Number(areaSqm) : null,
           locationZone: locationZone || null,
@@ -142,7 +168,8 @@ class RoomController {
           companyTaxId: companyTaxId || null
         },
         include: {
-          building: true
+          building: true,
+          owner: { select: { id: true, name: true, email: true, phone: true } }
         }
       });
 
@@ -310,10 +337,16 @@ class RoomController {
     try {
       const { id } = req.params;
       const { roomNumber, floor, price, status, buildingId } = req.body;
+      const userRole = (req.user?.role || '').toLowerCase();
+      const userId = req.user?.id;
 
       const room = await billingService.prisma.room.findUnique({ where: { id } });
       if (!room) {
         return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลห้องพัก' });
+      }
+
+      if (['room_owner', 'investor'].includes(userRole) && userId && room.ownerId !== userId) {
+        return res.status(403).json({ success: false, message: 'คุณไม่มีสิทธิ์แก้ไขข้อมูลห้องพักนี้' });
       }
 
       const updatedRoom = await billingService.prisma.room.update({
@@ -323,9 +356,15 @@ class RoomController {
           floor: floor !== undefined ? Number(floor) : room.floor,
           price: price !== undefined ? Number(price) : room.price,
           status: status || room.status,
+          ownerId: ['room_owner', 'investor'].includes(userRole) ? room.ownerId : (req.body.ownerId !== undefined ? req.body.ownerId : room.ownerId),
           buildingId: buildingId !== undefined ? buildingId : room.buildingId
         },
-        include: { building: true, tenant: true }
+        include: {
+          building: true,
+          tenant: true,
+          owner: { select: { id: true, name: true, email: true, phone: true } },
+          residents: { where: { status: 'ACTIVE' }, include: { tenant: true } }
+        }
       });
 
       return res.status(200).json({
@@ -344,6 +383,12 @@ class RoomController {
   async deleteRoom(req, res, next) {
     try {
       const { id } = req.params;
+      const userRole = (req.user?.role || '').toLowerCase();
+
+      if (['room_owner', 'investor'].includes(userRole)) {
+        return res.status(403).json({ success: false, message: 'เจ้าของห้องร่วมไม่มีสิทธิ์ลบห้องพักจากระบบ' });
+      }
+
       const room = await billingService.prisma.room.findUnique({ where: { id } });
 
       if (!room) {
@@ -378,6 +423,89 @@ class RoomController {
       return res.status(200).json({
         success: true,
         message: `ยกเลิกรหัสเชิญ ${invite.code} เรียบร้อยแล้ว`
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * ดึงรายชื่อผู้อยู่อาศัยในห้องพัก (Room Residents)
+   */
+  async getRoomResidents(req, res, next) {
+    try {
+      const { id } = req.params;
+      const userRole = (req.user?.role || '').toLowerCase();
+      const userId = req.user?.id;
+
+      if (['room_owner', 'investor'].includes(userRole) && userId) {
+        const room = await billingService.prisma.room.findUnique({ where: { id } });
+        if (!room || room.ownerId !== userId) {
+          return res.status(403).json({ success: false, message: 'คุณไม่มีสิทธิ์เข้าถึงข้อมูลผู้อยู่อาศัยในห้องนี้' });
+        }
+      }
+
+      const tenantService = require('../services/tenantService');
+      const residents = await tenantService.getRoomResidents(id);
+      return res.status(200).json({
+        success: true,
+        data: residents
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * เพิ่มผู้อยู่อาศัยร่วมในห้องพัก (Add Resident to Room)
+   */
+  async addRoomResident(req, res, next) {
+    try {
+      const { id } = req.params;
+      const userRole = (req.user?.role || '').toLowerCase();
+      const userId = req.user?.id;
+
+      if (['room_owner', 'investor'].includes(userRole) && userId) {
+        const room = await billingService.prisma.room.findUnique({ where: { id } });
+        if (!room || room.ownerId !== userId) {
+          return res.status(403).json({ success: false, message: 'คุณไม่มีสิทธิ์เพิ่มผู้อยู่อาศัยในห้องนี้' });
+        }
+      }
+
+      const tenantService = require('../services/tenantService');
+      const resident = await tenantService.addResidentToRoom(id, req.body, req.user);
+      return res.status(201).json({
+        success: true,
+        message: `เพิ่มผู้อยู่อาศัย ${resident.tenant.firstName} ${resident.tenant.lastName} เรียบร้อยแล้ว`,
+        data: resident
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * ลบ/นำผู้อยู่อาศัยออกจากห้องพัก (Remove Resident from Room)
+   */
+  async removeRoomResident(req, res, next) {
+    try {
+      const { id, tenantId } = req.params;
+      const userRole = (req.user?.role || '').toLowerCase();
+      const userId = req.user?.id;
+
+      if (['room_owner', 'investor'].includes(userRole) && userId) {
+        const room = await billingService.prisma.room.findUnique({ where: { id } });
+        if (!room || room.ownerId !== userId) {
+          return res.status(403).json({ success: false, message: 'คุณไม่มีสิทธิ์จัดการผู้อยู่อาศัยในห้องนี้' });
+        }
+      }
+
+      const tenantService = require('../services/tenantService');
+      const result = await tenantService.removeResidentFromRoom(id, tenantId, req.user);
+      return res.status(200).json({
+        success: true,
+        message: `นำผู้อยู่อาศัยออกจากห้องเรียบร้อยแล้ว`,
+        data: result
       });
     } catch (error) {
       next(error);

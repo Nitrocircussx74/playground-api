@@ -1,6 +1,7 @@
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 
 // ตรวจสอบและสร้างโฟลเดอร์ public/uploads หากยังไม่มี
 const uploadDir = path.join(__dirname, '../../public/uploads');
@@ -14,9 +15,8 @@ const storage = multer.diskStorage({
     cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
-    const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
     const ext = path.extname(file.originalname).toLowerCase();
-    cb(null, `file-${uniqueSuffix}${ext}`);
+    cb(null, `file-${crypto.randomUUID()}${ext}`);
   }
 });
 

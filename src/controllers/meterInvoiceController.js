@@ -1,5 +1,6 @@
 const billingService = require('../services/billingService');
 const lineService = require('../services/lineService');
+const { formatBillingCycle } = require('../utils/formatBillingCycle');
 
 class MeterInvoiceController {
   /**
@@ -78,7 +79,7 @@ class MeterInvoiceController {
         success: true,
         data: {
           buildingId,
-          billingCycle: billingCycle || `${String(new Date().getMonth() + 1).padStart(2, '0')}-${new Date().getFullYear()}`,
+          billingCycle: billingCycle || formatBillingCycle(new Date()),
           rates: {
             waterRate,
             electricRate,

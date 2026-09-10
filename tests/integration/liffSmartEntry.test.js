@@ -56,7 +56,9 @@ describe('LINE Rich Menu & LIFF Smart Entry Router Integration Tests', () => {
       expect(response.body.success).toBe(false);
     });
 
-    test('กรณีส่งเบอร์โทรศัพท์ที่ถูกต้อง ควรจับคู่ผู้เช่าและบันทึก LINE Profile สำเร็จ (200 OK)', async () => {
+    // ⚠️ Security Fix: เดิม endpoint นี้ยอมให้ LINE ID ใหม่ที่ไม่เกี่ยวข้องแย่งผูก (Rebind) กับ Tenant
+    // ที่ผูก LINE คนอื่นไว้อยู่แล้วได้ทันที แค่รู้เบอร์โทรของเจ้าของบัญชี (Account Takeover) — ต้องปฏิเสธ 403 แทน
+    test('กรณีเบอร์โทรศัพท์ตรงกับ Tenant ที่ผูก LINE คนอื่นไว้อยู่แล้ว ต้องปฏิเสธ 403 (ป้องกัน Account Takeover)', async () => {
       if (!testTenant || !testTenant.phone) return;
 
       const newUid = `U_verified_phone_${Date.now()}`;
@@ -69,17 +71,43 @@ describe('LINE Rich Menu & LIFF Smart Entry Router Integration Tests', () => {
           linePictureUrl: 'https://example.com/phone_avatar.png'
         });
 
-      expect(response.statusCode).toBe(200);
-      expect(response.body.success).toBe(true);
-      expect(response.body.data.tenant.id).toBe(testTenant.id);
-      expect(response.body.data.tenant.lineUserId).toBe(newUid);
-      expect(response.body.data.tenant.lineDisplayName).toBe('Test Phone Verified Tenant');
+      expect(response.statusCode).toBe(403);
+      expect(response.body.success).toBe(false);
+      expect(response.body.code).toBe('ACCOUNT_ALREADY_LINKED');
 
-      // Restore testTenant lineUserId
-      await billingService.prisma.tenant.update({
-        where: { id: testTenant.id },
-        data: { lineUserId: testTenant.lineUserId, lineDisplayName: testTenant.lineDisplayName }
+      // ต้องไม่มีการเขียนทับ lineUserId เดิมของ Tenant
+      const unchangedTenant = await billingService.prisma.tenant.findUnique({ where: { id: testTenant.id } });
+      expect(unchangedTenant.lineUserId).toBe(testTenant.lineUserId);
+    });
+
+    test('กรณีเบอร์โทรศัพท์ตรงกับ Tenant ที่ยังไม่เคยผูก LINE ควรจับคู่และบันทึก LINE Profile สำเร็จ (200 OK)', async () => {
+      const unlinkedTenant = await billingService.prisma.tenant.create({
+        data: {
+          firstName: 'Unlinked',
+          lastName: 'PhoneVerifyTest',
+          phone: `08${Date.now().toString().slice(-8)}`
+        }
       });
+
+      try {
+        const newUid = `U_verified_phone_${Date.now()}`;
+        const response = await request(app)
+          .post('/api/v1/liff/auth/verify-phone')
+          .set('X-Line-Id-Token', newUid)
+          .send({
+            phone: unlinkedTenant.phone,
+            lineDisplayName: 'Test Phone Verified Tenant',
+            linePictureUrl: 'https://example.com/phone_avatar.png'
+          });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.body.success).toBe(true);
+        expect(response.body.data.tenant.id).toBe(unlinkedTenant.id);
+        expect(response.body.data.tenant.lineUserId).toBe(newUid);
+        expect(response.body.data.tenant.lineDisplayName).toBe('Test Phone Verified Tenant');
+      } finally {
+        await billingService.prisma.tenant.delete({ where: { id: unlinkedTenant.id } }).catch(() => {});
+      }
     });
   });
 

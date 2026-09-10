@@ -13,18 +13,34 @@ const maintenanceController = require('../controllers/maintenanceController');
 const invoiceController = require('../controllers/invoiceController');
 const parcelController = require('../controllers/parcelController');
 const issueController = require('../controllers/issueController');
+const config = require('../config/env');
 
 // Public Invite Code Verification (อนุญาตให้ตรวจสอบความถูกต้องของรหัสเชิญได้ทั้งในและนอก LINE App)
 router.get('/invites/verify/:code', (req, res, next) => liffController.verifyInviteCode(req, res, next));
+router.get('/building-info', (req, res, next) => liffController.getBuildingPublicInfo(req, res, next));
+
+// จำกัดจำนวนครั้งการลอง PIN/เบอร์โทรต่อ IP เพื่อป้องกัน Brute Force (ใช้ค่าเดียวกับ linkAccountLimiter ด้านล่าง)
+// ปิดใน Test Env เพื่อไม่ให้ Integration Test ที่ยิงซ้ำๆ ติด 429 เอง
+const pinAttemptLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 8,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => config.nodeEnv === 'test',
+  message: {
+    success: false,
+    message: 'พยายามเข้าสู่ระบบบ่อยเกินไป กรุณาลองใหม่อีกครั้งใน 15 นาที'
+  }
+});
 
 // Silent Re-Authentication & LIFF PIN Authentication
 router.post('/auth/silent-login', (req, res, next) => liffController.silentLogin(req, res, next));
 router.post('/auth/check-status', (req, res, next) => authController.checkAuthStatus(req, res, next));
-router.post('/auth/pin-login', (req, res, next) => authController.pinLogin(req, res, next));
-router.post('/auth/setup-pin', (req, res, next) => authController.setupPin(req, res, next));
-router.post('/auth/reset-pin', (req, res, next) => authController.setupPin(req, res, next));
-router.post('/auth/verify-phone-status', (req, res, next) => authController.verifyPhoneStatus(req, res, next));
-router.post('/auth/link-and-login', (req, res, next) => authController.linkAndLogin(req, res, next));
+router.post('/auth/pin-login', pinAttemptLimiter, (req, res, next) => authController.pinLogin(req, res, next));
+router.post('/auth/setup-pin', pinAttemptLimiter, (req, res, next) => authController.setupPin(req, res, next));
+router.post('/auth/reset-pin', pinAttemptLimiter, (req, res, next) => authController.setupPin(req, res, next));
+router.post('/auth/verify-phone-status', pinAttemptLimiter, (req, res, next) => authController.verifyPhoneStatus(req, res, next));
+router.post('/auth/link-and-login', pinAttemptLimiter, (req, res, next) => authController.linkAndLogin(req, res, next));
 
 // ทุก Route ถัดจากนี้ต้องมี LINE ID Token หรือ Backend JWT Bearer Token ที่ตรวจสอบผ่านแล้วเสมอ (req.lineUserId)
 router.use(liffAuthMiddleware);
@@ -55,17 +71,19 @@ router.get('/check-status', (req, res, next) => liffController.checkTenantStatus
 router.get('/profile', (req, res, next) => liffController.getTenantProfile(req, res, next));
 router.get('/profile/me', (req, res, next) => liffController.getTenantProfile(req, res, next));
 router.put('/profile', (req, res, next) => liffController.updateTenantProfile(req, res, next));
+router.post('/invites/roommate', (req, res, next) => liffController.createRoommateInvite(req, res, next));
 
 // LIFF Invoices & Payment
 router.get('/invoices/history', (req, res, next) => invoiceController.getPaidInvoicesForLiff(req, res, next));
 router.get('/invoices/:id/receipt-pdf', (req, res, next) => invoiceController.exportReceiptPdf(req, res, next));
 router.get('/invoices/:id/invoice-pdf', (req, res, next) => invoiceController.exportInvoicePdf(req, res, next));
 router.get('/invoices/:id/pdf', (req, res, next) => invoiceController.exportInvoicePdf(req, res, next));
+router.get('/invoices/:id/qr-image', (req, res, next) => liffController.getInvoiceQrImage(req, res, next));
 router.get('/invoices/:id', (req, res, next) => liffController.getInvoiceForLiff(req, res, next));
 router.post('/invoices/:id/slip', upload.single('file'), verifyImageMagicBytes, (req, res, next) => liffController.uploadSlipFromLiff(req, res, next));
 
 // LIFF Tenant Registration & Account Linking
-router.post('/auth/verify-phone', validate(verifyPhoneSchema), (req, res, next) => liffController.verifyPhoneAndLinkTenant(req, res, next));
+router.post('/auth/verify-phone', pinAttemptLimiter, validate(verifyPhoneSchema), (req, res, next) => liffController.verifyPhoneAndLinkTenant(req, res, next));
 router.post('/register/invite', validate(registerInviteSchema), (req, res, next) => liffController.registerTenantWithInvite(req, res, next));
 router.post('/auth/register-invite', validate(registerInviteSchema), (req, res, next) => liffController.registerTenantWithInvite(req, res, next));
 router.post('/register-invite', validate(registerInviteSchema), (req, res, next) => liffController.registerTenantWithInvite(req, res, next));

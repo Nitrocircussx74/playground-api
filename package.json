@@ -10,7 +10,7 @@
     "dev:tunnel": "concurrently -n \"API,TUNNEL\" -c \"blue,magenta\" \"nodemon src/server.js\" \"node scripts/tunnel.js 3000\"",
     "migrate": "node src/migrations/migrate.js",
     "seed": "node prisma/seed.js",
-    "test": "jest --detectOpenHandles --forceExit",
+    "test": "jest --runInBand --detectOpenHandles --forceExit",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage"
   },
@@ -35,10 +35,10 @@
   "dependencies": {
     "@line/bot-sdk": "^11.2.0",
     "@prisma/client": "5.22.0",
+    "axios": "^1.20.0",
     "bcryptjs": "^3.0.3",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
-    "csrf-csrf": "^4.0.3",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "express-rate-limit": "^7.2.0",
@@ -53,8 +53,6 @@
     "pg": "^8.11.5",
     "promptpay-qr": "^0.5.0",
     "qrcode": "^1.5.4",
-    "swagger-jsdoc": "^6.3.0",
-    "swagger-ui-express": "^5.0.1",
     "xlsx": "^0.18.5",
     "zod": "^3.23.8"
   },

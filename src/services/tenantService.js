@@ -1,5 +1,4 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = require('../config/prisma');
 const auditService = require('./auditService');
 
 class TenantService {
@@ -16,8 +15,17 @@ class TenantService {
     const viewerRole = (userOptions.role || '').toLowerCase();
     const userId = userOptions.userId || userOptions.id;
     const isFullAdmin = ['super_admin', 'superadmin', 'owner'].includes(viewerRole);
+    const isRoomOwner = ['room_owner', 'investor'].includes(viewerRole);
 
-    if (buildingId) {
+    if (isRoomOwner && userId) {
+      andConditions.push({
+        OR: [
+          { rooms: { some: { ownerId: userId, ...(buildingId && { buildingId }) } } },
+          { leaseContracts: { some: { room: { ownerId: userId }, ...(buildingId && { buildingId }) } } },
+          { roomResidents: { some: { room: { ownerId: userId }, status: 'ACTIVE' } } }
+        ]
+      });
+    } else if (buildingId) {
       if (!isFullAdmin && userId) {
         const perm = await prisma.userBuildingPermission.findUnique({
           where: { userId_buildingId: { userId, buildingId } }
@@ -97,15 +105,28 @@ class TenantService {
    */
   async getTenantProfile(tenantId, userOptions = {}) {
     const { buildingId } = userOptions;
+    const viewerRole = (userOptions.role || '').toLowerCase();
+    const userId = userOptions.userId || userOptions.id;
+    const isRoomOwner = ['room_owner', 'investor'].includes(viewerRole);
 
     // Build filter for relations if buildingId is passed
-    const leaseWhere = buildingId ? { buildingId } : {};
-    const maintenanceWhere = buildingId ? { buildingId } : {};
+    const leaseWhere = {
+      ...(buildingId && { buildingId }),
+      ...(isRoomOwner && userId && { room: { ownerId: userId } })
+    };
+    const maintenanceWhere = {
+      ...(buildingId && { buildingId }),
+      ...(isRoomOwner && userId && { room: { ownerId: userId } })
+    };
+    const invoiceWhere = {
+      ...(isRoomOwner && userId && { room: { ownerId: userId } })
+    };
 
     const tenant = await prisma.tenant.findUnique({
       where: { id: tenantId },
       include: {
         rooms: {
+          where: isRoomOwner && userId ? { ownerId: userId } : {},
           include: {
             building: true
           }
@@ -124,6 +145,7 @@ class TenantService {
           }
         },
         invoices: {
+          where: invoiceWhere,
           orderBy: { createdAt: 'desc' },
           include: {
             room: {
@@ -152,8 +174,17 @@ class TenantService {
       return null;
     }
 
+    // หากเป็น ROOM_OWNER แต่ผู้เช่ารายนี้ไม่มีห้อง/สัญญา/ประวัติที่ผูกกับห้องของตนเองเลย ให้ปฏิเสธการเข้าถึง
+    if (isRoomOwner && userId && tenant.rooms.length === 0 && tenant.leaseContracts.length === 0) {
+      const isResidentInRoom = await prisma.roomResident.findFirst({
+        where: { tenantId, room: { ownerId: userId }, status: 'ACTIVE' }
+      });
+      if (!isResidentInRoom) {
+        return null;
+      }
+    }
+
     // RBAC Sanitization: หากบทบาทผู้ขอข้อมูลไม่อยู่ในกลุ่ม OWNER / MANAGER / Admin จะลบ internalNotes ออก
-    const viewerRole = (userOptions.role || '').toLowerCase();
     const canViewNotes = ['owner', 'manager', 'super_admin', 'superadmin', 'admin'].includes(viewerRole);
 
     if (!canViewNotes) {
@@ -260,6 +291,29 @@ class TenantService {
           data: {
             status: 'occupied',
             tenantId: tenant.id
+          }
+        });
+
+        // บันทึก/อัปเดตสถานะผู้เช่าหลักใน RoomResident
+        await tx.roomResident.upsert({
+          where: {
+            roomId_tenantId: {
+              roomId: room.id,
+              tenantId: tenant.id
+            }
+          },
+          create: {
+            roomId: room.id,
+            tenantId: tenant.id,
+            role: 'PRIMARY',
+            isPayer: true,
+            status: 'ACTIVE'
+          },
+          update: {
+            role: 'PRIMARY',
+            isPayer: true,
+            status: 'ACTIVE',
+            leftAt: null
           }
         });
 
@@ -433,6 +487,124 @@ class TenantService {
     }
 
     return updated;
+  }
+
+  /**
+   * ดึงรายชื่อผู้อยู่อาศัยทั้งหมดในห้องพัก (Room Residents)
+   */
+  async getRoomResidents(roomId) {
+    return await prisma.roomResident.findMany({
+      where: { roomId, status: 'ACTIVE' },
+      include: {
+        tenant: true
+      },
+      orderBy: [
+        { role: 'asc' }, // PRIMARY first
+        { joinedAt: 'asc' }
+      ]
+    });
+  }
+
+  /**
+   * เพิ่มผู้อยู่อาศัยร่วมในห้องพัก (Add Co-Resident)
+   */
+  async addResidentToRoom(roomId, payload, user = {}) {
+    const { firstName, lastName, phone, idCard, role = 'CO_RESIDENT', isPayer = false } = payload;
+    if (!firstName || !lastName || !phone) {
+      const error = new Error('กรุณาระบุชื่อ นามสกุล และเบอร์โทรศัพท์ของผู้อยู่อาศัย');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const room = await prisma.room.findUnique({ where: { id: roomId } });
+    if (!room) {
+      const error = new Error('ไม่พบข้อมูลห้องพัก');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    return await prisma.$transaction(async (tx) => {
+      // 1. ค้นหาหรือสร้างผู้เช่าใหม่
+      let tenant = await tx.tenant.findFirst({
+        where: { phone: String(phone).trim() }
+      });
+
+      if (!tenant) {
+        tenant = await tx.tenant.create({
+          data: {
+            firstName: firstName.trim(),
+            lastName: lastName.trim(),
+            phone: String(phone).trim(),
+            idCard: idCard ? String(idCard).trim() : null
+          }
+        });
+      }
+
+      // 2. บันทึกความสัมพันธ์ใน RoomResident
+      const resident = await tx.roomResident.upsert({
+        where: {
+          roomId_tenantId: {
+            roomId,
+            tenantId: tenant.id
+          }
+        },
+        create: {
+          roomId,
+          tenantId: tenant.id,
+          role,
+          isPayer,
+          status: 'ACTIVE'
+        },
+        update: {
+          role,
+          isPayer,
+          status: 'ACTIVE',
+          leftAt: null
+        },
+        include: {
+          tenant: true
+        }
+      });
+
+      return resident;
+    });
+  }
+
+  /**
+   * ลบ/นำผู้อยู่อาศัยออกจากห้องพัก (Remove Resident)
+   */
+  async removeResidentFromRoom(roomId, tenantId, user = {}) {
+    const resident = await prisma.roomResident.findUnique({
+      where: {
+        roomId_tenantId: {
+          roomId,
+          tenantId
+        }
+      }
+    });
+
+    if (!resident) {
+      const error = new Error('ไม่พบข้อมูลผู้อยู่อาศัยรายนี้ในห้อง');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    // อัปเดตสถานะเป็น MOVED_OUT และลงวันที่ออก
+    return await prisma.roomResident.update({
+      where: {
+        roomId_tenantId: {
+          roomId,
+          tenantId
+        }
+      },
+      data: {
+        status: 'MOVED_OUT',
+        leftAt: new Date()
+      },
+      include: {
+        tenant: true
+      }
+    });
   }
 }
 

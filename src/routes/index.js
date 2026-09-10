@@ -3,7 +3,6 @@ const router = express.Router();
 const authenticateJWT = require('../middlewares/authMiddleware');
 
 const authRoutes = require('./authRoutes');
-const apiRoutes = require('./apiRoutes');
 const roomRoutes = require('./roomRoutes');
 const meterRoutes = require('./meterRoutes');
 const invoiceRoutes = require('./invoiceRoutes');
@@ -44,10 +43,10 @@ router.get('/api/features', (req, res, next) => featureRoutes.handle(req, res, n
 router.use('/api/v1/features', featureRoutes);
 
 // Protected RESTful Modules (Plural & Kebab-case API Endpoints)
-router.use('/api', apiRoutes);
 router.use('/api/v1/buildings', authenticateJWT, buildingRoutes);
 router.use('/api/admin/buildings', authenticateJWT, buildingRoutes);
 router.use('/api/v1/rooms', authenticateJWT, roomRoutes);
+router.use('/api/admin/rooms', authenticateJWT, roomRoutes);
 router.use('/api/v1/meter-records', authenticateJWT, meterRoutes);
 router.use('/api/v1/invoices', authenticateJWT, invoiceRoutes);
 router.use('/api/admin/invoices', authenticateJWT, invoiceRoutes);

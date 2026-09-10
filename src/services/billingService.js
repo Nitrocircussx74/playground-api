@@ -1,5 +1,4 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = require('../config/prisma');
 
 // Rate Constants (No Magic Numbers)
 const WATER_MINIMUM_UNITS = 5;

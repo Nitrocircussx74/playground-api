@@ -1,7 +1,5 @@
-const { PrismaClient } = require('@prisma/client');
 const crypto = require('crypto');
-
-const prisma = new PrismaClient();
+const prisma = require('../config/prisma');
 
 function verifyPassword(password, storedPasswordHash) {
   if (!storedPasswordHash || !storedPasswordHash.includes(':')) return false;
@@ -11,10 +9,6 @@ function verifyPassword(password, storedPasswordHash) {
 }
 
 class UserService {
-  async findByEmail(email) {
-    return await prisma.user.findUnique({ where: { email } });
-  }
-
   async findById(id) {
     return await prisma.user.findUnique({
       where: { id },
