@@ -334,11 +334,20 @@ class AuthController {
         } catch {}
       }
 
-      if (!lineUserId && req.body?.lineUserId) {
-        lineUserId = req.body.lineUserId;
+      // ⚠️ ห้ามเชื่อ lineUserId ที่ Client ส่งมาเองตรงๆ ใน body โดยไม่ผ่านการ Verify กับ LINE Platform
+      // (จุดนี้เคยเป็นช่องโหว่ Account Takeover: ใครก็ส่ง lineUserId ของคนอื่นมาแล้วตั้ง/รีเซ็ต PIN แทนได้เลย)
+
+      // ต้องมี Identity ที่เชื่อถือได้อย่างน้อยหนึ่งทาง (LINE ID Token ที่ Verify แล้ว หรือ Session JWT ที่ login อยู่แล้ว)
+      // ก่อนอนุญาตให้ค้นหา Tenant ด้วยเบอร์โทรศัพท์เพียงอย่างเดียวแล้วเขียนทับ PIN — ไม่งั้นแค่รู้เบอร์โทรก็ Takeover บัญชีได้
+      const tenantId = req.tenantId || req.user?.tenantId || req.user?.id;
+      if (!lineUserId && !tenantId) {
+        return res.status(401).json({
+          success: false,
+          code: 'LINE_LOGIN_REQUIRED',
+          message: 'กรุณาเข้าสู่ระบบผ่าน LINE ก่อนตั้งค่าหรือรีเซ็ต PIN'
+        });
       }
 
-      const tenantId = req.tenantId || req.user?.tenantId || req.user?.id;
       let tenant = null;
 
       if (tenantId) {
@@ -384,6 +393,16 @@ class AuthController {
         return res.status(404).json({
           success: false,
           message: 'ไม่พบข้อมูลลูกบ้านสำหรับตั้งค่าหรือรีเซ็ต PIN'
+        });
+      }
+
+      // ป้องกัน Account Takeover: ถ้าบัญชีนี้ตั้ง PIN และผูก LINE ไว้แล้ว ห้ามให้ LINE คนอื่น
+      // (ที่แค่รู้เบอร์โทรของเจ้าของบัญชี) มารีเซ็ต PIN แทนเจ้าของตัวจริงได้
+      if (tenant.pinHash && tenant.lineUserId && lineUserId && tenant.lineUserId !== lineUserId) {
+        return res.status(403).json({
+          success: false,
+          code: 'ACCOUNT_ALREADY_LINKED',
+          message: 'บัญชีนี้ผูกกับ LINE อื่นและตั้งรหัส PIN ไว้แล้ว กรุณาติดต่อนิติบุคคลประจำหอพักเพื่อรีเซ็ต PIN'
         });
       }
 
@@ -729,6 +748,8 @@ class AuthController {
         });
       }
 
+      // ต้องมี LINE ID Token ที่ Verify ผ่านจริงเสมอ (Endpoint นี้มีไว้ "ผูก LINE ใหม่" ให้บัญชีเดิม
+      // ถ้าไม่รู้ lineUserId ที่แท้จริงก็ไม่มีอะไรให้ผูก และห้ามเชื่อ lineUserId ที่ Client ส่งมาเองใน body เด็ดขาด)
       let lineUserId = null;
       let profileFromToken = null;
       if (rawToken) {
@@ -739,11 +760,19 @@ class AuthController {
             displayName: verified?.name || null,
             pictureUrl: verified?.picture || null
           };
-        } catch {}
+        } catch {
+          return res.status(401).json({
+            success: false,
+            message: 'LINE ID Token ไม่ถูกต้องหรือหมดอายุแล้ว'
+          });
+        }
       }
 
-      if (!lineUserId && req.body?.lineUserId) {
-        lineUserId = req.body.lineUserId;
+      if (!lineUserId) {
+        return res.status(400).json({
+          success: false,
+          message: 'กรุณาเข้าสู่ระบบผ่าน LINE ก่อนผูกบัญชี'
+        });
       }
 
       const cleanDigits = String(rawPhone).replace(/\D/g, '');
@@ -772,26 +801,27 @@ class AuthController {
         });
       }
 
-      // หากบัญชีนี้ยังไม่เคยตั้งรหัส PIN มาก่อน ให้ถือว่า PIN ที่ส่งมาในการยืนยันตัวตนครั้งนี้
-      // คือรหัส PIN ใหม่ที่ลูกบ้านต้องการตั้ง แล้วบันทึกทันที แทนที่จะบล็อกและให้ไปเรียก setup-pin แยกต่างหาก
-      let pinJustCreated = false;
+      // ⚠️ เดิม endpoint นี้ถ้ายังไม่เคยตั้ง PIN จะเอา PIN ที่ Client ส่งมาตั้งเป็นของจริงทันที
+      // (แค่รู้เบอร์โทรก็ Takeover บัญชีได้ ไม่ต้องเดา PIN เลย) — ให้บล็อกเหมือน pinLogin แทน
+      // แล้วให้ไปตั้ง PIN ผ่านช่องทางที่มีการยืนยันตัวตนจริง (Invite Code) ที่ setup-pin/register-invite
       if (!tenant.pinHash) {
-        const newPinHash = await bcrypt.hash(String(pin), 10);
-        await prisma.tenant.update({
-          where: { id: tenant.id },
-          data: { pinHash: newPinHash }
+        return res.status(400).json({
+          success: false,
+          code: 'PIN_NOT_SET',
+          message: 'คุณยังไม่ได้ตั้งค่ารหัส PIN 6 หลัก กรุณาตั้งค่า PIN ผ่านรหัสเชิญจากแอดมินก่อนใช้งาน'
         });
-        tenant.pinHash = newPinHash;
-        pinJustCreated = true;
-      } else {
-        const isMatch = await bcrypt.compare(String(pin), tenant.pinHash);
-        if (!isMatch) {
-          return res.status(401).json({
-            success: false,
-            code: 'INVALID_PIN',
-            message: 'รหัส PIN 6 หลักไม่ถูกต้อง'
-          });
-        }
+      }
+
+      // หมายเหตุ: ไม่เช็คว่า tenant.lineUserId ตรงกับ lineUserId ปัจจุบันหรือไม่ เพราะ Endpoint นี้มีไว้รองรับ
+      // Centralized User Identity (1 ผู้เช่า : หลาย LINE OA ID ต่อตึก) โดยตั้งใจ — ตัวพิสูจน์ตัวตนจริงคือ PIN ด้านล่าง
+      const pinJustCreated = false;
+      const isMatch = await bcrypt.compare(String(pin), tenant.pinHash);
+      if (!isMatch) {
+        return res.status(401).json({
+          success: false,
+          code: 'INVALID_PIN',
+          message: 'รหัส PIN 6 หลักไม่ถูกต้อง'
+        });
       }
 
       // Upsert UserLineAccount สำหรับตึกนี้

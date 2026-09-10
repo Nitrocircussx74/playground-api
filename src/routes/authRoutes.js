@@ -1,10 +1,26 @@
 const express = require('express');
 const router = express.Router();
 const passport = require('passport');
+const rateLimit = require('express-rate-limit');
 const authController = require('../controllers/authController');
 const authenticateJWT = require('../middlewares/authMiddleware');
 const validate = require('../middlewares/validateMiddleware');
 const { loginSchema } = require('../validators/authValidator');
+const config = require('../config/env');
+
+// จำกัดจำนวนครั้งการลอง PIN ต่อ IP เพื่อป้องกัน Brute Force รหัส PIN 6 หลัก (เหมือน linkAccountLimiter ใน liffRoutes.js)
+// ปิดใน Test Env เพื่อไม่ให้ Integration Test ที่ยิงซ้ำๆ ติด 429 เอง
+const pinAttemptLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 8,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => config.nodeEnv === 'test',
+  message: {
+    success: false,
+    message: 'พยายามเข้าสู่ระบบบ่อยเกินไป กรุณาลองใหม่อีกครั้งใน 15 นาที'
+  }
+});
 
 /**
  * @route   GET /auth/google
@@ -41,35 +57,35 @@ router.post('/login/line', authController.loginLine);
  * @route   POST /auth/liff/pin-login (and alias /auth/pin-login)
  * @desc    เข้าสู่ระบบด้วย LIFF Seamless PIN 6 หลัก
  */
-router.post('/liff/pin-login', authController.pinLogin);
-router.post('/pin-login', authController.pinLogin);
+router.post('/liff/pin-login', pinAttemptLimiter, authController.pinLogin);
+router.post('/pin-login', pinAttemptLimiter, authController.pinLogin);
 
 /**
  * @route   POST /auth/liff/setup-pin (and alias /auth/setup-pin)
  * @desc    ตั้งค่าหรือเปลี่ยนรหัส PIN 6 หลักสำหรับลูกบ้าน
  */
-router.post('/liff/setup-pin', authController.setupPin);
-router.post('/setup-pin', authController.setupPin);
-router.post('/liff/reset-pin', authController.setupPin);
-router.post('/reset-pin', authController.setupPin);
+router.post('/liff/setup-pin', pinAttemptLimiter, authController.setupPin);
+router.post('/setup-pin', pinAttemptLimiter, authController.setupPin);
+router.post('/liff/reset-pin', pinAttemptLimiter, authController.setupPin);
+router.post('/reset-pin', pinAttemptLimiter, authController.setupPin);
 
 /**
  * @route   POST /auth/liff/verify-phone-status
  * @desc    ตรวจสอบเบอร์โทรศัพท์ว่ามีในระบบแล้วหรือไม่สำหรับ Multi-Building Centralized Identity
  */
-router.post('/liff/verify-phone-status', authController.verifyPhoneStatus);
+router.post('/liff/verify-phone-status', pinAttemptLimiter, authController.verifyPhoneStatus);
 
 /**
  * @route   POST /auth/liff/link-and-login
  * @desc    ยืนยัน PIN เพื่อผูก LINE OA ใหม่กับ User เดิม และเข้าสู่ระบบทันที
  */
-router.post('/liff/link-and-login', authController.linkAndLogin);
+router.post('/liff/link-and-login', pinAttemptLimiter, authController.linkAndLogin);
 
 /**
  * @route   POST /auth/login/local
  * @desc    เข้าสู่ระบบด้วยเบอร์โทรศัพท์และรหัสผ่าน (Local Password Authentication)
  */
-router.post('/login/local', authController.loginLocal);
+router.post('/login/local', pinAttemptLimiter, authController.loginLocal);
 
 /**
  * @route   POST /auth/setup-password

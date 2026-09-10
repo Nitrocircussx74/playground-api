@@ -359,6 +359,16 @@ class LiffController {
         });
       }
 
+      // ป้องกัน Account Takeover: ถ้าบัญชีนี้ผูกกับ LINE คนอื่นไว้แล้ว ห้ามให้ LINE ปัจจุบัน
+      // (ที่แค่รู้เบอร์โทรของเจ้าของบัญชี) มาแย่งผูกทับแทนเจ้าของตัวจริง
+      if (tenant.lineUserId && lineUserId && tenant.lineUserId !== lineUserId) {
+        return res.status(403).json({
+          success: false,
+          code: 'ACCOUNT_ALREADY_LINKED',
+          message: 'บัญชีนี้ผูกกับ LINE อื่นไว้แล้ว กรุณาติดต่อนิติบุคคลประจำหอพักเพื่อยกเลิกการผูกก่อน'
+        });
+      }
+
       // ตรวจสอบว่า lineUserId นี้เคยผูกกับผู้เช่ารายอื่นหรือไม่
       if (lineUserId) {
         const existingTenant = await billingService.prisma.tenant.findUnique({
