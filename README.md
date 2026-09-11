@@ -52,11 +52,26 @@
   - บันทึกรับพัสดุ พร้อมถ่ายรูปกล่องพัสดุ บันทึกขนส่ง และเลข Tracking
   - ส่ง LINE Flex Message แจ้งเตือนลูกบ้านทันทีเมื่อพัสดุมาถึง
   - สแกน QR Code ยืนยันการรับพัสดุ (Claimed)
+- **📅 ระบบจองพื้นที่ส่วนกลาง (Facility Booking)** — สำหรับคอนโด/หมู่บ้าน:
+  - จัดการรายชื่อพื้นที่ส่วนกลางที่เปิดให้จอง (สระว่ายน้ำ, ฟิตเนส, ห้องประชุม ฯลฯ)
+  - ดูรายการจองทั้งหมด ยกเลิกการจองของลูกบ้านได้
+  - เช็คช่วงเวลาจองซ้อนทับอัตโนมัติ (Interval Overlap Guard)
+- **🚗 ระบบยานพาหนะ & ผู้มาเยือน (Vehicle & Visitor Management)** — สำหรับคอนโด/หมู่บ้าน:
+  - อนุมัติ/ปฏิเสธทะเบียนรถที่ลูกบ้านลงทะเบียน พร้อมแจ้งเตือน LINE อัตโนมัติ
+  - ดูรายชื่อแขก/ผู้มาเยือนที่ลูกบ้านแจ้งล่วงหน้าทั้งตึก
+- **🗳️ ระบบโหวต & แบบสำรวจความเห็น (Voting/Polls)** — สำหรับคอนโด/หมู่บ้าน:
+  - สร้างโพลถามความเห็นลูกบ้าน (1 คน 1 โหวต) พร้อมบรอดแคสต์แจ้งเตือน LINE
+  - ดูผลโหวตแบบเรียลไทม์ ปิดรับโหวตได้เมื่อต้องการ
 - **🛡️ ระบบความปลอดภัย & สิทธิ์การใช้งาน (RBAC & Security)**:
   - Dual Token System: Access Token (15m in-memory) + Refresh Token (7d in HTTP-Only Cookie)
   - Token Rotation & DB Session Revocation
   - Role-Based Access Control (Super Admin, Owner, Manager, Admin)
   - Audit Log Viewer บันทึกประวัติการแก้ไขข้อมูลสำคัญ
+  - Rate Limiter เฉพาะทาง (8 ครั้ง/15 นาทีต่อ IP) ป้องกัน Brute Force บนทุก Endpoint ที่เกี่ยวกับ PIN/การผูกบัญชี LINE
+  - Room Owner: กำหนดเจ้าของห้อง (`User`) แยกจากผู้เช่า พร้อม Scoped Access Control
+  - Notification Log: บันทึกประวัติการส่งแจ้งเตือน LINE/SMS ทุกช่องทางพร้อมสถานะสำเร็จ/ล้มเหลว
+  - Smart Entry Gateway Router (`checkTenantStatus`) ผูก LINE ID เข้ากับ Tenant อัตโนมัติเฉพาะบัญชีที่ยังไม่เคยผูก LINE มาก่อนเท่านั้น กัน Account Takeover ผ่านการเดา Tenant ID
+  - Business Logic ทั้งหมดอยู่ใน Service Layer (`src/services/`) — Controller ไม่แตะ Prisma โดยตรง (Layered Architecture ตาม `CLAUDE.md`)
 
 ---
 
@@ -64,7 +79,7 @@
 - **🔑 ลงทะเบียน & ผูกบัญชี (Onboarding & Linking)**:
   - ลงทะเบียนเข้าพักใหม่ผ่าน Invite Code 6 หลัก
   - ผูกบัญชี LINE กับห้องพักเดิมด้วยเบอร์โทรศัพท์ 4 ตัวท้าย
-  - ยืนยันตัวตนข้ามอาคาร (Multi-Building) ด้วยเบอร์โทร + PIN — หากบัญชีนั้นยังไม่เคยตั้งรหัส PIN มาก่อน ระบบจะให้ตั้ง PIN ใหม่พร้อมกันในขั้นตอนยืนยันตัวตนนี้ได้เลยโดยไม่ต้องแยกไปตั้งภายหลัง
+  - ยืนยันตัวตนข้ามอาคาร (Multi-Building Centralized Identity) ด้วยเบอร์โทร + PIN ที่ตั้งไว้แล้ว — ต้องผ่าน LINE ID Token ที่ Verify จริงเสมอ และห้ามอาคารที่ยังไม่เคยตั้ง PIN สร้าง PIN ใหม่ผ่านช่องทางนี้ (ต้องตั้งผ่าน Invite Code เท่านั้น กัน Account Takeover ด้วยเบอร์โทรอย่างเดียว)
   - Auto-Sync โปรไฟล์ LINE (ชื่อ, รูปภาพ, Status)
   - ส่ง Welcome Flex Message ต้อนรับเมื่อผูกบัญชีสำเร็จ
 - **🆔 บัตรประจำตัวลูกบ้านดิจิทัล (Digital Tenant Hub)**:
@@ -83,6 +98,12 @@
   - ตรวจสอบรายการพัสดุที่รอรับ พร้อมรูปถ่ายกล่องพัสดุและเลข Tracking
 - **📢 ข่าวสาร & ประกาศ (LIFF Announcements)**:
   - อ่านข่าวสารและประกาศย้อนหลังของหอพัก
+- **📅 จองพื้นที่ส่วนกลาง (LIFF Facility Booking)** — สำหรับคอนโด/หมู่บ้าน:
+  - เลือกพื้นที่ส่วนกลางและช่วงเวลาที่ต้องการจองด้วยตนเอง ยกเลิกได้
+- **🚗 ยานพาหนะ/ผู้มาเยือน (LIFF Vehicle & Visitor)** — สำหรับคอนโด/หมู่บ้าน:
+  - ลงทะเบียนทะเบียนรถ (รออนุมัติ) และแจ้งแขกมาเยือนล่วงหน้า
+- **🗳️ โหวต & แบบสำรวจ (LIFF Voting/Polls)** — สำหรับคอนโด/หมู่บ้าน:
+  - ร่วมโหวตโพลที่นิติบุคคล/ผู้ดูแลสร้างขึ้น
 
 ---
 
@@ -104,7 +125,7 @@ playground-api/
 │   ├── validators/           # Zod Validation Schemas
 │   ├── app.js
 │   └── server.js
-├── tests/                    # API Integration Tests (44/44 Passed)
+├── tests/                    # API Integration & Unit Tests (224/224 Passed)
 └── package.json
 ```
 

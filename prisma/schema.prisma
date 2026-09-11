@@ -37,9 +37,9 @@ model User {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   buildingPermissions UserBuildingPermission[]
-  auditLogs AuditLog[]
-  ownedRooms Room[] @relation("RoomOwner")
-  notificationLogs NotificationLog[]
+  auditLogs           AuditLog[]
+  ownedRooms          Room[]                   @relation("RoomOwner")
+  notificationLogs    NotificationLog[]
 
   @@map("users")
 }
@@ -51,11 +51,11 @@ model UserBuildingPermission {
 
   /// รหัสอ้างอิงผู้ใช้งาน (Foreign Key)
   userId String @map("user_id") @db.Uuid
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   /// รหัสอ้างอิงตึก (Foreign Key)
-  buildingId String @map("building_id") @db.Uuid
-  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  buildingId String   @map("building_id") @db.Uuid
+  building   Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
 
   /// วันเวลาที่สร้างเรคคอร์ด
   createdAt DateTime @default(now()) @map("created_at")
@@ -87,17 +87,22 @@ model Building {
   /// วันเวลาที่อัปเดตเรคคอร์ดล่าสุด
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  rooms Room[]
-  setting BuildingSetting?
-  userPermissions UserBuildingPermission[]
-  featureToggles FeatureToggle[]
-  announcements Announcement[]
-  parcels Parcel[]
-  leaseContracts LeaseContract[]
+  rooms               Room[]
+  setting             BuildingSetting?
+  userPermissions     UserBuildingPermission[]
+  featureToggles      FeatureToggle[]
+  announcements       Announcement[]
+  parcels             Parcel[]
+  leaseContracts      LeaseContract[]
   maintenanceRequests MaintenanceRequest[]
-  lineAccounts UserLineAccount[]
-  issueTickets IssueTicket[]
-  notificationLogs NotificationLog[]
+  lineAccounts        UserLineAccount[]
+  issueTickets        IssueTicket[]
+  notificationLogs    NotificationLog[]
+  facilities          Facility[]
+  facilityBookings    FacilityBooking[]
+  vehicles            Vehicle[]
+  visitors            Visitor[]
+  polls               Poll[]
 
   @@map("buildings")
 }
@@ -108,64 +113,64 @@ model BuildingSetting {
   id String @id @default(uuid()) @db.Uuid
 
   /// รหัสอ้างอิงตึก (Foreign Key, 1-to-1 Relation)
-  buildingId String @unique @map("building_id") @db.Uuid
-  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  buildingId String   @unique @map("building_id") @db.Uuid
+  building   Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
 
   // 1. General Settings (ข้อมูลทั่วไป)
   /// เบอร์โทรศัพท์ติดต่อประจำตึก
-  phone String?
+  phone         String?
   /// รูปภาพหน้าปกตึก (URL/Path)
   coverImageUrl String? @map("cover_image_url")
 
   // 2. Payment Settings (การชำระเงิน)
   /// รูปภาพ PromptPay QR Code ชำระเงินประจำตึก (URL/Path)
-  paymentQrUrl String? @map("payment_qr_url")
+  paymentQrUrl    String? @map("payment_qr_url")
   /// หมายเลข PromptPay ประจำตึก (เช่น เบอร์โทรศัพท์ หรือ เลขประจำตัวผู้เสียภาษี)
-  promptpayNum String? @map("promptpay_num")
+  promptpayNum    String? @map("promptpay_num")
   /// ชื่อธนาคารผู้รับชำระเงิน
-  bankName String? @map("bank_name")
+  bankName        String? @map("bank_name")
   /// ชื่อบัญชีธนาคาร
   bankAccountName String? @map("bank_account_name")
   /// เลขที่บัญชีธนาคาร
-  bankAccountNo String? @map("bank_account_no")
+  bankAccountNo   String? @map("bank_account_no")
   /// หมายเหตุเพิ่มเติมสำหรับการชำระเงิน
-  paymentNote String? @map("payment_note") @db.Text
+  paymentNote     String? @map("payment_note") @db.Text
 
   // 3. Billing & Utility Rates (ค่าบริการและรอบบิล)
   /// อัตราค่าน้ำต่อหน่วย (Decimal)
-  waterRate Decimal @default(18.00) @map("water_rate") @db.Decimal(10, 2)
+  waterRate       Decimal @default(18.00) @map("water_rate") @db.Decimal(10, 2)
   /// อัตราค่าไฟต่อหน่วย (Decimal)
-  electricRate Decimal @default(7.00) @map("electric_rate") @db.Decimal(10, 2)
+  electricRate    Decimal @default(7.00) @map("electric_rate") @db.Decimal(10, 2)
   /// วันกำหนดชำระเงินของทุกเดือน (เช่น วันที่ 5)
-  dueDateDay Int @default(5) @map("due_date_day")
+  dueDateDay      Int     @default(5) @map("due_date_day")
   /// ค่าปรับชำระเกินกำหนด (Decimal) - Deprecated Alias
-  latePenalty Decimal @default(50.00) @map("late_penalty") @db.Decimal(10, 2)
+  latePenalty     Decimal @default(50.00) @map("late_penalty") @db.Decimal(10, 2)
   /// ประเภทนโยบายค่าปรับ (NONE = ไม่มี, DAILY = รายวัน, FLAT = เหมาจ่ายครั้งเดียว)
-  lateFeeType String @default("NONE") @map("late_fee_type")
+  lateFeeType     String  @default("NONE") @map("late_fee_type")
   /// จำนวนเงินค่าปรับ (Decimal)
-  lateFeeAmount Decimal @default(0.00) @map("late_fee_amount") @db.Decimal(10, 2)
+  lateFeeAmount   Decimal @default(0.00) @map("late_fee_amount") @db.Decimal(10, 2)
   /// ระยะเวลาผ่อนผันก่อนเริ่มคิดค่าปรับ (จำนวนวัน)
-  gracePeriodDays Int @default(0) @map("grace_period_days")
+  gracePeriodDays Int     @default(0) @map("grace_period_days")
 
   // 4. Rules & Contract Terms (กฎระเบียบและข้อตกลง)
   /// จำนวนเดือนเงินประกัน/มัดจำ (Int)
-  depositMonths Int @default(2) @map("deposit_months")
+  depositMonths      Int     @default(2) @map("deposit_months")
   /// จำนวนเดือนเงินค่าเช่าล่วงหน้า (Int)
-  advanceMonths Int @default(1) @map("advance_months")
+  advanceMonths      Int     @default(1) @map("advance_months")
   /// กฎระเบียบและข้อตกลงสัญญาเช่า (Text)
   termsAndConditions String? @map("terms_and_conditions") @db.Text
 
   // 5. LINE Official Account & LIFF Settings (การตั้งค่า LINE OA ประจำตึก)
   /// LINE OA Basic ID หรือ Handle (เช่น @horhub_a)
-  lineOaId String? @map("line_oa_id")
+  lineOaId               String? @map("line_oa_id")
   /// LINE Messaging API Channel Access Token ประจำตึก (Long-lived Token)
   lineChannelAccessToken String? @map("line_channel_access_token") @db.Text
   /// LINE Channel Secret ประจำตึก
-  lineChannelSecret String? @map("line_channel_secret")
+  lineChannelSecret      String? @map("line_channel_secret")
   /// LINE LIFF ID ประจำตึก (เช่น 200xxxxxxx-xxxxxxx)
-  lineLiffId String? @map("line_liff_id")
+  lineLiffId             String? @map("line_liff_id")
   /// ลิงก์กดเพิ่มเพื่อน LINE OA (Add Friend URL เช่น https://line.me/R/ti/p/@horhub)
-  lineAddFriendUrl String? @map("line_add_friend_url")
+  lineAddFriendUrl       String? @map("line_add_friend_url")
 
   /// วันเวลาที่สร้างเรคคอร์ด
   createdAt DateTime @default(now()) @map("created_at")
@@ -181,8 +186,8 @@ model Room {
   id String @id @default(uuid()) @db.Uuid
 
   /// รหัสอ้างอิงตึก (Foreign Key ไปยังตาราง Building)
-  buildingId String? @map("building_id") @db.Uuid
-  building Building? @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  buildingId String?   @map("building_id") @db.Uuid
+  building   Building? @relation(fields: [buildingId], references: [id], onDelete: Cascade)
 
   /// หมายเลขห้องพัก (เช่น A101, B202)
   roomNumber String @map("room_number")
@@ -216,11 +221,11 @@ model Room {
 
   /// รหัสผู้เช่าปัจจุบัน (Foreign Key ไปยังตาราง Tenant)
   tenantId String? @map("tenant_id") @db.Uuid
-  tenant Tenant? @relation(fields: [tenantId], references: [id])
+  tenant   Tenant? @relation(fields: [tenantId], references: [id])
 
   /// รหัสเจ้าของห้อง (Foreign Key ไปยังตาราง User)
   ownerId String? @map("owner_id") @db.Uuid
-  owner User? @relation("RoomOwner", fields: [ownerId], references: [id])
+  owner   User?   @relation("RoomOwner", fields: [ownerId], references: [id])
 
   /// วันเวลาที่สร้างเรคคอร์ด
   createdAt DateTime @default(now()) @map("created_at")
@@ -229,15 +234,15 @@ model Room {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   // ความสัมพันธ์ (Relations)
-  residents RoomResident[]
-  meterRecords MeterRecord[]
-  invoices Invoice[]
+  residents           RoomResident[]
+  meterRecords        MeterRecord[]
+  invoices            Invoice[]
   maintenanceRequests MaintenanceRequest[]
-  roomInvites RoomInvite[]
-  parcels Parcel[]
-  leaseContracts LeaseContract[]
-  issueTickets IssueTicket[]
-  notificationLogs NotificationLog[]
+  roomInvites         RoomInvite[]
+  parcels             Parcel[]
+  leaseContracts      LeaseContract[]
+  issueTickets        IssueTicket[]
+  notificationLogs    NotificationLog[]
 
   // แมปชื่อตารางในฐานข้อมูลเป็น snake_case และพหูพจน์
   @@unique([roomNumber, buildingId])
@@ -298,16 +303,20 @@ model Tenant {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   // ความสัมพันธ์ (Relations)
-  rooms Room[]
-  roomResidents RoomResident[]
-  invoices Invoice[]
-  parcels Parcel[]
-  leaseContracts LeaseContract[]
+  rooms               Room[]
+  roomResidents       RoomResident[]
+  invoices            Invoice[]
+  parcels             Parcel[]
+  leaseContracts      LeaseContract[]
   maintenanceRequests MaintenanceRequest[]
-  lineAccounts UserLineAccount[]
-  announcementReads AnnouncementRead[]
-  issueTickets IssueTicket[]
-  notificationLogs NotificationLog[]
+  lineAccounts        UserLineAccount[]
+  announcementReads   AnnouncementRead[]
+  issueTickets        IssueTicket[]
+  notificationLogs    NotificationLog[]
+  facilityBookings    FacilityBooking[]
+  vehicles            Vehicle[]
+  visitors            Visitor[]
+  pollVotes           PollVote[]
 
   @@map("tenants")
 }
@@ -319,11 +328,11 @@ model UserLineAccount {
 
   /// รหัสอ้างอิงผู้เช่า/ลูกบ้านกลาง (Foreign Key)
   tenantId String @map("tenant_id") @db.Uuid
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   /// รหัสอ้างอิงตึก/โครงการ (Foreign Key)
-  buildingId String @map("building_id") @db.Uuid
-  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  buildingId String   @map("building_id") @db.Uuid
+  building   Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
 
   /// LINE User ID (Provider-specific User ID ประจำ LINE OA ตึกนั้น)
   lineUserId String @map("line_user_id")
@@ -356,7 +365,7 @@ model MeterRecord {
 
   /// รหัสอ้างอิงห้องพัก (Foreign Key)
   roomId String @map("room_id") @db.Uuid
-  room Room @relation(fields: [roomId], references: [id])
+  room   Room   @relation(fields: [roomId], references: [id])
 
   /// ประเภทของมิเตอร์ (water = น้ำ, electric = ไฟ)
   meterType String @map("meter_type")
@@ -395,11 +404,11 @@ model Invoice {
 
   /// รหัสอ้างอิงห้องพัก (Foreign Key)
   roomId String @map("room_id") @db.Uuid
-  room Room @relation(fields: [roomId], references: [id])
+  room   Room   @relation(fields: [roomId], references: [id])
 
   /// รหัสอ้างอิงผู้เช่า ณ วันที่ออกบิล (Foreign Key)
   tenantId String @map("tenant_id") @db.Uuid
-  tenant Tenant @relation(fields: [tenantId], references: [id])
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
 
   /// รอบบิล (รูปแบบเดือน/ปี เช่น 08-2026)
   billingCycle String @map("billing_cycle")
@@ -469,15 +478,15 @@ model MaintenanceRequest {
 
   /// รหัสอ้างอิงห้องพัก (Foreign Key)
   roomId String @map("room_id") @db.Uuid
-  room Room @relation(fields: [roomId], references: [id])
+  room   Room   @relation(fields: [roomId], references: [id])
 
   /// รหัสอ้างอิงผู้เช่า (Foreign Key)
   tenantId String? @map("tenant_id") @db.Uuid
-  tenant Tenant? @relation(fields: [tenantId], references: [id])
+  tenant   Tenant? @relation(fields: [tenantId], references: [id])
 
   /// รหัสอ้างอิงอาคาร/ตึก (Foreign Key)
-  buildingId String? @map("building_id") @db.Uuid
-  building Building? @relation(fields: [buildingId], references: [id])
+  buildingId String?   @map("building_id") @db.Uuid
+  building   Building? @relation(fields: [buildingId], references: [id])
 
   /// หัวข้อเรื่องที่แจ้งซ่อม
   title String
@@ -499,8 +508,8 @@ model MaintenanceRequest {
   payer String @default("MANAGEMENT") @map("payer")
 
   /// รหัสอ้างอิงใบแจ้งหนี้ที่ค่าซ่อมนี้ถูกรวมเข้าไปแล้ว (กันไม่ให้ถูกเรียกเก็บซ้ำสองครั้งเมื่อออกบิลรอบถัดๆ ไป)
-  billedInvoiceId String? @map("billed_invoice_id") @db.Uuid
-  billedInvoice Invoice? @relation(fields: [billedInvoiceId], references: [id])
+  billedInvoiceId String?  @map("billed_invoice_id") @db.Uuid
+  billedInvoice   Invoice? @relation(fields: [billedInvoiceId], references: [id])
 
   /// ข้อความตอบกลับ/บันทึกจากแอดมินหรือช่างซ่อม
   adminNote String? @map("admin_note") @db.Text
@@ -527,7 +536,7 @@ model RoomInvite {
 
   /// รหัสอ้างอิงห้องพัก (Foreign Key)
   roomId String @map("room_id") @db.Uuid
-  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
 
   /// รหัสเชิญลงทะเบียน (เช่น X9K2P4, INV101)
   code String @unique
@@ -560,11 +569,11 @@ model RoomResident {
 
   /// รหัสอ้างอิงห้องพัก (Foreign Key)
   roomId String @map("room_id") @db.Uuid
-  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
 
   /// รหัสอ้างอิงผู้เช่า/ผู้อยู่อาศัย (Foreign Key)
   tenantId String @map("tenant_id") @db.Uuid
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   /// บทบาทในห้องพัก (PRIMARY = ผู้เช่าหลัก/คู่สัญญา, CO_RESIDENT = ผู้อยู่อาศัยร่วม/รูมเมท)
   role String @default("CO_RESIDENT") @map("role")
@@ -615,8 +624,8 @@ model Announcement {
   createdBy String? @map("created_by")
 
   /// รหัสอ้างอิงตึก (Foreign Key, Optional)
-  buildingId String? @map("building_id") @db.Uuid
-  building Building? @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  buildingId String?   @map("building_id") @db.Uuid
+  building   Building? @relation(fields: [buildingId], references: [id], onDelete: Cascade)
 
   /// วันเวลาที่สร้างเรคคอร์ด
   createdAt DateTime @default(now()) @map("created_at")
@@ -636,12 +645,12 @@ model AnnouncementRead {
   id String @id @default(uuid()) @db.Uuid
 
   /// รหัสอ้างอิงประกาศ (FK)
-  announcementId String @map("announcement_id") @db.Uuid
-  announcement Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  announcementId String       @map("announcement_id") @db.Uuid
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
 
   /// รหัสอ้างอิงผู้เช่า (FK)
   tenantId String @map("tenant_id") @db.Uuid
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   /// วันเวลาที่เปิดอ่าน
   readAt DateTime @default(now()) @map("read_at")
@@ -665,8 +674,8 @@ model FeatureToggle {
   description String?
 
   /// รหัสอ้างอิงตึก (Foreign Key, Optional)
-  buildingId String? @map("building_id") @db.Uuid
-  building Building? @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  buildingId String?   @map("building_id") @db.Uuid
+  building   Building? @relation(fields: [buildingId], references: [id], onDelete: Cascade)
 
   /// วันเวลาที่สร้างเรคคอร์ด
   createdAt DateTime @default(now()) @map("created_at")
@@ -678,6 +687,214 @@ model FeatureToggle {
   @@map("feature_toggles")
 }
 
+/// ตารางข้อมูลพื้นที่ส่วนกลางที่จองได้ (เช่น สระว่ายน้ำ, ฟิตเนส, ห้องประชุม)
+model Facility {
+  /// รหัสอ้างอิงพื้นที่ส่วนกลาง (PK, UUID)
+  id String @id @default(uuid()) @db.Uuid
+
+  /// รหัสอ้างอิงตึก (Foreign Key)
+  buildingId String   @map("building_id") @db.Uuid
+  building   Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  /// ชื่อพื้นที่ส่วนกลาง (เช่น สระว่ายน้ำ, ห้องฟิตเนส)
+  name String
+
+  /// รายละเอียดเพิ่มเติม
+  description String? @db.Text
+
+  /// รูปภาพประกอบ (URL/Path)
+  imageUrl String? @map("image_url")
+
+  /// เปิดให้จองอยู่หรือไม่ (false = ปิดปรับปรุง/ยกเลิกใช้งาน)
+  isActive Boolean @default(true) @map("is_active")
+
+  /// วันเวลาที่สร้างเรคคอร์ด
+  createdAt DateTime @default(now()) @map("created_at")
+
+  /// วันเวลาที่อัปเดตเรคคอร์ดล่าสุด
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // ความสัมพันธ์ (Relations)
+  bookings FacilityBooking[]
+
+  @@map("facilities")
+}
+
+/// ตารางการจองพื้นที่ส่วนกลางของลูกบ้าน
+model FacilityBooking {
+  /// รหัสอ้างอิงการจอง (PK, UUID)
+  id String @id @default(uuid()) @db.Uuid
+
+  /// รหัสอ้างอิงพื้นที่ส่วนกลาง (Foreign Key)
+  facilityId String   @map("facility_id") @db.Uuid
+  facility   Facility @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+
+  /// รหัสอ้างอิงตึก (Foreign Key)
+  buildingId String   @map("building_id") @db.Uuid
+  building   Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  /// รหัสอ้างอิงผู้เช่าที่จอง (Foreign Key)
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// เวลาเริ่มจอง
+  startTime DateTime @map("start_time")
+
+  /// เวลาสิ้นสุดการจอง
+  endTime DateTime @map("end_time")
+
+  /// สถานะการจอง (CONFIRMED = ยืนยันแล้ว, CANCELLED = ยกเลิก)
+  status String @default("CONFIRMED")
+
+  /// หมายเหตุเพิ่มเติม
+  notes String? @db.Text
+
+  /// วันเวลาที่สร้างเรคคอร์ด
+  createdAt DateTime @default(now()) @map("created_at")
+
+  /// วันเวลาที่อัปเดตเรคคอร์ดล่าสุด
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([facilityId, startTime, endTime])
+  @@map("facility_bookings")
+}
+
+/// ตารางทะเบียนยานพาหนะของลูกบ้าน (สำหรับสิทธิ์ที่จอดรถ)
+model Vehicle {
+  /// รหัสอ้างอิงยานพาหนะ (PK, UUID)
+  id String @id @default(uuid()) @db.Uuid
+
+  /// รหัสอ้างอิงตึก (Foreign Key)
+  buildingId String   @map("building_id") @db.Uuid
+  building   Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  /// รหัสอ้างอิงผู้เช่าเจ้าของรถ (Foreign Key)
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// เลขทะเบียนรถ
+  licensePlate String @map("license_plate")
+
+  /// ประเภทยานพาหนะ (car = รถยนต์, motorcycle = มอเตอร์ไซค์)
+  vehicleType String @map("vehicle_type")
+
+  /// ยี่ห้อรถ
+  brand String?
+
+  /// สีรถ
+  color String?
+
+  /// รูปภาพรถ/ป้ายทะเบียน (URL/Path)
+  photoUrl String? @map("photo_url")
+
+  /// สถานะการอนุมัติ (PENDING = รออนุมัติ, APPROVED = อนุมัติแล้ว, REJECTED = ปฏิเสธ)
+  status String @default("PENDING")
+
+  /// วันเวลาที่สร้างเรคคอร์ด
+  createdAt DateTime @default(now()) @map("created_at")
+
+  /// วันเวลาที่อัปเดตเรคคอร์ดล่าสุด
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("vehicles")
+}
+
+/// ตารางบันทึกแขก/ผู้มาเยือนที่ลูกบ้านแจ้งล่วงหน้า
+model Visitor {
+  /// รหัสอ้างอิงเรคคอร์ดแขก (PK, UUID)
+  id String @id @default(uuid()) @db.Uuid
+
+  /// รหัสอ้างอิงตึก (Foreign Key)
+  buildingId String   @map("building_id") @db.Uuid
+  building   Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  /// รหัสอ้างอิงผู้เช่าที่แจ้งแขก (Foreign Key)
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// ชื่อแขก/ผู้มาเยือน
+  visitorName String @map("visitor_name")
+
+  /// เลขทะเบียนรถของแขก (ถ้ามี)
+  licensePlate String? @map("license_plate")
+
+  /// วันที่คาดว่าแขกจะมาถึง
+  expectedDate DateTime @map("expected_date")
+
+  /// หมายเหตุเพิ่มเติม
+  note String? @db.Text
+
+  /// สถานะ (EXPECTED = รอมาตามนัด, CANCELLED = ยกเลิก)
+  status String @default("EXPECTED")
+
+  /// วันเวลาที่สร้างเรคคอร์ด
+  createdAt DateTime @default(now()) @map("created_at")
+
+  /// วันเวลาที่อัปเดตเรคคอร์ดล่าสุด
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("visitors")
+}
+
+/// ตารางโพลสำรวจความเห็น/มติของลูกบ้าน (1 คน 1 โหวต)
+model Poll {
+  /// รหัสอ้างอิงโพล (PK, UUID)
+  id String @id @default(uuid()) @db.Uuid
+
+  /// รหัสอ้างอิงตึก (Foreign Key, Optional — null = ทุกตึก)
+  buildingId String?   @map("building_id") @db.Uuid
+  building   Building? @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  /// คำถามของโพล
+  question String
+
+  /// ตัวเลือก (string[] เช่น ["เห็นด้วย", "ไม่เห็นด้วย"]) — ห้ามแก้ไขหลังมีคนโหวตแล้ว เพราะ optionIndex อ้างอิงตามตำแหน่ง
+  options Json
+
+  /// วันเวลาเปิดให้โหวต (Optional)
+  opensAt DateTime? @map("opens_at")
+
+  /// วันเวลาปิดโหวต (Optional)
+  closesAt DateTime? @map("closes_at")
+
+  /// สถานะเปิด-ปิดโพล (false = ปิดรับโหวตแล้ว)
+  isActive Boolean @default(true) @map("is_active")
+
+  /// วันเวลาที่สร้างเรคคอร์ด
+  createdAt DateTime @default(now()) @map("created_at")
+
+  /// วันเวลาที่อัปเดตเรคคอร์ดล่าสุด
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // ความสัมพันธ์ (Relations)
+  votes PollVote[]
+
+  @@map("polls")
+}
+
+/// ตารางบันทึกการโหวตของลูกบ้าน (1 ผู้เช่า โหวตได้ 1 ครั้งต่อโพล)
+model PollVote {
+  /// รหัสอ้างอิงการโหวต (PK, UUID)
+  id String @id @default(uuid()) @db.Uuid
+
+  /// รหัสอ้างอิงโพล (Foreign Key)
+  pollId String @map("poll_id") @db.Uuid
+  poll   Poll   @relation(fields: [pollId], references: [id], onDelete: Cascade)
+
+  /// รหัสอ้างอิงผู้เช่าที่โหวต (Foreign Key)
+  tenantId String @map("tenant_id") @db.Uuid
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  /// ตำแหน่งตัวเลือกที่เลือก (index อ้างอิงตาม Poll.options)
+  optionIndex Int @map("option_index")
+
+  /// วันเวลาที่โหวต
+  votedAt DateTime @default(now()) @map("voted_at")
+
+  @@unique([pollId, tenantId])
+  @@map("poll_votes")
+}
+
 /// ตารางบันทึกประวัติการใช้งานระบบ (Audit Logs / Activity History)
 model AuditLog {
   /// รหัสอ้างอิง Audit Log (PK, UUID)
@@ -685,7 +902,7 @@ model AuditLog {
 
   /// รหัสแอดมินผู้ดำเนินการ (Foreign Key)
   adminId String @map("admin_id") @db.Uuid
-  admin User @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  admin   User   @relation(fields: [adminId], references: [id], onDelete: Cascade)
 
   /// ประเภทการกระทำ (CREATE, UPDATE, DELETE)
   action String
@@ -715,15 +932,15 @@ model Parcel {
 
   /// รหัสอ้างอิงห้องพัก (Foreign Key)
   roomId String @map("room_id") @db.Uuid
-  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
 
   /// รหัสอ้างอิงตึก (Foreign Key)
-  buildingId String @map("building_id") @db.Uuid
-  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  buildingId String   @map("building_id") @db.Uuid
+  building   Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
 
   /// รหัสอ้างอิงผู้เช่า (Foreign Key, Optional)
   tenantId String? @map("tenant_id") @db.Uuid
-  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
 
   /// หมายเลขพัสดุ / Tracking Number
   trackingNumber String? @map("tracking_number")
@@ -759,15 +976,15 @@ model LeaseContract {
 
   /// รหัสอ้างอิงห้องพัก (Foreign Key)
   roomId String @map("room_id") @db.Uuid
-  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
 
   /// รหัสอ้างอิงผู้เช่า (Foreign Key)
   tenantId String @map("tenant_id") @db.Uuid
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   /// รหัสอ้างอิงตึก (Foreign Key, Optional)
-  buildingId String? @map("building_id") @db.Uuid
-  building Building? @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  buildingId String?   @map("building_id") @db.Uuid
+  building   Building? @relation(fields: [buildingId], references: [id], onDelete: Cascade)
 
   /// วันที่เริ่มสัญญา / เข้าอยู่จริง
   startDate DateTime @map("start_date")
@@ -807,8 +1024,8 @@ model MoveOutRecord {
   id String @id @default(uuid()) @db.Uuid
 
   /// รหัสสัญญาเช่า (Foreign Key, Unique 1-to-1)
-  leaseId String @unique @map("lease_id") @db.Uuid
-  lease LeaseContract @relation(fields: [leaseId], references: [id], onDelete: Cascade)
+  leaseId String        @unique @map("lease_id") @db.Uuid
+  lease   LeaseContract @relation(fields: [leaseId], references: [id], onDelete: Cascade)
 
   /// วันที่ย้ายออกจริง
   moveOutDate DateTime @map("move_out_date")
@@ -854,9 +1071,9 @@ model MoveOutRecord {
 
 /// ตารางเก็บ Refresh Token สำหรับการยืนยันตัวตน
 model RefreshToken {
-  id Int @id @default(autoincrement())
-  userId String @map("user_id") @db.Uuid
-  token String @unique
+  id        Int      @id @default(autoincrement())
+  userId    String   @map("user_id") @db.Uuid
+  token     String   @unique
   expiresAt DateTime @map("expires_at")
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -870,15 +1087,15 @@ model IssueTicket {
 
   /// รหัสผู้ใช้งาน/ผู้เช่า (Foreign Key)
   userId String @map("user_id") @db.Uuid
-  user Tenant @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user   Tenant @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   /// รหัสห้องพัก (Foreign Key)
   roomId String @map("room_id") @db.Uuid
-  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
 
   /// รหัสตึก/อาคาร (Foreign Key)
-  buildingId String @map("building_id") @db.Uuid
-  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  buildingId String   @map("building_id") @db.Uuid
+  building   Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
 
   /// หมวดหมู่การแจ้งเหตุ (REPAIR = แจ้งซ่อม, COMPLAINT = ร้องเรียน, OTHER = เรื่องอื่นๆ)
   category String @default("REPAIR")
@@ -909,23 +1126,23 @@ model NotificationLog {
   /// รหัสอ้างอิงบันทึกประวัติ (PK, UUID)
   id String @id @default(uuid()) @db.Uuid
 
-  /// รหัสตึก/อาคาร (Foreign Key)
-  buildingId String @map("building_id") @db.Uuid
-  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  /// รหัสตึก/อาคาร (Nullable — เหตุการณ์ระดับ Auth เช่น AUTH_VERIFY/PROFILE_FETCH อาจยังไม่รู้ตึกตอนที่เกิด Error)
+  buildingId String?   @map("building_id") @db.Uuid
+  building   Building? @relation(fields: [buildingId], references: [id], onDelete: SetNull)
 
   /// รหัสผู้ใช้งาน (Nullable)
   userId String? @map("user_id") @db.Uuid
-  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   /// รหัสผู้เช่า (Nullable)
   tenantId String? @map("tenant_id") @db.Uuid
-  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
 
   /// รหัสห้องพัก (Nullable)
   roomId String? @map("room_id") @db.Uuid
-  room Room? @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  room   Room?   @relation(fields: [roomId], references: [id], onDelete: SetNull)
 
-  /// ประเภทการแจ้งเตือน (INVOICE = บิลค่าเช่า, PARCEL = พัสดุ, MAINTENANCE = แจ้งซ่อม, GENERAL = ทั่วไป)
+  /// ประเภทการแจ้งเตือน (INVOICE = บิลค่าเช่า, PARCEL = พัสดุ, MAINTENANCE = แจ้งซ่อม, GENERAL = ทั่วไป, AUTH_VERIFY = ตรวจสอบ LINE ID Token, PROFILE_FETCH = ดึงโปรไฟล์ LINE, FACILITY_BOOKING = จองพื้นที่ส่วนกลาง, VEHICLE = อนุมัติทะเบียนรถ, POLL = แจ้งเตือนโพลใหม่)
   notificationType String @default("GENERAL") @map("notification_type")
 
   /// ข้อความตัวอย่าง/หัวข้อสั้นๆ ของการแจ้งเตือน

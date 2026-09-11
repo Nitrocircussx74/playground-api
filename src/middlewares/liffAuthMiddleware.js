@@ -1,4 +1,5 @@
 const config = require('../config/env');
+const lineService = require('../services/lineService');
 
 /**
  * ตรวจสอบ LINE ID Token กับ LINE Platform จริง (Server-Side Token Verification)
@@ -19,13 +20,36 @@ async function verifyLineIdToken(idToken) {
   params.append('id_token', idToken);
   params.append('client_id', config.line.liffChannelId || '');
 
-  const response = await fetch('https://api.line.me/oauth2/v2.1/verify', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: params
-  });
+  let response;
+  try {
+    response = await fetch('https://api.line.me/oauth2/v2.1/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params
+    });
+  } catch (networkError) {
+    // เข้าถึง LINE Platform ไม่ได้เลย (Network/DNS/Timeout) — เป็นปัญหาฝั่ง Infra ไม่ใช่ Token ผิด
+    // ต้อง Log ไว้แยกจากกรณี Token หมดอายุปกติ เพื่อ Query ดู LINE API Outage ได้จากที่เดียว
+    await lineService.logDelivery({
+      notificationType: 'AUTH_VERIFY',
+      messagePreview: 'เชื่อมต่อ LINE ID Token Verify API ไม่ได้ (Network Error)',
+      status: 'FAILED',
+      errorReason: networkError.message
+    });
+    throw new Error('ไม่สามารถเชื่อมต่อ LINE Platform เพื่อยืนยันตัวตนได้ กรุณาลองใหม่อีกครั้ง');
+  }
 
   if (!response.ok) {
+    // เฉพาะ 5xx/429 เท่านั้นที่ถือเป็นปัญหาฝั่ง LINE API (Outage/Rate Limit) ที่ควร Log ไว้เพื่อสังเกตการณ์
+    // ส่วน Token หมดอายุ/ไม่ถูกต้องปกติ (4xx ทั่วไป) เป็นพฤติกรรมผู้ใช้งานปกติ ไม่ log กันรก Log
+    if (response.status >= 500 || response.status === 429) {
+      await lineService.logDelivery({
+        notificationType: 'AUTH_VERIFY',
+        messagePreview: `LINE ID Token Verify API ตอบกลับผิดปกติ (HTTP ${response.status})`,
+        status: 'FAILED',
+        errorReason: `HTTP ${response.status} ${response.statusText || ''}`.trim()
+      });
+    }
     throw new Error('LINE ID Token ไม่ถูกต้องหรือหมดอายุแล้ว');
   }
 
@@ -83,9 +107,12 @@ const liffAuthMiddleware = async (req, res, next) => {
   // 2. ตรวจสอบ LINE ID Token
   try {
     if (!idToken) {
-      // ในโหมด Development หรือ Mock Mode อนุญาตให้ใช้ x-line-user-id / query lineUserId หรือ dev fallback
-      // เพื่อให้สามารถเปิดทดสอบ UI ใน Standalone Browser หรือ Dev Tunnel ได้โดยไม่ติด 401
-      if (config.nodeEnv === 'development' || config.line.mockMode) {
+      // ⚠️ เจตนาใช้แค่ nodeEnv==='development' เท่านั้น (ไม่รวม mockMode) — จุดนี้คือ "ไม่มี Token
+      // แนบมาเลย ปล่อยผ่านแบบ Anonymous" ซึ่งเป็นความสะดวกตอน Dev เท่านั้น คนละเรื่องกับ mockMode ที่มีไว้
+      // "ข้ามการยิง Network ไปตรวจ Token ที่ส่งมาจริง" (อยู่ใน verifyLineIdToken() ด้านบนแล้ว) — เดิมรวมกัน
+      // ทำให้เปิด LINE_AUTH_MOCK_MODE=true ไว้ทดสอบผ่าน Browser แล้ว Integration Test (NODE_ENV=test)
+      // ที่ตั้งใจยิง Request แบบไม่มี Token เพื่อเช็คว่าต้องโดน 401 กลับพังไปด้วย เพราะเข้าเงื่อนไขนี้ผ่าน
+      if (config.nodeEnv === 'development') {
         const devLineUserId = req.headers['x-line-user-id'] || req.query?.lineUserId || req.body?.lineUserId;
         if (devLineUserId) {
           req.lineUserId = devLineUserId;
@@ -120,8 +147,10 @@ const liffAuthMiddleware = async (req, res, next) => {
     next();
   } catch (error) {
     console.warn(`⚠️ LINE ID Token verification failed: ${error.message}`);
-    // ใน dev mode หาก verify กับ LINE ล้มเหลว (เช่น รันออฟไลน์ หรือใช้ mock token) ให้ fallback ได้
-    if (config.nodeEnv === 'development' || config.line.mockMode) {
+    // ⚠️ เจตนาใช้แค่ nodeEnv==='development' เท่านั้น (เหตุผลเดียวกับจุดข้างบน) — ถ้า mockMode เปิดอยู่จริง
+    // verifyLineIdToken() ด้านบนจะ Short-circuit สำเร็จไปแล้วตั้งแต่ต้น ไม่มีทางโยน Error มาเข้า catch นี้
+    // ได้เลย จุดนี้จึงเป็น Fallback สำหรับ "verify ล้มเหลวจริง" ซึ่งควรอิง nodeEnv อย่างเดียว
+    if (config.nodeEnv === 'development') {
       let fallbackUserId = req.headers['x-line-user-id'] || req.query?.lineUserId;
       if (!fallbackUserId && idToken && typeof idToken === 'string' && idToken.startsWith('eyJ')) {
         try {

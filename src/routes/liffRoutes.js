@@ -13,6 +13,9 @@ const maintenanceController = require('../controllers/maintenanceController');
 const invoiceController = require('../controllers/invoiceController');
 const parcelController = require('../controllers/parcelController');
 const issueController = require('../controllers/issueController');
+const facilityController = require('../controllers/facilityController');
+const vehicleController = require('../controllers/vehicleController');
+const pollController = require('../controllers/pollController');
 const config = require('../config/env');
 
 // Public Invite Code Verification (อนุญาตให้ตรวจสอบความถูกต้องของรหัสเชิญได้ทั้งในและนอก LINE App)
@@ -107,5 +110,24 @@ router.post('/issues', upload.any(), verifyImageMagicBytes, (req, res, next) => 
 
 // LIFF Parcels
 router.get('/parcels', (req, res, next) => parcelController.getParcelsForLiff(req, res, next));
+
+// LIFF Facility Booking (จองพื้นที่ส่วนกลาง)
+router.get('/facilities', (req, res, next) => facilityController.getFacilitiesForLiff(req, res, next));
+router.get('/facilities/:id/bookings', (req, res, next) => facilityController.getFacilityBookingsForLiff(req, res, next));
+router.post('/facility-bookings', (req, res, next) => facilityController.createBookingForLiff(req, res, next));
+router.get('/facility-bookings/mine', (req, res, next) => facilityController.getMyBookings(req, res, next));
+router.delete('/facility-bookings/:id', (req, res, next) => facilityController.cancelMyBooking(req, res, next));
+
+// LIFF Vehicle & Visitor Management (ทะเบียนรถ/แขก)
+router.post('/vehicles', (req, res, next) => vehicleController.registerVehicle(req, res, next));
+router.get('/vehicles/mine', (req, res, next) => vehicleController.getMyVehicles(req, res, next));
+router.delete('/vehicles/:id', (req, res, next) => vehicleController.deleteMyVehicle(req, res, next));
+router.post('/visitors', (req, res, next) => vehicleController.createVisitor(req, res, next));
+router.get('/visitors/mine', (req, res, next) => vehicleController.getMyVisitors(req, res, next));
+router.delete('/visitors/:id', (req, res, next) => vehicleController.deleteMyVisitor(req, res, next));
+
+// LIFF Voting/Polls (มติ/โหวต)
+router.get('/polls', (req, res, next) => pollController.getPollsForLiff(req, res, next));
+router.post('/polls/:id/vote', (req, res, next) => pollController.voteOnPoll(req, res, next));
 
 module.exports = router;

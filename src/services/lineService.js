@@ -1025,6 +1025,10 @@ class LineService {
       return false;
     }
 
+    // เดิมไม่ได้ประกาศตัวแปรนี้ไว้เลยแต่ไปอ้างใช้ด้านล่าง (ReferenceError) ทำให้นอก NODE_ENV=test/mock
+    // การส่งแจ้งเตือนพัสดุจริงพังเงียบ ๆ ทุกครั้ง (โดน catch ด้านล่างจับไว้) ต้องประกาศแบบเดียวกับฟังก์ชัน push อื่น ๆ
+    const isMockUserId = !/^U[0-9a-fA-F]{32}$/.test(lineUserId);
+
     try {
       const liffId = getLiffId();
       const parcelLiffUrl = `https://liff.line.me/${liffId}/parcels`;
@@ -1161,6 +1165,262 @@ class LineService {
   }
 
   /**
+   * ส่ง LINE Push Notification แจ้งเตือนเมื่อลูกบ้านจองพื้นที่ส่วนกลางสำเร็จ
+   */
+  async pushFacilityBookingNotification(lineUserId, booking) {
+    if (!lineUserId) {
+      console.warn('⚠️ ลูกบ้านไม่มี lineUserId ข้ามการส่ง LINE Facility Booking Notification');
+      return false;
+    }
+
+    const isMockUserId = !/^U[0-9a-fA-F]{32}$/.test(lineUserId);
+    const facilityName = booking.facility?.name || 'พื้นที่ส่วนกลาง';
+    const startStr = new Date(booking.startTime).toLocaleString('th-TH');
+    const endStr = new Date(booking.endTime).toLocaleTimeString('th-TH');
+    const messagePreview = `จองสำเร็จ: ${facilityName} (${startStr} - ${endStr})`;
+
+    try {
+      const flexMessage = {
+        type: 'flex',
+        altText: `✅ จองพื้นที่ส่วนกลางสำเร็จ! (${facilityName})`,
+        contents: {
+          type: 'bubble',
+          header: {
+            type: 'box',
+            layout: 'vertical',
+            contents: [
+              { type: 'text', text: '✅ จองพื้นที่ส่วนกลางสำเร็จ!', weight: 'bold', size: 'lg', color: '#ffffff' },
+              { type: 'text', text: facilityName, size: 'xs', color: '#dbeafe', margin: 'xs' }
+            ],
+            backgroundColor: '#2563eb',
+            paddingAll: '15px'
+          },
+          body: {
+            type: 'box',
+            layout: 'vertical',
+            contents: [
+              {
+                type: 'box',
+                layout: 'baseline',
+                margin: 'md',
+                contents: [
+                  { type: 'text', text: '🕒 ช่วงเวลา:', size: 'xs', color: '#64748b', flex: 2 },
+                  { type: 'text', text: `${startStr} - ${endStr}`, size: 'xs', color: '#0f172a', weight: 'bold', flex: 4, wrap: true }
+                ]
+              }
+            ]
+          }
+        }
+      };
+
+      if (process.env.NODE_ENV === 'test' || (isMockUserId && process.env.NODE_ENV !== 'production')) {
+        console.log(`ℹ️ [TEST/DEV MOCK] จำลองการส่ง LINE Facility Booking Notification หา (${lineUserId}) สำเร็จ`);
+        await this.logDelivery({
+          buildingId: booking.buildingId,
+          tenantId: booking.tenantId || null,
+          notificationType: 'FACILITY_BOOKING',
+          messagePreview,
+          status: 'SUCCESS'
+        });
+        return true;
+      }
+
+      await client.pushMessage({ to: lineUserId, messages: [flexMessage] });
+      console.log(`✅ ส่ง LINE Facility Booking Notification หา ${lineUserId} สำเร็จ`);
+      await this.logDelivery({
+        buildingId: booking.buildingId,
+        tenantId: booking.tenantId || null,
+        notificationType: 'FACILITY_BOOKING',
+        messagePreview,
+        status: 'SUCCESS'
+      });
+      return true;
+    } catch (error) {
+      console.warn(`⚠️ ไม่สามารถส่ง LINE Facility Booking Notification ได้: ${error.message}`);
+      await this.logDelivery({
+        buildingId: booking.buildingId,
+        tenantId: booking.tenantId || null,
+        notificationType: 'FACILITY_BOOKING',
+        messagePreview,
+        status: 'FAILED',
+        errorReason: error.message
+      });
+      return false;
+    }
+  }
+
+  /**
+   * ส่ง LINE Push Notification แจ้งผลอนุมัติ/ปฏิเสธทะเบียนยานพาหนะ
+   */
+  async pushVehicleApprovalNotification(lineUserId, vehicle) {
+    if (!lineUserId) {
+      console.warn('⚠️ ลูกบ้านไม่มี lineUserId ข้ามการส่ง LINE Vehicle Notification');
+      return false;
+    }
+
+    const isMockUserId = !/^U[0-9a-fA-F]{32}$/.test(lineUserId);
+    const isApproved = vehicle.status === 'APPROVED';
+    const messagePreview = `${isApproved ? 'อนุมัติ' : 'ปฏิเสธ'}ทะเบียนรถ: ${vehicle.licensePlate}`;
+
+    try {
+      const flexMessage = {
+        type: 'flex',
+        altText: `${isApproved ? '✅ อนุมัติ' : '❌ ปฏิเสธ'}ทะเบียนรถ ${vehicle.licensePlate}`,
+        contents: {
+          type: 'bubble',
+          header: {
+            type: 'box',
+            layout: 'vertical',
+            contents: [
+              {
+                type: 'text',
+                text: isApproved ? '✅ อนุมัติทะเบียนรถแล้ว' : '❌ ทะเบียนรถถูกปฏิเสธ',
+                weight: 'bold',
+                size: 'lg',
+                color: '#ffffff'
+              }
+            ],
+            backgroundColor: isApproved ? '#16a34a' : '#dc2626',
+            paddingAll: '15px'
+          },
+          body: {
+            type: 'box',
+            layout: 'vertical',
+            contents: [
+              {
+                type: 'box',
+                layout: 'baseline',
+                margin: 'md',
+                contents: [
+                  { type: 'text', text: '🚗 ทะเบียน:', size: 'xs', color: '#64748b', flex: 2 },
+                  { type: 'text', text: vehicle.licensePlate, size: 'xs', color: '#0f172a', weight: 'bold', flex: 4 }
+                ]
+              }
+            ]
+          }
+        }
+      };
+
+      if (process.env.NODE_ENV === 'test' || (isMockUserId && process.env.NODE_ENV !== 'production')) {
+        console.log(`ℹ️ [TEST/DEV MOCK] จำลองการส่ง LINE Vehicle Notification หา (${lineUserId}) สำเร็จ`);
+        await this.logDelivery({
+          buildingId: vehicle.buildingId,
+          tenantId: vehicle.tenantId || null,
+          notificationType: 'VEHICLE',
+          messagePreview,
+          status: 'SUCCESS'
+        });
+        return true;
+      }
+
+      await client.pushMessage({ to: lineUserId, messages: [flexMessage] });
+      console.log(`✅ ส่ง LINE Vehicle Notification หา ${lineUserId} สำเร็จ`);
+      await this.logDelivery({
+        buildingId: vehicle.buildingId,
+        tenantId: vehicle.tenantId || null,
+        notificationType: 'VEHICLE',
+        messagePreview,
+        status: 'SUCCESS'
+      });
+      return true;
+    } catch (error) {
+      console.warn(`⚠️ ไม่สามารถส่ง LINE Vehicle Notification ได้: ${error.message}`);
+      await this.logDelivery({
+        buildingId: vehicle.buildingId,
+        tenantId: vehicle.tenantId || null,
+        notificationType: 'VEHICLE',
+        messagePreview,
+        status: 'FAILED',
+        errorReason: error.message
+      });
+      return false;
+    }
+  }
+
+  /**
+   * ส่ง LINE Push Notification แจ้งเตือนเมื่อมีโพลใหม่ให้โหวต
+   */
+  async pushPollNotification(lineUserId, poll) {
+    if (!lineUserId) {
+      return false;
+    }
+
+    const isMockUserId = !/^U[0-9a-fA-F]{32}$/.test(lineUserId);
+    const messagePreview = `โพลใหม่: ${poll.question}`;
+
+    try {
+      const liffId = getLiffId();
+      const pollLiffUrl = `https://liff.line.me/${liffId}/polls`;
+
+      const flexMessage = {
+        type: 'flex',
+        altText: `🗳️ มีโพลใหม่ให้โหวต: ${poll.question}`,
+        contents: {
+          type: 'bubble',
+          header: {
+            type: 'box',
+            layout: 'vertical',
+            contents: [
+              { type: 'text', text: '🗳️ มีโพลใหม่ให้โหวต!', weight: 'bold', size: 'lg', color: '#ffffff' }
+            ],
+            backgroundColor: '#7c3aed',
+            paddingAll: '15px'
+          },
+          body: {
+            type: 'box',
+            layout: 'vertical',
+            contents: [
+              { type: 'text', text: poll.question, size: 'sm', color: '#0f172a', wrap: true }
+            ]
+          },
+          footer: {
+            type: 'box',
+            layout: 'vertical',
+            contents: [
+              {
+                type: 'button',
+                action: { type: 'uri', label: '📲 เปิดแอปเพื่อโหวต', uri: pollLiffUrl },
+                style: 'primary',
+                color: '#7c3aed'
+              }
+            ]
+          }
+        }
+      };
+
+      if (process.env.NODE_ENV === 'test' || (isMockUserId && process.env.NODE_ENV !== 'production')) {
+        console.log(`ℹ️ [TEST/DEV MOCK] จำลองการส่ง LINE Poll Notification หา (${lineUserId}) สำเร็จ`);
+        await this.logDelivery({
+          buildingId: poll.buildingId || null,
+          notificationType: 'POLL',
+          messagePreview,
+          status: 'SUCCESS'
+        });
+        return true;
+      }
+
+      await client.pushMessage({ to: lineUserId, messages: [flexMessage] });
+      await this.logDelivery({
+        buildingId: poll.buildingId || null,
+        notificationType: 'POLL',
+        messagePreview,
+        status: 'SUCCESS'
+      });
+      return true;
+    } catch (error) {
+      console.warn(`⚠️ ไม่สามารถส่ง LINE Poll Notification ได้: ${error.message}`);
+      await this.logDelivery({
+        buildingId: poll.buildingId || null,
+        notificationType: 'POLL',
+        messagePreview,
+        status: 'FAILED',
+        errorReason: error.message
+      });
+      return false;
+    }
+  }
+
+  /**
    * ส่ง LINE Flex Message ต้อนรับผู้เช่าเมื่อผูกบัญชีลูกบ้านสำเร็จ
    */
   async sendWelcomeFlexMessage(lineUserId, tenant) {
@@ -1257,6 +1517,12 @@ class LineService {
       };
     } catch (error) {
       console.warn(`⚠️ ไม่สามารถดึง Profile จาก LINE Messaging API ได้ (${lineUserId}): ${error.message}`);
+      await this.logDelivery({
+        notificationType: 'PROFILE_FETCH',
+        messagePreview: `ดึงโปรไฟล์ LINE ไม่สำเร็จ (lineUserId: ${lineUserId})`,
+        status: 'FAILED',
+        errorReason: error.message
+      });
       return null;
     }
   }
@@ -1407,7 +1673,7 @@ class LineService {
    * @param {Object} params
    */
   async logDelivery({
-    buildingId,
+    buildingId = null,
     userId = null,
     tenantId = null,
     roomId = null,
@@ -1416,7 +1682,7 @@ class LineService {
     status = 'SUCCESS',
     errorReason = null
   }) {
-    if (!buildingId) return null;
+    // buildingId เป็น Nullable ได้ (เช่น AUTH_VERIFY/PROFILE_FETCH ที่ยังไม่รู้ตึกตอนเกิด Error)
     try {
       return await prisma.notificationLog.create({
         data: {
