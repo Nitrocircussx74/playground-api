@@ -132,6 +132,27 @@
   - Query ดู LINE API Failure ทั้งหมดได้จากที่เดียว: `notification_logs WHERE notification_type IN ('AUTH_VERIFY','PROFILE_FETCH') AND status='FAILED'`
 - **Test Verification**: รัน `yarn jest --runInBand` ผ่าน 211/211 ทุกครั้งที่แก้ (เพิ่มจาก 206 เดิมด้วย Unit Test ใหม่ 5 เคสคุม Logic การตัดสินใจ Log ของ `verifyLineIdToken`)
 
+### Phase 16 (2026-09-11): ขยาย Scope รองรับคอนโด/หมู่บ้าน (Facility Booking, Vehicle/Visitor, Voting/Polls) + แก้บั๊ก LINE Notification เดิม
+- **บริบท**: ผู้ใช้ขอวางแผนขยาย HorHub จากหอพักอย่างเดียวให้รองรับคอนโด/หมู่บ้านด้วย หลัง Audit เจอว่า `Room.unitType`/`ownerId`/`areaSqm` และ `FeatureToggle` ต่อตึกเอื้อให้ทำแบบ Opt-in Module ใหม่ได้โดยไม่ต้อง Migrate ของเดิมแบบ Breaking Change เลย — วางแผนผ่าน Plan Mode ก่อนแล้วค่อย Implement (อนุมัติแผนแล้วที่ `.claude/plans/mossy-sprouting-lecun.md`)
+- **เพิ่ม 6 Models ใหม่** (`prisma/schema.prisma`, Push ผ่าน `npx prisma db push` แล้ว):
+  - `Facility`/`FacilityBooking`: พื้นที่ส่วนกลางที่จองได้ + การจอง เช็คช่วงเวลาซ้อนทับ Inline ใน Controller ด้วย Interval Overlap Query (`startTime < B.endTime AND endTime > B.startTime`), Index `[facilityId, startTime, endTime]`
+  - `Vehicle`/`Visitor`: แยก 2 Model เพราะ Lifecycle ต่างกัน — ทะเบียนรถถาวรต้องอนุมัติ (`PENDING`/`APPROVED`/`REJECTED`) ส่วนแขกมาเยือนครั้งเดียวไม่ต้องอนุมัติ (`EXPECTED`/`CANCELLED`)
+  - `Poll`/`PollVote`: โหวตแบบ 1 คน 1 เสียง (`@@unique([pollId, tenantId])`), Options เป็น JSON Array ไม่ทำตารางลูก (ไม่มี Requirement ต้องมี Identity แยกต่อ Option)
+- **Backend ใหม่ 3 ชุด** (`facilityController.js`/`vehicleController.js`/`pollController.js` + Routes คู่กัน) — ตามรูปแบบ `parcelController.js` เป๊ะ (Controller เรียก `billingService.prisma` ตรง ไม่มี Service Layer/Zod Validator ตั้งใจให้ตรงกับของจริงในระบบ), LIFF Endpoint เพิ่มเข้า `liffRoutes.js` เดิม (ไม่แยกไฟล์), ทุก Endpoint LIFF Write เช็ค `req.tenantId`/`req.lineUserId` เท่านั้นห้ามรับจาก Body (IDOR Guard ตามแบบ `parcelController.js`)
+- **`src/middlewares/requireFeatureMiddleware.js` (ใหม่)**: จุดแรกที่ทำให้ `FeatureToggle` มีผลบังคับจริงฝั่ง Backend (ของเดิมทุกฟีเจอร์เป็นแค่ Frontend `v-if` ซ่อน UI เฉยๆ) ใช้เฉพาะ Route เขียนของ 3 โมดูลนี้เท่านั้น ไม่แตะ Route เดิม
+- **`src/services/lineService.js`**: เพิ่ม `pushFacilityBookingNotification`/`pushVehicleApprovalNotification`/`pushPollNotification` ตามรูปแบบ `pushParcelNotification` เป๊ะ พร้อม `logDelivery()` เข้า `NotificationLog` (เพิ่ม `FACILITY_BOOKING`/`VEHICLE`/`POLL` ในคอมเมนต์ `notificationType`)
+- **🐛 พบและแก้บั๊กเดิมระหว่างเขียนฟังก์ชัน Push ใหม่**: `pushParcelNotification` อ้างตัวแปร `isMockUserId` โดยไม่เคยประกาศไว้ในฟังก์ชันเลย (ตัวแปรชื่อเดียวกันมีประกาศจริงในฟังก์ชัน Push อื่นเท่านั้น) — นอก `NODE_ENV=test` การอ้างตัวแปรที่ไม่มีจริงจะโยน `ReferenceError` แล้วโดน `catch` ด้านล่างกลืนไปแสดงเป็น "ส่งแจ้งเตือนไม่สำเร็จ" เงียบๆ **ทุกครั้งในโปรดักชัน** — แก้โดยเพิ่ม `const isMockUserId = ...` ให้ตรงกับ Pattern ของฟังก์ชันอื่น
+- **`src/controllers/featureController.js`**: เพิ่ม `ENABLE_FACILITY_BOOKING`, `ENABLE_VOTING` ใน `STANDARD_FEATURE_METADATA` (ส่วน `ENABLE_VEHICLE_MANAGEMENT` มีอยู่แล้วตั้งแต่ก่อนหน้านี้ — Reuse ตัวเดียวคุมทั้ง Vehicle และ Visitor)
+- **Test**: เพิ่ม `tests/integration/poll.test.js`, `facilityBooking.test.js`, `vehicle.test.js` (25 เคสใหม่ รวม IDOR + Feature Toggle Off + Slot Conflict) — ระหว่างเขียน Test เจอ Unique Constraint ชนกันเพราะ Toggle Row ค้างจาก Test รอบก่อนที่ Assertion ล้มเหลวกลางคันแล้ว Cleanup ไม่ทัน (เกิดจากการทดลอง `git stash` ระหว่าง Debug เอง ไม่ใช่บั๊กของโค้ดจริง) แก้ Test ให้ใช้ `upsert` + `try/finally` กันเหตุการณ์แบบนี้ไม่ให้ทำ Test พังต่อในรันครั้งถัดไป
+- **Test Verification**: รัน `yarn jest --runInBand --forceExit` ผ่าน **224/224** ทุก Suite (33 Suites รวม 3 Test File ใหม่)
+- **หมายเหตุ Jest Hang**: พบว่ารันแบบไม่ใส่ `--forceExit` แล้ว Jest ไม่ยอม Exit หลังเทสต์ผ่านหมด (ขึ้น Warning ให้ลอง `--detectOpenHandles`) — เป็นปัญหา Pre-existing ไม่เกี่ยวกับโค้ดที่แก้ (สงสัย Prisma Connection Pool หรือ `express-rate-limit` Timer ค้าง Ref Event Loop) ยังไม่ได้ไล่หาสาเหตุที่แท้จริง บันทึกไว้เป็น Follow-up
+
+### STATUS: 🟢 COMPLETE & VERIFIED (Frontend ส่วนที่เกี่ยวข้องดู `playground-frontend/docs/ACTIVITY_LOG.md` Phase เดียวกัน)
+
+### ⏭️ งานที่เหลือ (Follow-up Items):
+- หาสาเหตุจริงของ Jest Hang (ไม่ Exit เองถ้าไม่ใส่ `--forceExit`) — เดายังไม่ได้ทดสอบว่าเป็น Prisma Client หรือ Rate Limiter Timer
+- Facility Booking ยังไม่มี Workflow อนุมัติ (Auto-`CONFIRMED` เสมอ), Poll ยังไม่รองรับ AGM/Quorum/ถ่วงน้ำหนักตามกรรมสิทธิ์, Visitor ยังไม่มี Check-in/Check-out State Machine — ตัดออกตั้งแต่วางแผนตามคำขอผู้ใช้ (Ponytail/YAGNI) เพิ่มทีหลังเมื่อมี Requirement จริง
+
 ---
 
 ## 📂 สรุปรายการไฟล์ทั้งหมดที่สร้างขึ้น (Created Files Inventory)
