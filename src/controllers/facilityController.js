@@ -252,6 +252,14 @@ class FacilityController {
         await lineService.pushFacilityBookingNotification(tenant.lineUserId, booking);
       }
 
+      // 🔔 แจ้งเตือน In-App ให้แอดมินเห็นคำขอจองใหม่ในกระดิ่ง
+      lineService.logDelivery({
+        buildingId: facility.buildingId,
+        tenantId: tenant.id,
+        notificationType: 'FACILITY_BOOKING_NEW',
+        messagePreview: `ขอจองพื้นที่ใหม่: ${facility.name}`
+      }).catch(() => {});
+
       return res.status(201).json({ success: true, message: `จอง "${facility.name}" เรียบร้อยแล้ว`, data: booking });
     } catch (error) {
       next(error);

@@ -188,6 +188,15 @@ class MaintenanceController {
         }
       });
 
+      // 🔔 บันทึกแจ้งเตือน In-App ให้แอดมินเห็นในกระดิ่ง (ไม่ส่ง LINE เพราะแอดมินไม่ได้ผูก lineUserId)
+      lineService.logDelivery({
+        buildingId,
+        tenantId,
+        roomId: targetRoomId,
+        notificationType: 'MAINTENANCE_NEW',
+        messagePreview: `แจ้งซ่อมใหม่: ${title}${newRequest.room?.roomNumber ? ` (ห้อง ${newRequest.room.roomNumber})` : ''}`
+      }).catch(() => {});
+
       return res.status(201).json({
         success: true,
         message: 'บันทึกข้อมูลการแจ้งซ่อมเรียบร้อยแล้ว',

@@ -1511,6 +1511,15 @@ class TenantService {
       lineService.sendWelcomeFlexMessage(lineUserId, result.tenant).catch(() => {});
     }
 
+    // 🔔 แจ้งเตือน In-App ให้แอดมินเห็นลูกบ้านใหม่ที่เพิ่งลงทะเบียนในกระดิ่ง
+    lineService.logDelivery({
+      buildingId: invite.room.buildingId || null,
+      tenantId: result.tenant.id,
+      roomId: invite.roomId,
+      notificationType: 'TENANT_ONBOARDED',
+      messagePreview: `ลูกบ้านใหม่ลงทะเบียนสำเร็จ: ${result.tenant.firstName} ${result.tenant.lastName} (ห้อง ${invite.room.roomNumber})`
+    }).catch(() => {});
+
     return { ...result, isCoResident };
   }
 

@@ -155,6 +155,30 @@
 
 ---
 
+### Phase 17 (2026-09-11): In-App Notification Bell (Admin CMS + Tenant LIFF)
+
+- **บริบท**: ผู้ใช้ขอวางแผนระบบแจ้งเตือน — สำรวจโค้ดเจอว่า LINE Push ทางเดียว (Admin→Tenant) ครบเกือบทุกเหตุการณ์อยู่แล้วและมี `NotificationLog` เก็บประวัติให้แอดมินดูอยู่แล้ว (`DeliveryLogsTab.vue`) แต่ไม่มีฝั่งกลับ (Tenant→Admin) เลย เช่น แจ้งซ่อมใหม่/แนบสลิป/ขอจองพื้นที่/ขอจดทะเบียนรถ/ลูกบ้านลงทะเบียนใหม่ — แอดมินต้องเข้าไปไล่ดูเองไม่มีการเตือน
+- **Reuse `NotificationLog` เป็น Source เดียว ไม่สร้างตารางใหม่**: เพิ่มคอลัมน์ `readAt DateTime?` (`prisma/schema.prisma`, Push ผ่าน `npx prisma db push` แล้ว) + Index `[buildingId, notificationType, readAt]` และ `[tenantId, readAt]`
+- **แยก Audience ด้วยลิสต์ Type ไม่ใช่คอลัมน์ใหม่**: `ADMIN_ALERT_TYPES` ใน `lineService.js` (`MAINTENANCE_NEW`, `SLIP_UPLOADED`, `FACILITY_BOOKING_NEW`, `VEHICLE_NEW`, `TENANT_ONBOARDED`) — Query ฝั่ง Admin กรอง `IN` ลิสต์นี้, ฝั่ง Tenant กรอง `NOT IN` กันข้อความฝั่งแอดมินหลุดไปโผล่ในกระดิ่งลูกบ้าน (Row เดียวกันไม่มีทางถูก Query จากทั้งสองฝั่งพร้อมกัน จึงไม่มีปัญหา `readAt` ชนกันข้าม Audience)
+- **`src/services/lineService.js`**: เพิ่ม `getAdminAlerts`/`getTenantNotifications` (ใช้ `_listNotifications` กลางร่วมกัน คืน `unreadCount` แยกจาก `total` เสมอ), `markNotificationRead`/`markAllNotificationsRead` (สโคปด้วย `buildingId` หรือ `tenantId` กันอ่านข้ามของคนอื่น) — **หมายเหตุ**: `readAt` เป็น Shared State ต่อตึก/ต่อผู้เช่า ไม่ใช่ต่อแอดมินแต่ละคน (แอดมินหลายคนในตึกเดียวกันเห็นสถานะอ่านร่วมกันแบบ Shared Inbox) — ตัดสินใจไม่ทำ Per-Admin Read State เพราะเกินความจำเป็นสำหรับสเกลหอพัก (YAGNI)
+- **จุดยิงแจ้งเตือนใหม่ 5 จุด** (เรียก `lineService.logDelivery()` ตรงๆ ไม่ผ่าน LINE เพราะแอดมินไม่มี `lineUserId`):
+  - `maintenanceController.createMaintenanceRequest` → `MAINTENANCE_NEW`
+  - `liffController.uploadSlipFromLiff` → `SLIP_UPLOADED` (เฉพาะกรณีไม่ Auto-Approve เท่านั้น กัน Noise ตอนสลิปตรวจผ่านอัตโนมัติ)
+  - `facilityController.createBookingForLiff` → `FACILITY_BOOKING_NEW`
+  - `vehicleController.registerVehicle` → `VEHICLE_NEW`
+  - `tenantService.registerTenantWithInvite` → `TENANT_ONBOARDED`
+- **`src/controllers/notificationController.js` (ใหม่)** + Routes: `GET/POST/PATCH /api/admin/buildings/:id/notifications[...]` (ผูกใน `buildingRoutes.js` ตาม Pattern `notification-logs` เดิม), `GET/POST/PATCH /api/v1/liff/notifications[...]` (ผูกใน `liffRoutes.js` ตาม Pattern `announcements` เดิม)
+- **Test**: เพิ่ม `tests/integration/notificationBell.test.js` (4 เคส ครอบคลุม Type-Isolation ระหว่าง Audience โดยเฉพาะ — จุดที่มีโอกาสพังเงียบๆ ที่สุดถ้าแก้ `ADMIN_ALERT_TYPES` ผิด)
+- **Test Verification**: รัน `yarn jest --runInBand --forceExit` ผ่าน **247/247** ทุก Suite (38 Suites รวม 1 Test File ใหม่)
+
+### STATUS: 🟢 COMPLETE & VERIFIED (Frontend ส่วนที่เกี่ยวข้องดู `playground-frontend/docs/ACTIVITY_LOG.md` Phase เดียวกัน)
+
+### ⏭️ งานที่เหลือ (Follow-up Items):
+- `sendAnnouncementBroadcast` (`lineService.js`) ยังไม่เคย `logDelivery()` เลย (รับแค่ `lineUserId[]` แมปกลับเป็น Tenant ไม่ได้) — ประกาศข่าวสารจึงยังไม่ขึ้นในกระดิ่ง Tenant ต้องแก้ Signature ให้รับ Tenant List ด้วยถึงจะปิด Gap นี้ได้ (Phase ถัดไป)
+- Polling 45s ฝั่ง Frontend ไม่ใช่ Realtime แท้ — พอสำหรับสเกลหอพักตอนนี้ ถ้าจะทำ WebSocket/SSE ค่อยพิจารณาเมื่อ Poll เริ่มหน่วงจริง
+
+---
+
 ## 📂 สรุปรายการไฟล์ทั้งหมดที่สร้างขึ้น (Created Files Inventory)
 
 | ลำดับ | ชื่อไฟล์ / พาธ | ชนิดไฟล์ | หน้าที่และความรับผิดชอบ |

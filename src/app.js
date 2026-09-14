@@ -64,8 +64,14 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-// Static Uploads Folder
-app.use('/uploads', express.static(path.join(__dirname, '../public/uploads')));
+// Static Uploads Folder with Cache-Control
+app.use(
+  '/uploads',
+  express.static(path.join(__dirname, '../public/uploads'), {
+    maxAge: config.nodeEnv === 'production' ? '7d' : 0,
+    etag: true
+  })
+);
 
 app.use(passport.initialize());
 

@@ -22,6 +22,7 @@ const moveOutRoutes = require('./moveOutRoutes');
 const facilityRoutes = require('./facilityRoutes');
 const vehicleRoutes = require('./vehicleRoutes');
 const pollRoutes = require('./pollRoutes');
+const feedbackRoutes = require('./feedbackRoutes');
 const liffController = require('../controllers/liffController');
 
 // Root Health Check Route
@@ -39,6 +40,8 @@ router.use('/api/auth', authRoutes);
 router.use('/api/v1/auth', authRoutes);
 router.use('/api/v1/liff', liffRoutes);
 router.use('/api/liff', liffRoutes);
+router.use('/api', feedbackRoutes);
+router.use('/api/v1', feedbackRoutes);
 router.get('/api/settings', (req, res, next) => liffController.getSettingsForTenant(req, res, next));
 
 // Feature Toggles (Public GET for initial app load, Protected PUT for admin)
@@ -72,6 +75,7 @@ router.use('/api/admin', authenticateJWT, vehicleRoutes);
 router.use('/api/v1', authenticateJWT, vehicleRoutes);
 router.use('/api/admin', authenticateJWT, pollRoutes);
 router.use('/api/v1', authenticateJWT, pollRoutes);
+router.use('/api', authenticateJWT, feedbackRoutes);
 router.use('/api/admin/audit-logs', authenticateJWT, auditLogRoutes);
 router.use('/api/admin/dashboard', authenticateJWT, dashboardRoutes);
 router.use('/api/v1/dashboard', authenticateJWT, dashboardRoutes);

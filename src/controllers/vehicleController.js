@@ -146,6 +146,14 @@ class VehicleController {
         }
       });
 
+      // 🔔 แจ้งเตือน In-App ให้แอดมินเห็นคำขอจดทะเบียนรถใหม่ที่รอการอนุมัติในกระดิ่ง
+      lineService.logDelivery({
+        buildingId,
+        tenantId: tenant.id,
+        notificationType: 'VEHICLE_NEW',
+        messagePreview: `ขอจดทะเบียนรถใหม่รอการอนุมัติ: ${vehicle.licensePlate}`
+      }).catch(() => {});
+
       return res.status(201).json({ success: true, message: 'ลงทะเบียนยานพาหนะเรียบร้อยแล้ว รอการอนุมัติ', data: vehicle });
     } catch (error) {
       next(error);

@@ -1157,7 +1157,74 @@ model NotificationLog {
   /// วันเวลาที่ส่งข้อความ
   sentAt DateTime @default(now()) @map("sent_at")
 
+  /// วันเวลาที่ถูกอ่าน ใช้เป็น In-App Notification Bell (Admin CMS / Tenant LIFF) — null = ยังไม่อ่าน
+  /// หมายเหตุ: ต่อตึก/ต่อผู้เช่า ไม่ใช่ต่อแอดมินแต่ละคน แอดมินหลายคนในตึกเดียวกันเห็นสถานะอ่านร่วมกัน (เหมือน shared inbox)
+  readAt DateTime? @map("read_at")
+
   @@index([buildingId, sentAt])
   @@index([buildingId, status])
+  @@index([buildingId, notificationType, readAt])
+  @@index([tenantId, readAt])
   @@map("notification_logs")
+}
+
+/// ตารางความคิดเห็นและรายงานปัญหาถึงทีมผู้พัฒนา (Developer & Product Feedback)
+model DeveloperFeedback {
+  /// รหัสอ้างอิง Feedback (PK, UUID)
+  id String @id @default(uuid()) @db.Uuid
+
+  /// ประเภทแพลตฟอร์มที่ส่ง (CMS_ADMIN, TENANT_LIFF, TENANT_WEB)
+  platform String @default("CMS_ADMIN")
+
+  /// หมวดหมู่ (BUG, FEATURE_REQUEST, UI_UX, GENERAL)
+  category String @default("GENERAL")
+
+  /// หัวข้อ / สรุปสั้นๆ
+  title String?
+
+  /// รายละเอียดข้อเสนอแนะหรือปัญหาที่พบ
+  content String @db.Text
+
+  /// คะแนนความพึงพอใจ (1 - 5 ดาว, Nullable)
+  rating Int?
+
+  /// รายการลิงก์รูปภาพประกอบ (JSON Array เช่น ["/uploads/feedback-1.png"])
+  imageUrls Json? @default("[]") @map("image_urls")
+
+  /// หน้าที่เกิดเรื่องหรือกำลังใช้งานอยู่ (Current Route/URL)
+  currentRoute String? @map("current_route")
+
+  /// ข้อมูลทางเทคนิคแวดล้อม (JSON: { browser, os, screenResolution, userAgent, appVersion })
+  deviceContext Json? @map("device_context")
+
+  /// รหัสผู้ส่ง (User ID หรือ Tenant ID, Nullable)
+  senderId String? @map("sender_id") @db.Uuid
+
+  /// ชื่อผู้ส่ง
+  senderName String? @map("sender_name")
+
+  /// บทบาทผู้ส่ง (OWNER, MANAGER, SUPERADMIN, TENANT, GUEST)
+  senderRole String? @map("sender_role")
+
+  /// เบอร์โทรศัพท์ผู้ส่ง (สำหรับติดต่อกลับ)
+  senderPhone String? @map("sender_phone")
+
+  /// รหัสตึก/อาคารที่เกี่ยวข้อง (Nullable)
+  buildingId String? @map("building_id") @db.Uuid
+
+  /// สถานะการพิจารณา (NEW, IN_REVIEW, PLANNED, RESOLVED, DISCARDED)
+  status String @default("NEW")
+
+  /// โน้ตภายในของทีมพัฒนา (Developer Internal Notes)
+  devNotes String? @map("dev_notes") @db.Text
+
+  /// วันเวลาที่ส่ง
+  createdAt DateTime @default(now()) @map("created_at")
+
+  /// วันเวลาที่อัปเดตล่าสุด
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([platform, category])
+  @@index([status, createdAt])
+  @@map("developer_feedbacks")
 }

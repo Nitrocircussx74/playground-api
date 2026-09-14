@@ -16,6 +16,7 @@ const issueController = require('../controllers/issueController');
 const facilityController = require('../controllers/facilityController');
 const vehicleController = require('../controllers/vehicleController');
 const pollController = require('../controllers/pollController');
+const notificationController = require('../controllers/notificationController');
 const config = require('../config/env');
 
 // Public Invite Code Verification (อนุญาตให้ตรวจสอบความถูกต้องของรหัสเชิญได้ทั้งในและนอก LINE App)
@@ -129,5 +130,10 @@ router.delete('/visitors/:id', (req, res, next) => vehicleController.deleteMyVis
 // LIFF Voting/Polls (มติ/โหวต)
 router.get('/polls', (req, res, next) => pollController.getPollsForLiff(req, res, next));
 router.post('/polls/:id/vote', (req, res, next) => pollController.voteOnPoll(req, res, next));
+
+// LIFF In-App Notification Bell (ประวัติแจ้งเตือนที่ระบบเคยส่งหาลูกบ้านคนนี้)
+router.get('/notifications', (req, res, next) => notificationController.getTenantNotifications(req, res, next));
+router.post('/notifications/read-all', (req, res, next) => notificationController.markAllTenantNotificationsRead(req, res, next));
+router.patch('/notifications/:id/read', (req, res, next) => notificationController.markTenantNotificationRead(req, res, next));
 
 module.exports = router;

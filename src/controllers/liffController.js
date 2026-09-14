@@ -1,6 +1,7 @@
 const billingService = require('../services/billingService');
 const tenantService = require('../services/tenantService');
 const tenantAuthService = require('../services/tenantAuthService');
+const lineService = require('../services/lineService');
 const config = require('../config/env');
 
 class LiffController {
@@ -298,6 +299,17 @@ class LiffController {
         declaredAmount: req.body.declaredAmount,
         slipUrl
       });
+
+      // 🔔 แนบสลิปที่รอตรวจสอบด้วยมือ (ไม่ auto-approve) ต้องเตือนแอดมินให้มาดู ส่วนที่ auto-approve แล้วไม่ต้องรบกวน
+      if (!verification.autoApproved) {
+        lineService.logDelivery({
+          buildingId: updatedInvoice.room?.buildingId || null,
+          tenantId: updatedInvoice.tenantId,
+          roomId: updatedInvoice.roomId,
+          notificationType: 'SLIP_UPLOADED',
+          messagePreview: `แนบสลิปรอตรวจสอบ: บิล ${updatedInvoice.invoiceNumber}${updatedInvoice.room?.roomNumber ? ` (ห้อง ${updatedInvoice.room.roomNumber})` : ''}`
+        }).catch(() => {});
+      }
 
       return res.status(200).json({
         success: true,
