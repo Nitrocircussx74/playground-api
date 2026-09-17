@@ -1005,6 +1005,43 @@ class LineService {
   }
 
   /**
+   * ส่ง Push Message แจ้งเตือนเมื่อสลิปโอนเงินถูกปฏิเสธ หรือขอให้ลูกบ้านแนบสลิปใหม่
+   */
+  async sendSlipRejectionNotification(invoice, reason = '') {
+    const lineUserId = invoice.tenant?.lineUserId;
+    if (!lineUserId) return false;
+
+    try {
+      const reasonText = reason ? `\nเหตุผล: ${reason}` : '';
+      const invoiceNum = invoice.invoiceNumber || '';
+      const roomNum = invoice.room?.roomNumber ? ` (ห้อง ${invoice.room.roomNumber})` : '';
+
+      await client.pushMessage({
+        to: lineUserId,
+        messages: [
+          {
+            type: 'text',
+            text: `สลิปการชำระเงินสำหรับบิล ${invoiceNum}${roomNum} ไม่ผ่านการอนุมัติ${reasonText}\nกรุณาตรวจสอบและแนบสลิปใหม่อีกครั้งผ่านเมนูชำระเงินใน LINE`
+          }
+        ]
+      });
+
+      this.logDelivery({
+        buildingId: invoice.room?.buildingId,
+        tenantId: invoice.tenantId,
+        roomId: invoice.roomId,
+        notificationType: 'SLIP_REJECTED',
+        messagePreview: `สลิปบิล ${invoiceNum} ถูกปฏิเสธ: ${reason || 'ขอให้ส่งสลิปใหม่'}`
+      }).catch(() => {});
+
+      return true;
+    } catch (error) {
+      console.warn(`⚠️ ไม่สามารถส่ง LINE Slip Rejection Push Message ได้: ${error.message}`);
+      return false;
+    }
+  }
+
+  /**
    * สร้าง PromptPay Payload และ Data URL สำหรับ QR Code
    */
   async generatePromptPayQr(amount, targetPromptPayNumber = null) {

@@ -1218,6 +1218,27 @@ class TenantService {
       });
     }
 
+    // ตรวจสอบสิทธิ์ Owner / Admin เพิ่มเติมกรณีผู้ใช้เป็นทั้งลูกบ้านและเจ้าของตึก (Dual-Role)
+    const availableRoles = ['tenant'];
+    let isOwner = false;
+
+    if (tenant.phone) {
+      try {
+        const phoneVariants = getPhoneVariants(tenant.phone);
+        const adminUser = await prisma.user.findFirst({
+          where: {
+            phone: { in: phoneVariants }
+          }
+        });
+        if (adminUser && ['owner', 'admin', 'super_admin', 'superadmin', 'manager'].includes(adminUser.role?.toLowerCase())) {
+          availableRoles.push('owner');
+          isOwner = true;
+        }
+      } catch (roleErr) {
+        console.warn('Could not resolve admin roles in getTenantProfileForLiff:', roleErr?.message);
+      }
+    }
+
     return {
       id: tenant.id,
       firstName: tenant.firstName,
@@ -1241,6 +1262,9 @@ class TenantService {
       logo_url: primaryLogoUrl,
       residentRole,
       isPrimaryTenant,
+      isOwner,
+      availableRoles,
+      role: isOwner ? 'owner' : 'tenant',
       roommates
     };
   }

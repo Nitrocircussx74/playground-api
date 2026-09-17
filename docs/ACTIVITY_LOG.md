@@ -7,8 +7,8 @@
 ## 📅 ข้อมูลกิจกรรม (Activity Summary)
 
 - **วันที่ดำเนินการ**: 26 สิงหาคม 2026 (เริ่มโปรเจกต์) — อัปเดตล่าสุด 10 กันยายน 2026
-- **สถานะ**: ✅ สำเร็จเสร็จสมบูรณ์ 100% (Phase 1-11: โครงสร้างเริ่มต้น / Phase 12: PIN Verify + Maintenance Payer Billing + Android Download Fix / Phase 13: Account Takeover Security Fix + Room Owner + Notification Log / Phase 14: Full Audit ระบบ HorHub + errorMiddleware statusCode Fix + Service Layer Refactor / Phase 15: Mock Mode / Dev Fallback Decoupling Fix + Brand Theme Color Default)
-- **คำสั่งล่าสุด**: แก้ `liffAuthMiddleware.js`/`liffController.js` ไม่ให้ `LINE_AUTH_MOCK_MODE` ปนกับ Logic "ปล่อยผ่านแบบไม่มี Token" อีกต่อไป (เปิดค้างบนเครื่อง Dev ได้ถาวรโดยไม่ทำ Test Suite พัง), เปลี่ยน Default `themeColor` ทั้งระบบจาก Blue `#3B82F6` เป็น HorHub Teal `#0E7490` (ดู Phase 15)
+- **สถานะ**: ✅ สำเร็จเสร็จสมบูรณ์ 100% (Phase 1-11: โครงสร้างเริ่มต้น / Phase 12-15: Security + Billing + Mock Decoupling / Phase 16-17: Condo Modules + Notification Bell / Phase 18: LIFF Building Owner Dashboard (Phase 1+2+3))
+- **คำสั่งล่าสุด**: สร้าง LIFF Building Owner Dashboard (`LiffOwnerDashboardView.vue`) ครบ 3 Phase — Executive Snapshot, Slip/Maintenance Approvals, Multi-Building Switcher + Dual-Role Mode Switcher (Owner↔Tenant) พร้อม `dashboardController.js` รองรับ Multi-Building Permission (ดู Phase 18)
 - **Repository**: `https://github.com/Nitrocircussx74/playground-api`
 
 > ⚠️ หมายเหตุ: บันทึกนี้ (Phase 1-11) ครอบคลุมเฉพาะช่วงเริ่มต้นโปรเจกต์ (26 ส.ค. 2026) โค้ดเบสปัจจุบันมีระบบเพิ่มเติมอีกมาก (Prisma ORM, LINE LIFF Tenant Portal, Invoices, Maintenance, Parcels, Announcements ฯลฯ) ที่ยังไม่ได้บันทึกย้อนหลังไว้ที่นี่ทั้งหมด — Phase 12 เป็นการบันทึกงานเซสชันล่าสุดต่อจากสถานะปัจจุบันของโค้ดเบส ไม่ใช่ประวัติการสร้างระบบเหล่านั้นตั้งแต่ต้น
@@ -176,6 +176,35 @@
 ### ⏭️ งานที่เหลือ (Follow-up Items):
 - `sendAnnouncementBroadcast` (`lineService.js`) ยังไม่เคย `logDelivery()` เลย (รับแค่ `lineUserId[]` แมปกลับเป็น Tenant ไม่ได้) — ประกาศข่าวสารจึงยังไม่ขึ้นในกระดิ่ง Tenant ต้องแก้ Signature ให้รับ Tenant List ด้วยถึงจะปิด Gap นี้ได้ (Phase ถัดไป)
 - Polling 45s ฝั่ง Frontend ไม่ใช่ Realtime แท้ — พอสำหรับสเกลหอพักตอนนี้ ถ้าจะทำ WebSocket/SSE ค่อยพิจารณาเมื่อ Poll เริ่มหน่วงจริง
+
+---
+
+### Phase 18 (2026-09-17): LIFF Building Owner Dashboard — Executive Snapshot, Approvals & Multi-Building
+
+- **บริบท**: วางแผนและพัฒนา Mobile Portal สำหรับเจ้าของตึก/ผู้บริหารอาคารบน LINE LIFF ตามแผน `docs/plans/2026-09-liff-building-owner-plan.md` ครบทั้ง Phase 1, 2, 3 ในเซสชันเดียว
+- **Phase 1 — Executive Snapshot (MVP)**:
+  - สร้าง `src/views/LiffOwnerDashboardView.vue` (หน้าแดชบอร์ดหลัก): Metric Cards ยอดรายรับ/ยอดรับชำระ/ยอดค้าง, Occupancy Rate, Counter Badges (สลิปรอตรวจ, แจ้งซ่อมรอดำเนินการ)
+  - สร้าง `src/components/owner/OwnerMetricCard.vue`: Reusable card แสดงตัวเลขสถิติแบบ trend-aware
+  - เพิ่ม route `/liff/owner-dashboard` ใน `router/index.js` พร้อม Guard ตรวจ `role ∈ {owner, admin, super_admin}`
+  - อัปเดต `authStore` ให้รองรับ `availableRoles`/`activeRole` สำหรับ Dual-Role Session
+  - Reuse `GET /api/admin/dashboard/summary` ที่มีอยู่แล้ว — ไม่สร้าง Endpoint ใหม่
+- **Phase 2 — Quick Operations (Approvals)**:
+  - Slip Verification Queue: ดึง `GET /api/admin/invoices?status=reviewing` แสดงรูปสลิป + ปุ่ม Approve/Reject (ปฏิเสธบันทึก Reason + แจ้ง Tenant ผ่าน LINE push)
+  - Urgent Maintenance List: แสดงงานซ่อม PENDING/IN_PROGRESS + ปุ่มเปลี่ยนสถานะ
+  - Expiring Leases Alert: รายชื่อห้องที่สัญญาจะหมดใน 30 วัน
+  - แก้ `invoiceController.js`: `updateInvoiceStatus` ส่ง LINE push แจ้ง Tenant เมื่อ Reject (เดิมไม่มี)
+- **Phase 3 — Multi-Building & Mode Switcher**:
+  - Building Switcher Dropdown: สำหรับ Owner ที่มีสิทธิ์หลายตึก (query `UserBuildingPermission`)
+  - Dual-Role Mode Switcher Pill: สลับ Owner Dashboard ↔ Tenant View (`activeRole` ใน `authStore`) โดยไม่ reload
+  - `dashboardController.js`: ตรวจ `UserBuildingPermission` ก่อนคืนข้อมูล — Manager/Staff เห็นเฉพาะตึกที่มีสิทธิ์, Owner/Admin เห็นทุกตึก
+  - `tenantAuthService.js`: `silentLogin`/`verifyLiffToken` คืน `availableRoles` และ `tenantId` (ถ้ามี) เพื่อให้ Frontend ตัดสิน Role Switcher ได้
+  - `tenantService.js`: เพิ่ม `getTenantByLineUserId` ใช้ใน Dual-Role resolution
+  - `lineService.js`: เพิ่ม Reject-Slip notification path ใน `sendSlipRejectedNotification`
+- **ไฟล์ที่แก้ไข (API)**: `dashboardController.js`, `invoiceController.js`, `server.js` (route mount), `lineService.js`, `tenantAuthService.js`, `tenantService.js`, `package.json`, `tests/setup.js`
+- **ไฟล์ที่แก้ไข/สร้าง (Frontend)**: `src/views/LiffOwnerDashboardView.vue` (NEW), `src/views/LiffOwnerDashboardView.test.js` (NEW), `src/components/owner/OwnerMetricCard.vue` (NEW), `src/components/owner/OwnerMetricCard.test.js` (NEW), `router/index.js`, `stores/auth.js`, `utils/api.js`, `utils/swal.js`, `views/AdminUserManagementView.vue`, `views/LiffProfileView.vue`, `vite.config.js`, `playwright.config.js`, `layouts/LiffLayout.test.js`
+- **Known Gap**: `sendAnnouncementBroadcast` (`lineService.js`) ยังไม่เคย `logDelivery()` — ปิด Gap นี้ Phase ถัดไป
+
+### STATUS: COMPLETE & VERIFIED (All 3 Phases)
 
 ---
 

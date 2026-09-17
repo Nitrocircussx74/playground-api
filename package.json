@@ -10,9 +10,9 @@
     "dev:tunnel": "concurrently -n \"API,TUNNEL\" -c \"blue,magenta\" \"nodemon src/server.js\" \"node scripts/tunnel.js 3000\"",
     "migrate": "node src/migrations/migrate.js",
     "seed": "node prisma/seed.js",
-    "test": "jest --runInBand --detectOpenHandles --forceExit",
-    "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage"
+    "test": "PORT=9090 jest --runInBand --detectOpenHandles --forceExit",
+    "test:watch": "PORT=9090 jest --watch",
+    "test:coverage": "PORT=9090 jest --coverage"
   },
   "keywords": [
     "nodejs",

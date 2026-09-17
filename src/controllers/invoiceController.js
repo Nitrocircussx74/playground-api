@@ -277,7 +277,7 @@ class InvoiceController {
   async updateInvoiceStatus(req, res, next) {
     try {
       const { id } = req.params;
-      const { status } = req.body;
+      const { status, rejectionReason, adminNote } = req.body;
 
       const invoice = await billingService.prisma.invoice.findUnique({
         where: { id },
@@ -287,12 +287,23 @@ class InvoiceController {
         return res.status(404).json({ success: false, message: 'Invoice not found' });
       }
 
+      const isRejection = (status === 'pending' || status === 'unpaid') && invoice.status === 'reviewing';
+
+      const updateData = {
+        status,
+        paidAt: status === 'paid' ? new Date() : null
+      };
+
+      if (isRejection) {
+        updateData.slipUrl = null;
+        if (rejectionReason || adminNote) {
+          updateData.adminNote = rejectionReason || adminNote;
+        }
+      }
+
       const updatedInvoice = await billingService.prisma.invoice.update({
         where: { id },
-        data: {
-          status,
-          paidAt: status === 'paid' ? new Date() : null
-        },
+        data: updateData,
         include: { room: true, tenant: true }
       });
 
@@ -300,6 +311,13 @@ class InvoiceController {
       if (status === 'paid' && invoice.status !== 'paid' && updatedInvoice.tenant?.lineUserId) {
         lineService.sendPaymentSuccessNotification(updatedInvoice).catch((err) => {
           console.warn('⚠️ ไม่สามารถส่ง LINE Payment Success Push Message ได้:', err.message);
+        });
+      }
+
+      // ส่ง LINE Push Notification แจ้งเตือนลูกบ้านเมื่อสลิปถูกปฏิเสธ (reviewing -> pending)
+      if (isRejection && updatedInvoice.tenant?.lineUserId) {
+        lineService.sendSlipRejectionNotification(updatedInvoice, rejectionReason || adminNote).catch((err) => {
+          console.warn('⚠️ ไม่สามารถส่ง LINE Slip Rejection Push Message ได้:', err.message);
         });
       }
 

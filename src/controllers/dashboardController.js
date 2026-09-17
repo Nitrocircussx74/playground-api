@@ -13,10 +13,26 @@ class DashboardController {
       const userRole = (req.user?.role || '').toLowerCase();
       const userId = req.user?.id;
       const isRoomOwner = ['room_owner', 'investor'].includes(userRole);
+      const isSuperAdmin = ['super_admin', 'superadmin', 'owner'].includes(userRole);
+
+      let allowedBuildingIds = null;
+      if (!isSuperAdmin && !isRoomOwner && userId) {
+        const permissions = await billingService.prisma.userBuildingPermission.findMany({
+          where: { userId },
+          select: { buildingId: true }
+        });
+        allowedBuildingIds = permissions.map((p) => p.buildingId);
+      }
+
+      const buildingScope = buildingId
+        ? { buildingId }
+        : allowedBuildingIds
+        ? { buildingId: { in: allowedBuildingIds } }
+        : {};
 
       // 1. Occupancy Rate (คำนวณอัตราการครองห้องด้วย Prisma groupBy)
       const roomWhere = {
-        ...(buildingId && { buildingId }),
+        ...buildingScope,
         ...(isRoomOwner && userId && { ownerId: userId })
       };
       const roomStats = await billingService.prisma.room.groupBy({
@@ -48,7 +64,7 @@ class DashboardController {
       const prevCycle = formatBillingCycle(prevDate);
 
       const roomScope = {
-        ...(buildingId && { buildingId }),
+        ...buildingScope,
         ...(isRoomOwner && userId && { ownerId: userId })
       };
 
@@ -114,25 +130,45 @@ class DashboardController {
         where: {
           status: 'ACTIVE',
           expectedEndDate: { gte: now, lte: in30Days },
-          ...(buildingId && { buildingId }),
+          ...buildingScope,
           ...(isRoomOwner && userId && { room: { ownerId: userId } })
         },
         orderBy: { expectedEndDate: 'asc' },
         include: { room: true, tenant: true, building: true }
       });
 
-      // 5. Pending Maintenance Requests Count
-      const pendingMaintenanceCount = await billingService.prisma.maintenanceRequest.count({
+      // 5. Pending Slips for Review
+      const pendingSlips = await billingService.prisma.invoice.findMany({
+        where: {
+          status: 'reviewing',
+          ...(Object.keys(roomScope).length > 0 && { room: roomScope })
+        },
+        orderBy: { updatedAt: 'desc' },
+        include: { room: true, tenant: true }
+      });
+      const pendingSlipsCount = pendingSlips.length;
+
+      // 6. Pending Maintenance Requests List & Count
+      const pendingMaintenanceRequests = await billingService.prisma.maintenanceRequest.findMany({
         where: {
           status: { in: ['pending', 'in_progress'] },
           ...(Object.keys(roomScope).length > 0 && { room: roomScope })
-        }
+        },
+        orderBy: { createdAt: 'desc' },
+        include: { room: true, tenant: true, building: true }
       });
+      const pendingMaintenanceCount = pendingMaintenanceRequests.length;
 
-      // 6. Building Breakdown (สำหรับ Consolidated All Buildings Mode)
+      // 7. Building Breakdown (สำหรับ Consolidated All Buildings Mode)
       let buildingBreakdown = [];
       if (!buildingId) {
+        const buildingWhere = {};
+        if (allowedBuildingIds) {
+          buildingWhere.id = { in: allowedBuildingIds };
+        }
+
         const buildings = await billingService.prisma.building.findMany({
+          where: buildingWhere,
           include: {
             rooms: {
               where: isRoomOwner && userId ? { ownerId: userId } : {}
@@ -157,18 +193,18 @@ class DashboardController {
                     ...(isRoomOwner && userId && { ownerId: userId })
                   }
                 },
-              _sum: { grandTotal: true }
-            });
+                _sum: { grandTotal: true }
+              });
 
-            return {
-              id: b.id,
-              name: b.name,
-              totalRooms: bTotalRooms,
-              occupiedRooms: bOccupied,
-              occupancyRate: bRate,
-              currentRevenue: Number(bRev._sum.grandTotal || 0)
-            };
-          })
+              return {
+                id: b.id,
+                name: b.name,
+                totalRooms: bTotalRooms,
+                occupiedRooms: bOccupied,
+                occupancyRate: bRate,
+                currentRevenue: Number(bRev._sum.grandTotal || 0)
+              };
+            })
         );
       }
 
@@ -204,6 +240,9 @@ class DashboardController {
           },
           expiringLeases,
           expiringLeasesCount: expiringLeases.length,
+          pendingSlips,
+          pendingSlipsCount,
+          pendingMaintenanceRequests,
           pendingMaintenanceCount
         }
       });
@@ -258,6 +297,22 @@ class DashboardController {
       const userRole = (req.user?.role || '').toLowerCase();
       const userId = req.user?.id;
       const isRoomOwner = ['room_owner', 'investor'].includes(userRole);
+      const isSuperAdmin = ['super_admin', 'superadmin', 'owner'].includes(userRole);
+
+      let allowedBuildingIds = null;
+      if (!isSuperAdmin && !isRoomOwner && userId) {
+        const permissions = await billingService.prisma.userBuildingPermission.findMany({
+          where: { userId },
+          select: { buildingId: true }
+        });
+        allowedBuildingIds = permissions.map((p) => p.buildingId);
+      }
+
+      const buildingScope = buildingId
+        ? { buildingId }
+        : allowedBuildingIds
+        ? { buildingId: { in: allowedBuildingIds } }
+        : {};
 
       const now = new Date();
       const trends = [];
@@ -271,7 +326,7 @@ class DashboardController {
             status: 'paid',
             billingCycle: cycle,
             room: {
-              ...(buildingId && { buildingId }),
+              ...buildingScope,
               ...(isRoomOwner && userId && { ownerId: userId })
             }
           },

@@ -8,9 +8,26 @@ const TENANT_ROOM_INCLUDE = { rooms: { include: { building: true } } };
 
 /**
  * ประกอบ Payload ผู้ใช้งานฝั่งลูกบ้านสำหรับใช้ทั้งออก JWT และส่งกลับใน Response
- * (รวมจุดที่เคยก๊อปวางซ้ำกันเกือบทุกเมธอด Login/Link ของ Tenant)
+ * พร้อมตรวจหาสิทธิ์ Owner/Admin อัตโนมัติหากเบอร์โทรศัพท์ตรงกับบัญชีผู้ดูแลในตาราง users
  */
-function buildTenantUserPayload(tenant, overrides = {}) {
+async function buildTenantUserPayload(tenant, overrides = {}) {
+  const roles = ['tenant'];
+  let isOwner = false;
+
+  if (tenant.phone) {
+    try {
+      const adminUser = await prisma.user.findFirst({
+        where: { phone: { in: getPhoneVariants(tenant.phone) } }
+      });
+      if (adminUser && ['owner', 'admin', 'super_admin', 'superadmin', 'manager'].includes(adminUser.role?.toLowerCase())) {
+        roles.push('owner');
+        isOwner = true;
+      }
+    } catch (err) {
+      console.warn('Could not resolve admin roles for tenant:', err?.message);
+    }
+  }
+
   return {
     id: tenant.id,
     tenantId: tenant.id,
@@ -18,7 +35,9 @@ function buildTenantUserPayload(tenant, overrides = {}) {
     email: tenant.email || `tenant_${tenant.id}@dorm.local`,
     name: tenant.name || `${tenant.firstName} ${tenant.lastName}`.trim(),
     displayName: tenant.lineDisplayName || tenant.firstName,
-    role: 'tenant',
+    role: isOwner ? 'owner' : 'tenant',
+    availableRoles: roles,
+    isOwner,
     lineUserId: tenant.lineUserId,
     roomId: tenant.rooms?.[0]?.id,
     buildingId: tenant.rooms?.[0]?.buildingId,
@@ -76,7 +95,7 @@ class TenantAuthService {
       }).catch(() => {});
     }
 
-    const tenantUser = buildTenantUserPayload(tenant);
+    const tenantUser = await buildTenantUserPayload(tenant);
     const { accessToken, refreshToken } = await issueTokens(tenantUser);
 
     return {
@@ -186,7 +205,7 @@ class TenantAuthService {
       }).catch((e) => console.warn('UserLineAccount sync warning in pinLogin:', e.message));
     }
 
-    const tenantUser = buildTenantUserPayload(tenant, {
+    const tenantUser = await buildTenantUserPayload(tenant, {
       lineUserId: tenant.lineUserId || lineUserId,
       buildingId: buildingId || tenant.rooms?.[0]?.buildingId
     });
@@ -322,7 +341,7 @@ class TenantAuthService {
       }).catch((e) => console.warn('UserLineAccount upsert in setupPin:', e.message));
     }
 
-    const tenantUser = buildTenantUserPayload(updatedTenant, {
+    const tenantUser = await buildTenantUserPayload(updatedTenant, {
       lineUserId: lineUserId || updatedTenant.lineUserId,
       buildingId: targetBuildingId || updatedTenant.rooms?.[0]?.buildingId
     });
@@ -560,7 +579,7 @@ class TenantAuthService {
       }).catch((e) => console.warn('UserLineAccount upsert warning in linkAndLogin:', e.message));
     }
 
-    const tenantUser = buildTenantUserPayload(tenant, {
+    const tenantUser = await buildTenantUserPayload(tenant, {
       lineUserId: lineUserId || tenant.lineUserId,
       buildingId: buildingId || tenant.rooms?.[0]?.buildingId
     });
@@ -608,7 +627,7 @@ class TenantAuthService {
         return { statusCode: 401, body: { success: false, message: 'เบอร์โทรศัพท์หรือรหัสผ่านไม่ถูกต้อง' } };
       }
 
-      const tenantUser = buildTenantUserPayload(tenant);
+      const tenantUser = await buildTenantUserPayload(tenant);
       const { accessToken, refreshToken } = await issueTokens(tenantUser);
 
       return {
@@ -839,17 +858,8 @@ class TenantAuthService {
     }
 
     // 4. ออก Backend JWT Access Token ใหม่สำหรับเซสชันลูกบ้าน (Silent Re-Auth ไม่ต้องหมุน Refresh Token)
-    const accessToken = authService.generateAccessToken({
-      id: tenant.id,
-      tenantId: tenant.id,
-      email: tenant.email || `tenant_${tenant.id}@dorm.local`,
-      name: tenant.name,
-      displayName: tenant.lineDisplayName || tenant.name,
-      role: 'tenant',
-      lineUserId: tenant.lineUserId,
-      roomId: tenant.rooms?.[0]?.id,
-      buildingId: tenant.rooms?.[0]?.buildingId
-    });
+    const tenantUser = await buildTenantUserPayload(tenant);
+    const accessToken = authService.generateAccessToken(tenantUser);
 
     return {
       statusCode: 200,

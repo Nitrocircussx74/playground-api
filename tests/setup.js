@@ -2,6 +2,8 @@
 // ตั้งค่าสภาพแวดล้อมสำหรับการรัน Test เพื่อป้องกันการยิง API หรือส่งข้อความไปยัง LINE จริง 100%
 
 process.env.NODE_ENV = 'test';
+process.env.PORT = '9090';
+jest.setTimeout(30000);
 
 // Mock @line/bot-sdk MessagingApiClient โดยตรงเป็น Global Safeguard
 jest.mock('@line/bot-sdk', () => {
