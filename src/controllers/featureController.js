@@ -46,6 +46,11 @@ const STANDARD_FEATURE_METADATA = {
     title: 'โหวต & แบบสำรวจความเห็น',
     category: 'LINE LIFF (ลูกบ้าน)',
     description: 'เปิดให้ลูกบ้านร่วมโหวตหรือแสดงความเห็นในโพลที่นิติบุคคล/ผู้ดูแลสร้างขึ้น ผ่าน LINE'
+  },
+  ENABLE_E_CONTRACT: {
+    title: 'สัญญาเช่าห้องพัก (E-Contract)',
+    category: 'LINE LIFF (ลูกบ้าน)',
+    description: 'เปิดให้ลูกบ้านดูรายละเอียดสัญญาเช่าและดาวน์โหลดเอกสารสัญญา PDF ผ่าน LINE ได้'
   }
 };
 
