@@ -3,6 +3,46 @@ const lineService = require('../services/lineService');
 
 class AnnouncementController {
   /**
+   * จำกัด buildingId ที่แอดมินคนนี้บรอดแคสต์ได้ ตามสิทธิ์จริงใน UserBuildingPermission
+   * (Pattern เดียวกับ dashboardController.getSummary) กัน Admin/Manager ของตึกหนึ่งยิงประกาศ
+   * ข้ามไปตึกอื่น หรือยิงหา "ทุกตึกในระบบ" โดยไม่ตั้งใจ (เดิมไม่มีการเช็คเลย + Fallback เดา
+   * ตึกแรกในระบบเวลาไม่ระบุ buildingId มา)
+   * @returns {Promise<{ buildingId: string|null, error?: { statusCode: number, message: string } }>}
+   *   buildingId: null หมายถึง Super Admin ตั้งใจบรอดแคสต์แบบ ALL จริง ๆ (ไม่ Scope ตึก)
+   */
+  async _resolveAllowedBuildingId(req, requestedBuildingId) {
+    const userRole = (req.user?.role || '').toLowerCase();
+    const isHighAdmin = ['super_admin', 'superadmin', 'owner'].includes(userRole);
+
+    if (isHighAdmin) {
+      return { buildingId: requestedBuildingId || null };
+    }
+
+    const permissions = await billingService.prisma.userBuildingPermission.findMany({
+      where: { userId: req.user?.id },
+      select: { buildingId: true }
+    });
+    const allowedBuildingIds = permissions.map((p) => p.buildingId);
+
+    if (allowedBuildingIds.length === 0) {
+      return { buildingId: null, error: { statusCode: 403, message: 'คุณไม่มีสิทธิ์ตึกใดเลย ไม่สามารถส่งประกาศได้' } };
+    }
+
+    if (requestedBuildingId) {
+      if (!allowedBuildingIds.includes(requestedBuildingId)) {
+        return { buildingId: null, error: { statusCode: 403, message: 'คุณไม่มีสิทธิ์ส่งประกาศไปยังตึกนี้' } };
+      }
+      return { buildingId: requestedBuildingId };
+    }
+
+    if (allowedBuildingIds.length === 1) {
+      return { buildingId: allowedBuildingIds[0] };
+    }
+
+    return { buildingId: null, error: { statusCode: 400, message: 'คุณมีสิทธิ์มากกว่า 1 ตึก กรุณาระบุตึกที่ต้องการส่งประกาศ' } };
+  }
+
+  /**
    * Helper function ในการคัดกรอง lineUserId ของผู้เช่าตาม Target (ALL, BUILDING, FLOOR, ROOM)
    */
   async _getTargetUserIds({ targetType, targetBuildingId, targetValue }) {
@@ -95,16 +135,16 @@ class AnnouncementController {
 
       const imgUrl = imageUrl || image || null;
       const normTargetType = String(targetType).toUpperCase();
-      let targetBuildingId = buildingId || targetId || null;
       let finalTargetValue = targetValue || (normTargetType === 'FLOOR' ? String(floor) : targetId) || null;
 
-      // If buildingId not provided for BUILDING/FLOOR, fallback to first building in system
-      if (!targetBuildingId && normTargetType !== 'ALL') {
-        const firstBuilding = await billingService.prisma.building.findFirst();
-        if (firstBuilding) {
-          targetBuildingId = firstBuilding.id;
-        }
+      const scope = await this._resolveAllowedBuildingId(req, buildingId || targetId || null);
+      if (scope.error) {
+        return res.status(scope.error.statusCode).json({ success: false, message: scope.error.message });
       }
+      if (!scope.buildingId && normTargetType !== 'ALL') {
+        return res.status(400).json({ success: false, message: 'กรุณาระบุตึกที่ต้องการส่งประกาศ' });
+      }
+      const targetBuildingId = scope.buildingId;
 
       // 1. บันทึกข้อมูลประกาศลง Database พร้อมผูก buildingId และ imageUrl
       const announcement = await billingService.prisma.announcement.create({
@@ -168,8 +208,16 @@ class AnnouncementController {
     try {
       const { targetType, buildingId, floor, targetId, targetValue } = req.query;
       const normTargetType = String(targetType || 'ALL').toUpperCase();
-      const targetBuildingId = buildingId || targetId || null;
       const finalTargetValue = targetValue || (normTargetType === 'FLOOR' ? String(floor) : targetId) || null;
+
+      const scope = await this._resolveAllowedBuildingId(req, buildingId || targetId || null);
+      if (scope.error) {
+        return res.status(scope.error.statusCode).json({ success: false, message: scope.error.message });
+      }
+      if (!scope.buildingId && normTargetType !== 'ALL') {
+        return res.status(400).json({ success: false, message: 'กรุณาระบุตึกที่ต้องการส่งประกาศ' });
+      }
+      const targetBuildingId = scope.buildingId;
 
       const targets = await this._getTargetUserIds({
         targetType: normTargetType,

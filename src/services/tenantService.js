@@ -1559,6 +1559,19 @@ class TenantService {
     });
 
     if (!invite) {
+      // ระบบมี Invite Code 2 ชุดคู่ขนานกันที่หน้าตาเหมือนกัน: RoomInvite.code (ลูกบ้านใหม่เอี่ยม, เช็คด้านบน)
+      // กับ Tenant.inviteCode (ลูกบ้านเดิมที่มีข้อมูลอยู่แล้ว แค่ยังไม่ผูก LINE — ใช้คู่กับ phoneLast4 ที่หน้า
+      // /liff/onboarding) เดิมถ้าพิมพ์รหัสแบบหลังผิดหน้า (/liff/register) จะได้แค่ "ไม่พบรหัสเชิญ" เฉยๆ
+      // เช็คสำรองตรงนี้เพื่อบอก Frontend ให้พาไปหน้าที่ถูกต้องแทน
+      const tenantWithCode = await prisma.tenant.findFirst({ where: { inviteCode: normalizedCode } });
+      if (tenantWithCode && (!tenantWithCode.inviteExpiresAt || new Date() <= new Date(tenantWithCode.inviteExpiresAt))) {
+        const redirectError = new Error('รหัสเชิญนี้เป็นรหัสสำหรับผู้เช่าเดิม กรุณาใช้หน้าผูกบัญชี LINE แทน');
+        redirectError.statusCode = 409;
+        redirectError.code = 'TENANT_LINK_CODE';
+        redirectError.data = { redirectTo: '/liff/onboarding' };
+        throw redirectError;
+      }
+
       const error = new Error('ไม่พบรหัสเชิญ (Invite Code) นี้ในระบบ');
       error.statusCode = 404;
       throw error;

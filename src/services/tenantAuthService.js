@@ -811,7 +811,7 @@ class TenantAuthService {
   /**
    * Silent Re-Authentication สำหรับต่ออายุเซสชัน LIFF อัตโนมัติเบื้องหลัง
    */
-  async silentLogin({ lineIdToken, authHeader, lineDisplayName, linePictureUrl, lineUserIdFromRequest, devLineUserId, isDevOrMock, accessExpiresIn }) {
+  async silentLogin({ lineIdToken, authHeader, buildingId, lineDisplayName, linePictureUrl, lineUserIdFromRequest, devLineUserId, isDevOrMock, accessExpiresIn }) {
     let lineUserId = lineUserIdFromRequest;
 
     // 1. ถ้าส่ง LINE ID Token มา ให้ Verify ลายเซ็นกับ LINE API
@@ -845,8 +845,27 @@ class TenantAuthService {
       return { statusCode: 401, body: { success: false, code: 'UNAUTHORIZED', message: 'ไม่พบ LINE ID Token สำหรับยืนยันตัวตน' } };
     }
 
-    // 3. ค้นหาผู้เช่าในระบบ
-    const tenant = await prisma.tenant.findFirst({ where: { lineUserId }, include: TENANT_ROOM_INCLUDE });
+    // 3. ค้นหาผู้เช่าในระบบ — ตึกที่ผูกไว้ (UserLineAccount) ก่อนเสมอเหมือน checkAuthStatus() กัน Multi-Building
+    // Centralized Identity คืนตึกผิดตอน Token หมดอายุแล้ว Silent Re-Auth (ค่า Default เดิมคือ tenant.findFirst
+    // ตรงๆ ซึ่งได้ Record แรกที่เจอ ไม่ใช่ตึกที่ผู้ใช้กำลังใช้งานอยู่จริง)
+    let tenant = null;
+    if (buildingId) {
+      const linkedAccount = await prisma.userLineAccount.findUnique({
+        where: { buildingId_lineUserId: { buildingId, lineUserId } },
+        include: { tenant: { include: TENANT_ROOM_INCLUDE } }
+      });
+      tenant = linkedAccount?.tenant || null;
+    }
+    if (!tenant) {
+      const anyLinked = await prisma.userLineAccount.findFirst({
+        where: { lineUserId },
+        include: { tenant: { include: TENANT_ROOM_INCLUDE } }
+      });
+      tenant = anyLinked?.tenant || null;
+    }
+    if (!tenant) {
+      tenant = await prisma.tenant.findFirst({ where: { lineUserId }, include: TENANT_ROOM_INCLUDE });
+    }
 
     if (!tenant) {
       return { statusCode: 404, body: { success: false, isRegistered: false, code: 'TENANT_NOT_FOUND', message: 'ไม่พบข้อมูลลูกบ้านที่ผูกกับบัญชี LINE นี้' } };

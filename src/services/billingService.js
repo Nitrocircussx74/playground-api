@@ -167,7 +167,9 @@ class BillingService {
     const invoiceNumber = `INV-${formattedCycle}-${room.roomNumber}`;
 
     // บันทึกใบแจ้งหนี้ในระบบ (Prisma Transaction)
-    const invoice = await prisma.$transaction(async (tx) => {
+    let invoice;
+    try {
+      invoice = await prisma.$transaction(async (tx) => {
       const existingInvoice = await tx.invoice.findFirst({
         where: { roomId, billingCycle }
       });
@@ -228,8 +230,22 @@ class BillingService {
         });
       }
 
-      return savedInvoice;
-    });
+        return savedInvoice;
+      });
+    } catch (error) {
+      // Race Condition: 2 Request สร้างบิลรอบ/ห้องเดียวกันพร้อมกัน ตัวที่แพ้จะชน Unique Constraint ของ
+      // invoiceNumber เพราะเช็ค existingInvoice ผ่าน Transaction ไปพร้อมกันทั้งคู่ก่อนใครจะ Commit ทัน —
+      // ถือว่า "สร้างสำเร็จ" เหมือนกัน คืนบิลที่ถูกสร้างไปแล้วแทนที่จะโยน Error ดิบให้ผู้ใช้เจอ 500
+      if (error.code === 'P2002') {
+        invoice = await prisma.invoice.findFirst({
+          where: { roomId, billingCycle },
+          include: { room: true, tenant: true }
+        });
+        if (!invoice) throw error;
+      } else {
+        throw error;
+      }
+    }
 
     return invoice;
   }

@@ -130,17 +130,19 @@ class FeatureController {
         featureMap[key] = true;
       });
 
-      // 2. นำค่า Global Default (buildingId = null) ใน Database มาทับ
+      // 2. นำค่า Global Default (buildingId = null) ใน Database มาทับ — เฉพาะ Key ที่ยังอยู่ใน
+      // STANDARD_FEATURE_METADATA เท่านั้น กัน Key เก่าที่เลิกใช้แล้ว (เช่น Rename ไปแล้ว) แต่ยังมี Row
+      // ค้างอยู่ในตาราง โผล่มาเป็นการ์ดที่ไม่มี Title/คำอธิบายจริง (โชว์แค่ Raw Key เป็นชื่อ)
       allRecords
-        .filter((r) => !r.buildingId)
+        .filter((r) => !r.buildingId && STANDARD_FEATURE_METADATA[r.key])
         .forEach((r) => {
-          const meta = STANDARD_FEATURE_METADATA[r.key] || {};
+          const meta = STANDARD_FEATURE_METADATA[r.key];
           uniqueFeaturesMap.set(r.key, {
             id: r.id,
             key: r.key,
-            title: meta.title || r.key,
-            category: meta.category || 'ระบบทั่วไป',
-            description: meta.description || r.description || `ฟีเจอร์ ${r.key}`,
+            title: meta.title,
+            category: meta.category,
+            description: meta.description,
             isActive: r.isActive,
             buildingId: null,
             isBuildingOverride: false
@@ -148,18 +150,18 @@ class FeatureController {
           featureMap[r.key] = r.isActive;
         });
 
-      // 3. หากเลือกอาคาร (buildingId) ให้นำค่าเฉพาะอาคารนั้นมาทับ
+      // 3. หากเลือกอาคาร (buildingId) ให้นำค่าเฉพาะอาคารนั้นมาทับ (กรอง Key เก่าทิ้งเหมือนข้อ 2)
       if (buildingId) {
         allRecords
-          .filter((r) => r.buildingId === buildingId)
+          .filter((r) => r.buildingId === buildingId && STANDARD_FEATURE_METADATA[r.key])
           .forEach((r) => {
-            const meta = STANDARD_FEATURE_METADATA[r.key] || {};
+            const meta = STANDARD_FEATURE_METADATA[r.key];
             uniqueFeaturesMap.set(r.key, {
               id: r.id,
               key: r.key,
-              title: meta.title || r.key,
-              category: meta.category || 'ระบบทั่วไป',
-              description: meta.description || r.description || `ฟีเจอร์ ${r.key}`,
+              title: meta.title,
+              category: meta.category,
+              description: meta.description,
               isActive: r.isActive,
               buildingId: buildingId,
               isBuildingOverride: true

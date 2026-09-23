@@ -182,6 +182,24 @@ describe('Full API Integration Tests (ทดสอบ Endpoints ทั้งห�
         where: { buildingId: building.id }
       });
     });
+
+    test('GET /api/v1/features - ต้องไม่โชว์ Key เก่าที่เลิกใช้แล้วแต่ยังมี Row ค้างอยู่ในตาราง (Orphan/Renamed Key)', async () => {
+      // จำลองสถานการณ์จริงที่เจอ: มี Row ในตารางด้วย Key ที่ไม่มีอยู่ใน STANDARD_FEATURE_METADATA แล้ว
+      // (เช่น Rename Key ไปแล้วแต่ไม่ได้ลบ Row เก่า) — เดิมจะโผล่มาเป็นการ์ดที่ไม่มี Title จริง
+      // (โชว์ Raw Key แทน) ปนกับฟีเจอร์จริงในหน้า Feature Settings
+      const orphan = await billingService.prisma.featureToggle.create({
+        data: { key: 'ENABLE_THIS_KEY_NO_LONGER_EXISTS', isActive: false }
+      });
+
+      try {
+        const response = await request(app).get('/api/v1/features');
+        expect(response.statusCode).toBe(200);
+        expect(response.body.data.featureMap['ENABLE_THIS_KEY_NO_LONGER_EXISTS']).toBeUndefined();
+        expect(response.body.data.features.some((f) => f.key === 'ENABLE_THIS_KEY_NO_LONGER_EXISTS')).toBe(false);
+      } finally {
+        await billingService.prisma.featureToggle.delete({ where: { id: orphan.id } });
+      }
+    });
   });
 
   // -------------------------------------------------------------

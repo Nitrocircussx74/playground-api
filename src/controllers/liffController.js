@@ -17,6 +17,7 @@ class LiffController {
       const result = await tenantAuthService.silentLogin({
         lineIdToken: req.body?.lineIdToken || req.body?.idToken || req.headers['x-line-id-token'],
         authHeader: req.headers['authorization'],
+        buildingId: req.body?.buildingId || req.query?.buildingId || null,
         lineDisplayName: req.body?.lineDisplayName,
         linePictureUrl: req.body?.linePictureUrl,
         lineUserIdFromRequest: req.lineUserId,
@@ -576,6 +577,20 @@ class LiffController {
       if (req.query.roomId) {
         const matched = tenant.leaseContracts.find(l => l.roomId === req.query.roomId);
         if (matched) activeLease = matched;
+      }
+
+      // เช็ค FeatureToggle ของตึกผู้เช่า (inline เหมือน facilityController/pollController — Endpoint นี้
+      // ไม่เคยเช็คมาก่อนเลยตั้งแต่เพิ่มฟีเจอร์ ทำให้ปิด ENABLE_E_CONTRACT ใน CMS แล้วลูกบ้านยังเข้าดูสัญญาผ่าน
+      // /liff/contract ตรงๆ ได้อยู่ดี ถ้าเคยเปิดหน้านี้ค้างไว้หรือมีลิงก์เดิม ปุ่มในหน้าโปรไฟล์ที่หายไปช่วยซ่อน
+      // ทางเข้าปกติได้แค่จุดเดียว ไม่ได้ปิดกั้น Endpoint จริง)
+      const contractBuildingId = activeLease.buildingId || activeLease.room?.buildingId || null;
+      if (contractBuildingId) {
+        const toggle = await billingService.prisma.featureToggle.findFirst({
+          where: { key: 'ENABLE_E_CONTRACT', buildingId: contractBuildingId }
+        });
+        if (toggle && !toggle.isActive) {
+          return res.status(403).json({ success: false, message: 'ฟีเจอร์ดูสัญญาเช่าถูกปิดใช้งานสำหรับตึกนี้' });
+        }
       }
 
       return res.status(200).json({

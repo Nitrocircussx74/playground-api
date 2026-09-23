@@ -1,3 +1,4 @@
+const jwt = require('jsonwebtoken');
 const config = require('../config/env');
 const lineService = require('../services/lineService');
 

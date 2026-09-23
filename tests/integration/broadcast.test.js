@@ -85,6 +85,71 @@ describe('Targeted Broadcast & LINE Multicast Integration Tests', () => {
     });
   });
 
+  describe('Building-Scoped Admin Authorization (IDOR Fix)', () => {
+    let otherBuilding;
+    let scopedAdmin;
+    let scopedAdminToken;
+    let permission;
+
+    beforeAll(async () => {
+      // สร้างตึกที่สอง + Admin ที่มีสิทธิ์แค่ testBuilding ตึกเดียว (ไม่ใช่ Super Admin) เพื่อจำลอง
+      // Manager/Staff ทั่วไปที่ควรบรอดแคสต์ได้แค่ตึกของตัวเองเท่านั้น
+      otherBuilding = await billingService.prisma.building.create({
+        data: { name: 'ตึกทดสอบสำหรับ IDOR (ห้ามยิงประกาศข้าม)' }
+      });
+      scopedAdmin = await billingService.prisma.user.create({
+        data: {
+          email: `scoped-admin-broadcast-${Date.now()}@test.local`,
+          passwordHash: 'x',
+          name: 'Scoped Admin Broadcast Test',
+          role: 'admin'
+        }
+      });
+      permission = await billingService.prisma.userBuildingPermission.create({
+        data: { userId: scopedAdmin.id, buildingId: testBuilding.id }
+      });
+      scopedAdminToken = authService.generateAccessToken(scopedAdmin);
+    });
+
+    afterAll(async () => {
+      if (permission) await billingService.prisma.userBuildingPermission.delete({ where: { id: permission.id } }).catch(() => {});
+      if (scopedAdmin) await billingService.prisma.user.delete({ where: { id: scopedAdmin.id } }).catch(() => {});
+      if (otherBuilding) await billingService.prisma.building.delete({ where: { id: otherBuilding.id } }).catch(() => {});
+    });
+
+    test('Admin ที่มีสิทธิ์ตึกเดียว ส่งประกาศไปตึกของตัวเองได้ปกติ (201 Created)', async () => {
+      const response = await request(app)
+        .post('/api/admin/broadcasts')
+        .set('Authorization', `Bearer ${scopedAdminToken}`)
+        .send({ title: 'ประกาศตึกตัวเอง', content: 'เนื้อหา', targetType: 'BUILDING', buildingId: testBuilding.id });
+
+      expect(response.statusCode).toBe(201);
+      expect(response.body.data.announcement.buildingId).toBe(testBuilding.id);
+      await billingService.prisma.announcement.delete({ where: { id: response.body.data.announcement.id } }).catch(() => {});
+    });
+
+    test('Admin ที่มีสิทธิ์ตึกเดียว ห้ามส่งประกาศไปตึกอื่นที่ไม่มีสิทธิ์ (403 Forbidden)', async () => {
+      const response = await request(app)
+        .post('/api/admin/broadcasts')
+        .set('Authorization', `Bearer ${scopedAdminToken}`)
+        .send({ title: 'ประกาศข้ามตึก', content: 'เนื้อหา', targetType: 'BUILDING', buildingId: otherBuilding.id });
+
+      expect(response.statusCode).toBe(403);
+      expect(response.body.success).toBe(false);
+    });
+
+    test('Admin ที่มีสิทธิ์ตึกเดียว ไม่ระบุ buildingId มา ต้อง Auto-Scope เข้าตึกที่มีสิทธิ์เท่านั้น (ห้ามหลุดไปตึกอื่น)', async () => {
+      const response = await request(app)
+        .post('/api/admin/broadcasts')
+        .set('Authorization', `Bearer ${scopedAdminToken}`)
+        .send({ title: 'ประกาศไม่ระบุตึก', content: 'เนื้อหา', targetType: 'ALL' });
+
+      expect(response.statusCode).toBe(201);
+      expect(response.body.data.announcement.buildingId).toBe(testBuilding.id);
+      await billingService.prisma.announcement.delete({ where: { id: response.body.data.announcement.id } }).catch(() => {});
+    });
+  });
+
   describe('LIFF Announcement Read Tracking Endpoints', () => {
     let testAnnouncement;
 
