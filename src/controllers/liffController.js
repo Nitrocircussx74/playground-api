@@ -447,6 +447,155 @@ class LiffController {
       next(error);
     }
   }
+
+  /**
+   * GET /api/v1/liff/meter-history
+   * ดึงประวัติมิเตอร์น้ำ/ไฟย้อนหลัง 6 เดือน สำหรับแสดงกราฟใน LIFF
+   */
+  async getMeterHistory(req, res, next) {
+    try {
+      const { tenantId, lineUserId } = req;
+      let tenant = null;
+      if (tenantId) {
+        tenant = await billingService.prisma.tenant.findUnique({ where: { id: tenantId }, include: { rooms: true } });
+      }
+      if (!tenant && lineUserId) {
+        tenant = await billingService.prisma.tenant.findUnique({ where: { lineUserId }, include: { rooms: true } });
+      }
+      if (!tenant || !tenant.rooms?.length) {
+        return res.status(200).json({ success: true, data: [] });
+      }
+
+      let roomId = tenant.rooms[0].id;
+      if (req.query.roomId && tenant.rooms.some(r => r.id === req.query.roomId)) {
+        roomId = req.query.roomId;
+      }
+      const sixMonthsAgo = new Date();
+      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+
+      const records = await billingService.prisma.meterRecord.findMany({
+        where: { roomId, recordedAt: { gte: sixMonthsAgo } },
+        orderBy: { recordedAt: 'asc' }
+      });
+
+      return res.status(200).json({ success: true, data: records });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/v1/liff/inspections
+   * ดึงรายการตรวจสภาพห้องพัก (Move-in/Move-out) ของผู้เช่าปัจจุบัน
+   */
+  async getInspections(req, res, next) {
+    try {
+      const { tenantId, lineUserId } = req;
+      let tenant = null;
+      if (tenantId) {
+        tenant = await billingService.prisma.tenant.findUnique({
+          where: { id: tenantId },
+          include: { leaseContracts: { where: { status: 'ACTIVE' }, orderBy: { createdAt: 'desc' } } }
+        });
+      }
+      if (!tenant && lineUserId) {
+        tenant = await billingService.prisma.tenant.findUnique({
+          where: { lineUserId },
+          include: { leaseContracts: { where: { status: 'ACTIVE' }, orderBy: { createdAt: 'desc' } } }
+        });
+      }
+      if (!tenant || !tenant.leaseContracts?.length) {
+        return res.status(200).json({ success: true, data: [] });
+      }
+
+      const leaseId = tenant.leaseContracts[0].id;
+      const inspections = await billingService.prisma.roomInspection.findMany({
+        where: { leaseId },
+        orderBy: { createdAt: 'desc' }
+      });
+
+      return res.status(200).json({ success: true, data: inspections });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/v1/liff/contract
+   * ดึงสัญญาเช่าห้องพักปัจจุบันพร้อมรายละเอียดตึกและกฎระเบียบ สำหรับลูกบ้านดู E-Contract
+   */
+  async getTenantContract(req, res, next) {
+    try {
+      const { tenantId, lineUserId } = req;
+      let tenant = null;
+      if (tenantId) {
+        tenant = await billingService.prisma.tenant.findUnique({
+          where: { id: tenantId },
+          include: {
+            leaseContracts: {
+              where: { status: 'ACTIVE' },
+              orderBy: { createdAt: 'desc' },
+              include: {
+                room: true,
+                building: {
+                  include: {
+                    setting: true
+                  }
+                },
+                inspections: true
+              }
+            }
+          }
+        });
+      }
+      if (!tenant && lineUserId) {
+        tenant = await billingService.prisma.tenant.findUnique({
+          where: { lineUserId },
+          include: {
+            leaseContracts: {
+              where: { status: 'ACTIVE' },
+              orderBy: { createdAt: 'desc' },
+              include: {
+                room: true,
+                building: {
+                  include: {
+                    setting: true
+                  }
+                },
+                inspections: true
+              }
+            }
+          }
+        });
+      }
+      if (!tenant || !tenant.leaseContracts?.length) {
+        return res.status(200).json({ success: true, data: null });
+      }
+
+      let activeLease = tenant.leaseContracts[0];
+      if (req.query.roomId) {
+        const matched = tenant.leaseContracts.find(l => l.roomId === req.query.roomId);
+        if (matched) activeLease = matched;
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: {
+          ...activeLease,
+          tenant: {
+            id: tenant.id,
+            firstName: tenant.firstName,
+            lastName: tenant.lastName,
+            phone: tenant.phone,
+            idCard: tenant.idCard || null,
+            lineUserId: tenant.lineUserId || null
+          }
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 module.exports = new LiffController();

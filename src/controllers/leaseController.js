@@ -9,7 +9,7 @@ class LeaseController {
     try {
       const { buildingId } = req.query;
 
-      const where = buildingId ? { buildingId } : {};
+      const where = buildingId ? { OR: [{ buildingId }, { room: { buildingId } }] } : {};
 
       const leases = await billingService.prisma.leaseContract.findMany({
         where,
@@ -211,6 +211,42 @@ class LeaseController {
         success: true,
         message: `แจ้งย้ายออกผู้เช่าห้อง ${existingLease.room?.roomNumber || ''} เรียบร้อยแล้ว (คืนห้องว่างแล้ว)`,
         data: updatedLease
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * ดึงรายละเอียดสัญญาเช่าฉบับสมบูรณ์สำหรับออก E-Contract (GET /api/admin/leases/:leaseId/contract)
+   */
+  async getLeaseContractDetail(req, res, next) {
+    try {
+      const { leaseId } = req.params;
+      const lease = await billingService.prisma.leaseContract.findUnique({
+        where: { id: leaseId },
+        include: {
+          tenant: true,
+          room: true,
+          building: {
+            include: {
+              setting: true
+            }
+          },
+          inspections: true
+        }
+      });
+
+      if (!lease) {
+        return res.status(404).json({
+          success: false,
+          message: 'ไม่พบสัญญาเช่าที่ระบุ'
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: lease
       });
     } catch (error) {
       next(error);

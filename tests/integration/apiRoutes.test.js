@@ -152,6 +152,36 @@ describe('Full API Integration Tests (ทดสอบ Endpoints ทั้งห�
       expect(response.statusCode).toBe(200);
       expect(response.body.success).toBe(true);
     });
+
+    test('GET /api/v1/features - ดึงรายการตาม buildingId และ override ค่าถูกต้อง', async () => {
+      let building = await billingService.prisma.building.findFirst();
+      if (!building) {
+        building = await billingService.prisma.building.create({
+          data: { name: 'Test Feature Building', totalFloors: 5 }
+        });
+      }
+
+      // 1. ตั้งค่าปิดฟีเจอร์เฉพาะตึก
+      await request(app)
+        .put('/api/v1/features/ENABLE_MAINTENANCE_REQUEST')
+        .set('Authorization', `Bearer ${validAccessToken}`)
+        .send({ isActive: false, buildingId: building.id });
+
+      // 2. ดึงด้วย query buildingId
+      const resWithBuilding = await request(app).get(`/api/v1/features?buildingId=${building.id}`);
+      expect(resWithBuilding.statusCode).toBe(200);
+      expect(resWithBuilding.body.data.featureMap['ENABLE_MAINTENANCE_REQUEST']).toBe(false);
+
+      // 3. ดึงแบบ global (ไม่ระบุตึก) ต้องได้ค่า default true
+      const resGlobal = await request(app).get('/api/v1/features');
+      expect(resGlobal.statusCode).toBe(200);
+      expect(resGlobal.body.data.featureMap['ENABLE_MAINTENANCE_REQUEST']).toBe(true);
+
+      // Cleanup
+      await billingService.prisma.featureToggle.deleteMany({
+        where: { buildingId: building.id }
+      });
+    });
   });
 
   // -------------------------------------------------------------

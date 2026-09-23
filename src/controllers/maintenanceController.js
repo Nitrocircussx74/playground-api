@@ -15,7 +15,9 @@ class MaintenanceController {
       if (status) where.status = status;
       if (roomId) where.roomId = roomId;
 
-      if (['room_owner', 'investor'].includes(userRole) && userId) {
+      if (userRole === 'tenant') {
+        where.tenantId = req.user?.tenantId || req.user?.id || 'none';
+      } else if (['room_owner', 'investor'].includes(userRole) && userId) {
         where.room = {
           ownerId: userId,
           ...(buildingId && { buildingId })
@@ -285,6 +287,34 @@ class MaintenanceController {
         success: true,
         message: `อัปเดตสถานะแจ้งซ่อมเป็น ${updatedRequest.status} เรียบร้อยแล้ว`,
         data: updatedRequest
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * ดึงรายละเอียดรายการแจ้งซ่อมตาม ID (GET /api/v1/maintenance-requests/:id & GET /api/liff/issues/:id)
+   */
+  async getMaintenanceRequestById(req, res, next) {
+    try {
+      const { id } = req.params;
+      const request = await billingService.prisma.maintenanceRequest.findUnique({
+        where: { id },
+        include: {
+          room: true,
+          tenant: true,
+          building: true
+        }
+      });
+
+      if (!request) {
+        return res.status(404).json({ success: false, message: 'Maintenance request not found' });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: request
       });
     } catch (error) {
       next(error);

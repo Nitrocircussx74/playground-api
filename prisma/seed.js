@@ -1,39 +1,20 @@
 const { PrismaClient } = require('@prisma/client');
-const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
 const generatePayload = require('promptpay-qr');
 const QRCode = require('qrcode');
 
 const prisma = new PrismaClient();
 
-function hashPassword(password) {
-  const salt = crypto.randomBytes(16).toString('hex');
-  const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
-  return `${salt}:${hash}`;
-}
-
-async function ensureRefreshTokensTable() {
-  try {
-    await prisma.$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS refresh_tokens (
-        id SERIAL PRIMARY KEY,
-        user_id UUID NOT NULL,
-        token TEXT NOT NULL,
-        expires_at TIMESTAMPTZ NOT NULL,
-        created_at TIMESTAMPTZ DEFAULT NOW()
-      );
-    `);
-  } catch (err) {
-    console.warn('⚠️ Could not verify/create refresh_tokens table:', err.message);
-  }
+async function hashPassword(password) {
+  return await bcrypt.hash(password, 10);
 }
 
 async function main() {
-  console.log('🌱 Starting comprehensive database seeding...');
+  console.log('🌱 Starting comprehensive database seeding for all 31 tables...');
 
-  // 0. Ensure refresh_tokens table exists
-  await ensureRefreshTokensTable();
-
-  // 1. Buildings
+  // =========================================================================
+  // 1. Buildings (อาคาร A & B)
+  // =========================================================================
   let buildingA = await prisma.building.findFirst({
     where: { name: { contains: 'อาคาร A' } }
   });
@@ -41,13 +22,14 @@ async function main() {
     buildingA = await prisma.building.create({
       data: {
         name: 'อาคาร A (Main Building)',
-        address: '123/1 ถนนสุขุมวิท 71 แขวงพระโขนงเหนือ เขตวัฒนา กรุงเทพฯ 10110'
+        address: '123/1 ถนนสุขุมวิท 71 แขวงพระโขนงเหนือ เขตวัฒนา กรุงเทพฯ 10110',
+        themeColor: '#3B82F6'
       }
     });
   } else {
-    await prisma.building.update({
+    buildingA = await prisma.building.update({
       where: { id: buildingA.id },
-      data: { name: 'อาคาร A (Main Building)' }
+      data: { name: 'อาคาร A (Main Building)', themeColor: '#3B82F6' }
     });
   }
 
@@ -58,14 +40,22 @@ async function main() {
     buildingB = await prisma.building.create({
       data: {
         name: 'อาคาร B (North Wing)',
-        address: '123/2 ถนนสุขุมวิท 71 แขวงพระโขนงเหนือ เขตวัฒนา กรุงเทพฯ 10110'
+        address: '123/2 ถนนสุขุมวิท 71 แขวงพระโขนงเหนือ เขตวัฒนา กรุงเทพฯ 10110',
+        themeColor: '#10B981'
       }
+    });
+  } else {
+    buildingB = await prisma.building.update({
+      where: { id: buildingB.id },
+      data: { name: 'อาคาร B (North Wing)', themeColor: '#10B981' }
     });
   }
 
-  console.log(`🏢 Buildings ready: [A: ${buildingA.id}] ${buildingA.name}, [B: ${buildingB.id}] ${buildingB.name}`);
+  console.log(`🏢 1. Buildings seeded: [A: ${buildingA.name}] [B: ${buildingB.name}]`);
 
-  // 2. Building Settings with Real PromptPay QR Codes
+  // =========================================================================
+  // 2. Building Settings (พร้อม PromptPay QR และเงื่อนไขสัญญา)
+  // =========================================================================
   const qrA = await QRCode.toDataURL(generatePayload('0812345678', { amount: 0 }), { width: 400, margin: 2 });
   const qrB = await QRCode.toDataURL(generatePayload('0899998888', { amount: 0 }), { width: 400, margin: 2 });
 
@@ -83,6 +73,9 @@ async function main() {
       electricRate: 7.00,
       dueDateDay: 5,
       latePenalty: 50.00,
+      lateFeeType: 'DAILY',
+      gracePeriodDays: 3,
+      lateFeeAmount: 50.00,
       depositMonths: 2,
       advanceMonths: 1,
       termsAndConditions: '1. ห้ามส่งเสียงดังรบกวนผู้อื่นหลังเวลา 22:00 น.\n2. ห้ามเลี้ยงสัตว์เลี้ยงทุกชนิดในห้องพัก\n3. ห้ามสูบบุหรี่ภายในห้องพักและบริเวณระเบียง\n4. แจ้งย้ายออกล่วงหน้าอย่างน้อย 30 วัน'
@@ -101,6 +94,9 @@ async function main() {
       electricRate: 7.00,
       dueDateDay: 5,
       latePenalty: 50.00,
+      lateFeeType: 'DAILY',
+      gracePeriodDays: 3,
+      lateFeeAmount: 50.00,
       depositMonths: 2,
       advanceMonths: 1,
       termsAndConditions: '1. ห้ามส่งเสียงดังรบกวนผู้อื่นหลังเวลา 22:00 น.\n2. ห้ามเลี้ยงสัตว์เลี้ยงทุกชนิดในห้องพัก\n3. ห้ามสูบบุหรี่ภายในห้องพักและบริเวณระเบียง\n4. แจ้งย้ายออกล่วงหน้าอย่างน้อย 30 วัน'
@@ -121,6 +117,9 @@ async function main() {
       electricRate: 8.00,
       dueDateDay: 5,
       latePenalty: 100.00,
+      lateFeeType: 'FLAT',
+      gracePeriodDays: 5,
+      lateFeeAmount: 100.00,
       depositMonths: 2,
       advanceMonths: 1,
       termsAndConditions: '1. ห้ามดัดแปลงโครงสร้างห้องพักหรือเจาะผนัง\n2. รักษาความสะอาดพื้นที่ส่วนกลาง\n3. ทิ้งขยะในจุดที่นิติบุคคลกำหนดเท่านั้น'
@@ -139,20 +138,25 @@ async function main() {
       electricRate: 8.00,
       dueDateDay: 5,
       latePenalty: 100.00,
+      lateFeeType: 'FLAT',
+      gracePeriodDays: 5,
+      lateFeeAmount: 100.00,
       depositMonths: 2,
       advanceMonths: 1,
       termsAndConditions: '1. ห้ามดัดแปลงโครงสร้างห้องพักหรือเจาะผนัง\n2. รักษาความสะอาดพื้นที่ส่วนกลาง\n3. ทิ้งขยะในจุดที่นิติบุคคลกำหนดเท่านั้น'
     }
   });
 
-  console.log('⚙️ Building Settings seeded');
+  console.log('⚙️ 2. Building Settings seeded');
 
-  // 3. Admin Users
-  const defaultPassword = hashPassword('password123');
+  // =========================================================================
+  // 3. Admin & User Accounts (OWNER, SUPER_ADMIN, MANAGER, ADMIN, ROOM_OWNER)
+  // =========================================================================
+  const defaultPassword = await hashPassword('password123');
 
   const superAdmin = await prisma.user.upsert({
     where: { email: 'superadmin@dorm.com' },
-    update: { role: 'super_admin' },
+    update: { role: 'super_admin', passwordHash: defaultPassword },
     create: {
       email: 'superadmin@dorm.com',
       passwordHash: defaultPassword,
@@ -162,25 +166,13 @@ async function main() {
     }
   });
 
-  const mainAdmin = await prisma.user.upsert({
-    where: { email: 'admin@dorm.com' },
-    update: { role: 'super_admin' },
-    create: {
-      email: 'admin@dorm.com',
-      passwordHash: defaultPassword,
-      name: 'Admin Manager',
-      role: 'super_admin',
-      phone: '0899999999'
-    }
-  });
-
   const ownerUser = await prisma.user.upsert({
     where: { email: 'owner@dorm.com' },
-    update: { role: 'OWNER' },
+    update: { role: 'OWNER', passwordHash: defaultPassword },
     create: {
       email: 'owner@dorm.com',
       passwordHash: defaultPassword,
-      name: 'Owner User',
+      name: 'เจ้าของหอพัก (Owner)',
       role: 'OWNER',
       phone: '0888888888'
     }
@@ -188,264 +180,312 @@ async function main() {
 
   const managerUser = await prisma.user.upsert({
     where: { email: 'manager@dorm.com' },
-    update: { role: 'MANAGER' },
+    update: { role: 'MANAGER', passwordHash: defaultPassword },
     create: {
       email: 'manager@dorm.com',
       passwordHash: defaultPassword,
-      name: 'Manager User',
+      name: 'ผู้จัดการอาคาร (Manager)',
       role: 'MANAGER',
       phone: '0877777777'
     }
   });
 
-  await prisma.userBuildingPermission.upsert({
-    where: { userId_buildingId: { userId: managerUser.id, buildingId: buildingA.id } },
-    update: {},
-    create: { userId: managerUser.id, buildingId: buildingA.id }
-  });
-
   const adminA = await prisma.user.upsert({
     where: { email: 'admin_building_a@dorm.com' },
-    update: { role: 'admin' },
+    update: { role: 'admin', passwordHash: defaultPassword },
     create: {
       email: 'admin_building_a@dorm.com',
       passwordHash: defaultPassword,
-      name: 'Admin Building A',
+      name: 'แอดมิน อาคาร A',
       role: 'admin',
       phone: '0811111111'
     }
   });
 
-  await prisma.userBuildingPermission.upsert({
-    where: { userId_buildingId: { userId: adminA.id, buildingId: buildingA.id } },
-    update: {},
-    create: { userId: adminA.id, buildingId: buildingA.id }
-  });
-
   const adminB = await prisma.user.upsert({
     where: { email: 'admin_building_b@dorm.com' },
-    update: { role: 'admin' },
+    update: { role: 'admin', passwordHash: defaultPassword },
     create: {
       email: 'admin_building_b@dorm.com',
       passwordHash: defaultPassword,
-      name: 'Admin Building B',
+      name: 'แอดมิน อาคาร B',
       role: 'admin',
       phone: '0822222222'
     }
   });
 
+  const roomOwnerUser = await prisma.user.upsert({
+    where: { email: 'investor@dorm.com' },
+    update: { role: 'room_owner', passwordHash: defaultPassword },
+    create: {
+      email: 'investor@dorm.com',
+      passwordHash: defaultPassword,
+      name: 'คุณวิชัย เจริญกิจ (เจ้าของห้องร่วม)',
+      role: 'room_owner',
+      phone: '0833333333'
+    }
+  });
+
+  // User Building Permissions
+  await prisma.userBuildingPermission.upsert({
+    where: { userId_buildingId: { userId: managerUser.id, buildingId: buildingA.id } },
+    update: {},
+    create: { userId: managerUser.id, buildingId: buildingA.id }
+  });
+  await prisma.userBuildingPermission.upsert({
+    where: { userId_buildingId: { userId: managerUser.id, buildingId: buildingB.id } },
+    update: {},
+    create: { userId: managerUser.id, buildingId: buildingB.id }
+  });
+  await prisma.userBuildingPermission.upsert({
+    where: { userId_buildingId: { userId: adminA.id, buildingId: buildingA.id } },
+    update: {},
+    create: { userId: adminA.id, buildingId: buildingA.id }
+  });
   await prisma.userBuildingPermission.upsert({
     where: { userId_buildingId: { userId: adminB.id, buildingId: buildingB.id } },
     update: {},
     create: { userId: adminB.id, buildingId: buildingB.id }
   });
 
-  console.log('👤 Admin users & building permissions ready');
+  console.log('👤 3. Users & Building Permissions seeded');
 
+  // =========================================================================
   // 4. Feature Toggles
-  const defaultFeatures = [
-    { key: 'ENABLE_VEHICLE_MANAGEMENT', description: 'ระบบจัดการป้ายทะเบียนและยานพาหนะลูกบ้าน', isActive: true },
-    { key: 'ENABLE_PARCEL_NOTIFY', description: 'ระบบแจ้งเตือนพัสดุมาถึงผ่าน LINE', isActive: true },
-    { key: 'ENABLE_MAINTENANCE_REQUEST', description: 'ระบบแจ้งซ่อมแซมและติดตามสถานะ', isActive: true },
-    { key: 'ENABLE_LINE_PAYMENT', description: 'ระบบชำระเงินและแนบสลิปผ่าน LIFF', isActive: true }
+  // =========================================================================
+  const featureList = [
+    { key: 'ENABLE_VEHICLE_MANAGEMENT', description: 'ระบบจัดการป้ายทะเบียนและยานพาหนะลูกบ้าน' },
+    { key: 'ENABLE_PARCEL_NOTIFY', description: 'ระบบแจ้งเตือนพัสดุมาถึงผ่าน LINE' },
+    { key: 'ENABLE_MAINTENANCE_REQUEST', description: 'ระบบแจ้งซ่อมแซมและติดตามสถานะ' },
+    { key: 'ENABLE_LINE_PAYMENT', description: 'ระบบชำระเงินและแนบสลิปผ่าน LIFF' },
+    { key: 'ENABLE_FACILITY_BOOKING', description: 'ระบบจองพื้นที่ส่วนกลาง (ฟิตเนส/สระว่ายน้ำ)' },
+    { key: 'ENABLE_TENANT_POLLS', description: 'ระบบโหวตและสำรวจความคิดเห็นลูกบ้าน' },
+    { key: 'ENABLE_VISITOR_PASS', description: 'ระบบบันทึกและลงทะเบียนผู้มาติดต่อ' }
   ];
 
-  for (const feature of defaultFeatures) {
-    await prisma.featureToggle.upsert({
-      where: { key_buildingId: { key: feature.key, buildingId: buildingA.id } },
-      update: { isActive: true },
-      create: { ...feature, buildingId: buildingA.id }
-    }).catch(async () => {
-      // If table constraint has no buildingId composite, fallback
-      const existing = await prisma.featureToggle.findFirst({ where: { key: feature.key, buildingId: null } });
-      if (!existing) await prisma.featureToggle.create({ data: { key: feature.key, description: feature.description, isActive: true } });
-    });
+  for (const f of featureList) {
+    for (const b of [buildingA, buildingB]) {
+      await prisma.featureToggle.upsert({
+        where: { key_buildingId: { key: f.key, buildingId: b.id } },
+        update: { isActive: true },
+        create: { key: f.key, description: f.description, isActive: true, buildingId: b.id }
+      }).catch(async () => {
+        const exist = await prisma.featureToggle.findFirst({ where: { key: f.key, buildingId: null } });
+        if (!exist) await prisma.featureToggle.create({ data: { key: f.key, description: f.description, isActive: true } });
+      });
+    }
   }
 
-  // 5. Tenants
-  // User's active LIFF LINE ID: Uef737f8486c9f1e560364799ef60018e
+  console.log('🎛️ 4. Feature Toggles seeded');
+
+  // =========================================================================
+  // 5. Tenants (ผู้เช่าหลากหลายโปรไฟล์)
+  // =========================================================================
   const activeLiffLineUserId = 'Uef737f8486c9f1e560364799ef60018e';
 
-  // Tenant 1: Main User / Somkiat (Linked to Building B - Room 201)
-  let tenantSomkiat = await prisma.tenant.findFirst({
-    where: {
-      OR: [
-        { lineUserId: activeLiffLineUserId },
-        { phone: '0898765432' }
-      ]
+  let tenantSomkiat = await prisma.tenant.upsert({
+    where: { lineUserId: activeLiffLineUserId },
+    update: {
+      firstName: 'สมเกียรติ',
+      lastName: 'พัฒนกิจ',
+      phone: '0898765432',
+      idCard: '1100100200301',
+      lineDisplayName: 'Somkiat (ลูกบ้าน)',
+      linePictureUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80',
+      lineStatusMessage: 'ยินดีที่ได้รู้จักครับ',
+      internalNotes: 'ผู้เช่าชำระเงินตรงเวลา อัธยาศัยดี'
+    },
+    create: {
+      firstName: 'สมเกียรติ',
+      lastName: 'พัฒนกิจ',
+      phone: '0898765432',
+      idCard: '1100100200301',
+      lineUserId: activeLiffLineUserId,
+      lineDisplayName: 'Somkiat (ลูกบ้าน)',
+      linePictureUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80',
+      lineStatusMessage: 'ยินดีที่ได้รู้จักครับ',
+      internalNotes: 'ผู้เช่าชำระเงินตรงเวลา อัธยาศัยดี'
     }
   });
 
-  if (tenantSomkiat) {
-    tenantSomkiat = await prisma.tenant.update({
-      where: { id: tenantSomkiat.id },
-      data: {
-        firstName: 'สมเกียรติ',
-        lastName: 'พัฒนกิจ',
-        phone: '0898765432',
-        idCard: '1100100200301',
-        lineUserId: activeLiffLineUserId,
-        lineDisplayName: 'Somkiat (ลูกบ้าน)',
-        linePictureUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80',
-        lineStatusMessage: 'ยินดีที่ได้รู้จักครับ',
-        internalNotes: 'ผู้เช่าชำระเงินตรงเวลา อัธยาศัยดี'
-      }
-    });
-  } else {
-    tenantSomkiat = await prisma.tenant.create({
-      data: {
-        firstName: 'สมเกียรติ',
-        lastName: 'พัฒนกิจ',
-        phone: '0898765432',
-        idCard: '1100100200301',
-        lineUserId: activeLiffLineUserId,
-        lineDisplayName: 'Somkiat (ลูกบ้าน)',
-        linePictureUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80',
-        lineStatusMessage: 'ยินดีที่ได้รู้จักครับ',
-        internalNotes: 'ผู้เช่าชำระเงินตรงเวลา อัธยาศัยดี'
-      }
-    });
-  }
+  let tenantKanda = await prisma.tenant.upsert({
+    where: { lineUserId: 'U_kanda_demo_line_01' },
+    update: { firstName: 'กานดา', lastName: 'วิเศษสุข', phone: '0812345678' },
+    create: {
+      firstName: 'กานดา',
+      lastName: 'วิเศษสุข',
+      phone: '0812345678',
+      idCard: '1100200300401',
+      lineUserId: 'U_kanda_demo_line_01',
+      lineDisplayName: 'Kanda Wisetsuk',
+      linePictureUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=300&q=80',
+      lineStatusMessage: 'Focus on happiness ✨',
+      internalNotes: 'ทำงานประจำใกล้บีทีเอส อ่อนนุช'
+    }
+  });
 
-  // Tenant 2: Kanda (Building A - Room 101)
-  let tenantKanda = await prisma.tenant.findFirst({ where: { phone: '0812345678' } });
-  if (!tenantKanda) {
-    tenantKanda = await prisma.tenant.create({
-      data: {
-        firstName: 'กานดา',
-        lastName: 'วิเศษสุข',
-        phone: '0812345678',
-        idCard: '1100200300401',
-        lineUserId: 'U_kanda_demo_line_01',
-        lineDisplayName: 'Kanda Wisetsuk',
-        linePictureUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=300&q=80',
-        lineStatusMessage: 'Focus on happiness ✨',
-        internalNotes: 'ทำงานประจำใกล้บีทีเอส อ่อนนุช'
-      }
-    });
-  }
+  let tenantThanakorn = await prisma.tenant.upsert({
+    where: { lineUserId: 'U_thanakorn_demo_02' },
+    update: { firstName: 'ธนกร', lastName: 'สิทธิโชค', phone: '0863334455' },
+    create: {
+      firstName: 'ธนกร',
+      lastName: 'สิทธิโชค',
+      phone: '0863334455',
+      idCard: '1100300400502',
+      lineUserId: 'U_thanakorn_demo_02',
+      lineDisplayName: 'Boss Thanakorn',
+      linePictureUrl: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&w=300&q=80',
+      internalNotes: 'มีมอเตอร์ไซค์ 1 คัน ขอสติ๊กเกอร์จอดรถแล้ว'
+    }
+  });
 
-  // Tenant 3: Thanakorn (Building A - Room 102)
-  let tenantThanakorn = await prisma.tenant.findFirst({ where: { phone: '0863334455' } });
-  if (!tenantThanakorn) {
-    tenantThanakorn = await prisma.tenant.create({
-      data: {
-        firstName: 'ธนกร',
-        lastName: 'สิทธิโชค',
-        phone: '0863334455',
-        idCard: '1100300400502',
-        lineUserId: 'U_thanakorn_demo_02',
-        lineDisplayName: 'Boss Thanakorn',
-        linePictureUrl: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&w=300&q=80',
-        internalNotes: 'มีมอเตอร์ไซค์ 1 คัน ขอสติ๊กเกอร์จอดรถแล้ว'
-      }
-    });
-  }
+  let tenantPimmada = await prisma.tenant.upsert({
+    where: { lineUserId: 'U_pimmada_demo_03' },
+    update: { firstName: 'พิมพ์มาดา', lastName: 'ฤทัยรัตน์', phone: '0855556677' },
+    create: {
+      firstName: 'พิมพ์มาดา',
+      lastName: 'ฤทัยรัตน์',
+      phone: '0855556677',
+      idCard: '1100400500603',
+      lineUserId: 'U_pimmada_demo_03',
+      lineDisplayName: 'Pimmada P.',
+      linePictureUrl: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=300&q=80',
+      internalNotes: 'นักศึกษาปริญญาโท ม.กรุงเทพ'
+    }
+  });
 
-  // Tenant 4: Pimmada (Building A - Room 201)
-  let tenantPimmada = await prisma.tenant.findFirst({ where: { phone: '0855556677' } });
-  if (!tenantPimmada) {
-    tenantPimmada = await prisma.tenant.create({
-      data: {
-        firstName: 'พิมพ์มาดา',
-        lastName: 'ฤทัยรัตน์',
-        phone: '0855556677',
-        idCard: '1100400500603',
-        lineUserId: 'U_pimmada_demo_03',
-        lineDisplayName: 'Pimmada P.',
-        linePictureUrl: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=300&q=80',
-        internalNotes: 'นักศึกษาปริญญาโท ม.กรุงเทพ'
-      }
-    });
-  }
+  let tenantWorapol = await prisma.tenant.upsert({
+    where: { inviteCode: 'INV202' },
+    update: { firstName: 'วรพล', lastName: 'สุวรรณเมฆ', phone: '0844448899' },
+    create: {
+      firstName: 'วรพล',
+      lastName: 'สุวรรณเมฆ',
+      phone: '0844448899',
+      idCard: '1100500600704',
+      lineUserId: null,
+      inviteCode: 'INV202',
+      inviteExpiresAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+      internalNotes: 'เพิ่งย้ายเข้าใหม่ รอผูกบัญชี LINE ทาง LIFF'
+    }
+  });
 
-  // Tenant 5: Worapol (Building B - Room 202, Unlinked, Invite Code ready)
-  let tenantWorapol = await prisma.tenant.findFirst({ where: { phone: '0844448899' } });
-  if (!tenantWorapol) {
-    tenantWorapol = await prisma.tenant.create({
-      data: {
-        firstName: 'วรพล',
-        lastName: 'สุวรรณเมฆ',
-        phone: '0844448899',
-        idCard: '1100500600704',
-        lineUserId: null,
-        inviteCode: 'INV202',
-        inviteExpiresAt: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
-        internalNotes: 'เพิ่งย้ายเข้าใหม่ รอผูกบัญชี LINE ทาง LIFF'
-      }
-    });
-  }
+  let tenantSiriporn = await prisma.tenant.upsert({
+    where: { lineUserId: 'U_siriporn_demo_04' },
+    update: { firstName: 'ศิริพร', lastName: 'บุญมี', phone: '0821112233' },
+    create: {
+      firstName: 'ศิริพร',
+      lastName: 'บุญมี',
+      phone: '0821112233',
+      idCard: '1100600700805',
+      lineUserId: 'U_siriporn_demo_04',
+      lineDisplayName: 'Siriporn B.',
+      linePictureUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=300&q=80',
+      internalNotes: 'เช่าระยะยาว 2 ปี'
+    }
+  });
 
-  // Tenant 6: Siriporn (Building B - Room 101)
-  let tenantSiriporn = await prisma.tenant.findFirst({ where: { phone: '0821112233' } });
-  if (!tenantSiriporn) {
-    tenantSiriporn = await prisma.tenant.create({
-      data: {
-        firstName: 'ศิริพร',
-        lastName: 'บุญมี',
-        phone: '0821112233',
-        idCard: '1100600700805',
-        lineUserId: 'U_siriporn_demo_04',
-        lineDisplayName: 'Siriporn B.',
-        linePictureUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=300&q=80',
-        internalNotes: 'เช่าระยะยาว 2 ปี'
+  let tenantAttapol = await prisma.tenant.upsert({
+    where: { inviteCode: 'INV999' },
+    update: { firstName: 'อรรถพล', lastName: 'เจริญผล', phone: '0891114477' },
+    create: {
+      firstName: 'อรรถพล',
+      lastName: 'เจริญผล',
+      phone: '0891114477',
+      inviteCode: 'INV999',
+      idCard: '1100700800906',
+      internalNotes: 'ย้ายออกเมื่อสิ้นเดือนที่แล้ว คืนเงินมัดจำเรียบร้อย'
+    }
+  });
+
+  console.log('👥 5. Tenants seeded');
+
+  // =========================================================================
+  // 6. UserLineAccount (บัญชี LINE หลายตึก / Multi-Building binding)
+  // =========================================================================
+  if (tenantSomkiat.lineUserId) {
+    await prisma.userLineAccount.upsert({
+      where: { buildingId_lineUserId: { buildingId: buildingB.id, lineUserId: tenantSomkiat.lineUserId } },
+      update: {
+        tenantId: tenantSomkiat.id,
+        lineDisplayName: tenantSomkiat.lineDisplayName,
+        linePictureUrl: tenantSomkiat.linePictureUrl
+      },
+      create: {
+        lineUserId: tenantSomkiat.lineUserId,
+        buildingId: buildingB.id,
+        tenantId: tenantSomkiat.id,
+        lineDisplayName: tenantSomkiat.lineDisplayName,
+        linePictureUrl: tenantSomkiat.linePictureUrl
       }
     });
   }
 
-  // Tenant 7: Attapol (Moved Out / History)
-  let tenantAttapol = await prisma.tenant.findFirst({ where: { phone: '0891114477' } });
-  if (!tenantAttapol) {
-    tenantAttapol = await prisma.tenant.create({
-      data: {
-        firstName: 'อรรถพล',
-        lastName: 'เจริญผล',
-        phone: '0891114477',
-        idCard: '1100700800906',
-        internalNotes: 'ย้ายออกเมื่อสิ้นเดือนที่แล้ว คืนเงินมัดจำเรียบร้อย'
-      }
-    });
-  }
-
-  console.log('👥 Tenants seeded successfully');
-
-  // 6. Rooms
-  // Helper to upsert rooms
-  async function upsertRoom(buildingId, roomNumber, floor, price, status, tenantId = null) {
+  // =========================================================================
+  // 7. Rooms (ที่พัก, ร้านค้าพาณิชย์, ตู้เต่าบิน, ที่จอดรถ)
+  // =========================================================================
+  async function upsertRoom(data) {
     const existing = await prisma.room.findFirst({
-      where: { buildingId, roomNumber }
+      where: { buildingId: data.buildingId, roomNumber: data.roomNumber }
     });
     if (existing) {
       return await prisma.room.update({
         where: { id: existing.id },
-        data: { floor, price, status, tenantId }
+        data
       });
     }
-    return await prisma.room.create({
-      data: { buildingId, roomNumber, floor, price, status, tenantId }
-    });
+    return await prisma.room.create({ data });
   }
 
   // Rooms in Building A
-  const roomA101 = await upsertRoom(buildingA.id, '101', 1, 4000.0, 'occupied', tenantKanda.id);
-  const roomA102 = await upsertRoom(buildingA.id, '102', 1, 4000.0, 'occupied', tenantThanakorn.id);
-  const roomA103 = await upsertRoom(buildingA.id, '103', 1, 4200.0, 'available', null);
-  const roomA104 = await upsertRoom(buildingA.id, '104', 1, 4200.0, 'available', null);
-  const roomA201 = await upsertRoom(buildingA.id, '201', 2, 4500.0, 'occupied', tenantPimmada.id);
-  const roomA202 = await upsertRoom(buildingA.id, '202', 2, 4500.0, 'available', null);
-  const roomA203 = await upsertRoom(buildingA.id, '203', 2, 4500.0, 'maintenance', null);
-  const roomA301 = await upsertRoom(buildingA.id, '301', 3, 4800.0, 'available', null);
+  const roomA101 = await upsertRoom({ buildingId: buildingA.id, roomNumber: '101', floor: 1, price: 4000.0, status: 'occupied', tenantId: tenantKanda.id, unitType: 'residential' });
+  const roomA102 = await upsertRoom({ buildingId: buildingA.id, roomNumber: '102', floor: 1, price: 4000.0, status: 'occupied', tenantId: tenantThanakorn.id, unitType: 'residential' });
+  const roomA103 = await upsertRoom({ buildingId: buildingA.id, roomNumber: '103', floor: 1, price: 4200.0, status: 'available', tenantId: null, unitType: 'residential' });
+  const roomA104 = await upsertRoom({ buildingId: buildingA.id, roomNumber: '104', floor: 1, price: 4200.0, status: 'available', tenantId: null, unitType: 'residential' });
+  const roomA201 = await upsertRoom({ buildingId: buildingA.id, roomNumber: '201', floor: 2, price: 4500.0, status: 'occupied', tenantId: tenantPimmada.id, unitType: 'residential' });
+  const roomA202 = await upsertRoom({ buildingId: buildingA.id, roomNumber: '202', floor: 2, price: 4500.0, status: 'available', tenantId: null, unitType: 'residential' });
+  const roomA203 = await upsertRoom({ buildingId: buildingA.id, roomNumber: '203', floor: 2, price: 4500.0, status: 'maintenance', tenantId: null, unitType: 'residential' });
+  const roomAShop = await upsertRoom({ buildingId: buildingA.id, roomNumber: 'SHOP-01', floor: 1, price: 8500.0, status: 'available', tenantId: null, unitType: 'commercial_shop', areaSqm: 32.5 });
 
   // Rooms in Building B
-  const roomB101 = await upsertRoom(buildingB.id, '101', 1, 4300.0, 'occupied', tenantSiriporn.id);
-  const roomB102 = await upsertRoom(buildingB.id, '102', 1, 4300.0, 'available', null);
-  const roomB201 = await upsertRoom(buildingB.id, '201', 2, 4500.0, 'occupied', tenantSomkiat.id);
-  const roomB202 = await upsertRoom(buildingB.id, '202', 2, 4500.0, 'occupied', tenantWorapol.id);
-  const roomB203 = await upsertRoom(buildingB.id, '203', 2, 4700.0, 'available', null);
+  const roomB101 = await upsertRoom({ buildingId: buildingB.id, roomNumber: '101', floor: 1, price: 4300.0, status: 'occupied', tenantId: tenantSiriporn.id, unitType: 'residential' });
+  const roomB102 = await upsertRoom({ buildingId: buildingB.id, roomNumber: '102', floor: 1, price: 4300.0, status: 'available', tenantId: null, unitType: 'residential' });
+  const roomB201 = await upsertRoom({ buildingId: buildingB.id, roomNumber: '201', floor: 2, price: 4500.0, status: 'occupied', tenantId: tenantSomkiat.id, ownerId: roomOwnerUser.id, unitType: 'residential' });
+  const roomB202 = await upsertRoom({ buildingId: buildingB.id, roomNumber: '202', floor: 2, price: 4500.0, status: 'occupied', tenantId: tenantWorapol.id, unitType: 'residential' });
+  const roomB203 = await upsertRoom({ buildingId: buildingB.id, roomNumber: '203', floor: 2, price: 4700.0, status: 'available', tenantId: null, unitType: 'residential' });
+  const roomBVending = await upsertRoom({ buildingId: buildingB.id, roomNumber: 'VEND-01', floor: 1, price: 0.0, status: 'occupied', billingModel: 'revenue_share', revSharePercent: 12.0, unitType: 'vending_spot' });
 
-  console.log('🏠 Rooms seeded across Building A and B');
+  console.log('🏠 7. Rooms seeded across Building A and B');
 
-  // 7. Lease Contracts & Move Out History
+  // =========================================================================
+  // 8. Room Residents (รูมเมท / สมาชิกร่วมห้อง)
+  // =========================================================================
+  await prisma.roomResident.upsert({
+    where: { roomId_tenantId: { roomId: roomB201.id, tenantId: tenantSomkiat.id } },
+    update: { role: 'PRIMARY', isPayer: true },
+    create: {
+      roomId: roomB201.id,
+      tenantId: tenantSomkiat.id,
+      role: 'PRIMARY',
+      isPayer: true,
+      status: 'ACTIVE'
+    }
+  });
+
+  await prisma.roomResident.upsert({
+    where: { roomId_tenantId: { roomId: roomA101.id, tenantId: tenantKanda.id } },
+    update: { role: 'PRIMARY', isPayer: true },
+    create: {
+      roomId: roomA101.id,
+      tenantId: tenantKanda.id,
+      role: 'PRIMARY',
+      isPayer: true,
+      status: 'ACTIVE'
+    }
+  });
+
+  // =========================================================================
+  // 9. Lease Contracts & Move Out History
+  // =========================================================================
   const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000);
   const oneYearLater = new Date(Date.now() + 185 * 24 * 60 * 60 * 1000);
 
@@ -486,43 +526,7 @@ async function main() {
     });
   }
 
-  // Active Lease for Thanakorn (Building A - 102)
-  let leaseA102 = await prisma.leaseContract.findFirst({
-    where: { roomId: roomA102.id, tenantId: tenantThanakorn.id }
-  });
-  if (!leaseA102) {
-    leaseA102 = await prisma.leaseContract.create({
-      data: {
-        roomId: roomA102.id,
-        tenantId: tenantThanakorn.id,
-        buildingId: buildingA.id,
-        startDate: sixMonthsAgo,
-        expectedEndDate: oneYearLater,
-        depositAmount: 8000.0,
-        status: 'ACTIVE'
-      }
-    });
-  }
-
-  // Active Lease for Worapol (Building B - 202)
-  let leaseB202 = await prisma.leaseContract.findFirst({
-    where: { roomId: roomB202.id, tenantId: tenantWorapol.id }
-  });
-  if (!leaseB202) {
-    leaseB202 = await prisma.leaseContract.create({
-      data: {
-        roomId: roomB202.id,
-        tenantId: tenantWorapol.id,
-        buildingId: buildingB.id,
-        startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
-        expectedEndDate: oneYearLater,
-        depositAmount: 9000.0,
-        status: 'ACTIVE'
-      }
-    });
-  }
-
-  // Past Ended Lease for Attapol (Building A - 104) with Move Out Record
+  // Ended Lease for Attapol (Building A - 104) with Move Out Record
   let pastLeaseA104 = await prisma.leaseContract.findFirst({
     where: { roomId: roomA104.id, tenantId: tenantAttapol.id }
   });
@@ -563,21 +567,18 @@ async function main() {
     });
   }
 
-  console.log('📜 Lease contracts & move-out history seeded');
+  console.log('📜 9. Lease Contracts & Move-out Records seeded');
 
-  // 8. Meter Records (July 2026 and August 2026)
+  // =========================================================================
+  // 10. Meter Records (มิเตอร์น้ำ-ไฟย้อนหลัง)
+  // =========================================================================
   const meterData = [
-    // Room B201 (Somkiat)
     { roomId: roomB201.id, meterType: 'water', previousReading: 120, currentReading: 129, unitsUsed: 9, billingCycle: '08-2026', recordedAt: new Date('2026-08-25') },
     { roomId: roomB201.id, meterType: 'electric', previousReading: 2150, currentReading: 2255, unitsUsed: 105, billingCycle: '08-2026', recordedAt: new Date('2026-08-25') },
     { roomId: roomB201.id, meterType: 'water', previousReading: 112, currentReading: 120, unitsUsed: 8, billingCycle: '07-2026', recordedAt: new Date('2026-07-25') },
     { roomId: roomB201.id, meterType: 'electric', previousReading: 2045, currentReading: 2150, unitsUsed: 105, billingCycle: '07-2026', recordedAt: new Date('2026-07-25') },
-    // Room A101 (Kanda)
     { roomId: roomA101.id, meterType: 'water', previousReading: 85, currentReading: 91, unitsUsed: 6, billingCycle: '08-2026', recordedAt: new Date('2026-08-25') },
-    { roomId: roomA101.id, meterType: 'electric', previousReading: 1540, currentReading: 1620, unitsUsed: 80, billingCycle: '08-2026', recordedAt: new Date('2026-08-25') },
-    // Room A102 (Thanakorn)
-    { roomId: roomA102.id, meterType: 'water', previousReading: 90, currentReading: 98, unitsUsed: 8, billingCycle: '08-2026', recordedAt: new Date('2026-08-25') },
-    { roomId: roomA102.id, meterType: 'electric', previousReading: 1800, currentReading: 1910, unitsUsed: 110, billingCycle: '08-2026', recordedAt: new Date('2026-08-25') }
+    { roomId: roomA101.id, meterType: 'electric', previousReading: 1540, currentReading: 1620, unitsUsed: 80, billingCycle: '08-2026', recordedAt: new Date('2026-08-25') }
   ];
 
   for (const m of meterData) {
@@ -589,10 +590,11 @@ async function main() {
     }
   }
 
-  console.log('⚡ Water & Electric meter records seeded');
+  console.log('⚡ 10. Meter Records seeded');
 
-  // 9. Invoices
-  // Helper to create or update invoice
+  // =========================================================================
+  // 11. Invoices (ใบแจ้งหนี้ Pending, Paid, Overdue)
+  // =========================================================================
   async function upsertInvoice(data) {
     const existing = await prisma.invoice.findUnique({
       where: { invoiceNumber: data.invoiceNumber }
@@ -606,15 +608,15 @@ async function main() {
     return await prisma.invoice.create({ data });
   }
 
-  // Invoice 1: Room B201 (Somkiat / Current Month) -> Pending (ยังไม่จ่าย รอชำระ)
+  // Invoice 1: Room B201 (Pending)
   await upsertInvoice({
     invoiceNumber: 'INV-202608-B201',
     roomId: roomB201.id,
     tenantId: tenantSomkiat.id,
     billingCycle: '08-2026',
     roomPrice: 4500.0,
-    waterTotal: 180.0, // 9 units * 20
-    electricTotal: 840.0, // 105 units * 8
+    waterTotal: 180.0,
+    electricTotal: 840.0,
     commonFee: 100.0,
     otherFee: 0.0,
     grandTotal: 5620.0,
@@ -623,7 +625,7 @@ async function main() {
     slipUrl: null
   });
 
-  // Invoice 2: Room B201 (Somkiat / July 2026) -> Paid (ชำระแล้ว มีใบเสร็จ)
+  // Invoice 2: Room B201 (Paid with receipt)
   await upsertInvoice({
     invoiceNumber: 'INV-202607-B201',
     roomId: roomB201.id,
@@ -644,223 +646,67 @@ async function main() {
     slipHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
   });
 
-  // Invoice 3: Room B201 (Somkiat / June 2026) -> Paid (ชำระแล้ว)
-  await upsertInvoice({
-    invoiceNumber: 'INV-202606-B201',
-    roomId: roomB201.id,
-    tenantId: tenantSomkiat.id,
-    billingCycle: '06-2026',
-    roomPrice: 4500.0,
-    waterTotal: 140.0,
-    electricTotal: 800.0,
-    commonFee: 100.0,
-    otherFee: 0.0,
-    grandTotal: 5540.0,
-    status: 'paid',
-    dueDate: new Date('2026-07-05'),
-    paidAt: new Date('2026-07-04T10:10:00Z'),
-    paymentMethod: 'PROMPTPAY',
-    paymentNote: 'โอนชำระเงินเรียบร้อย',
-    slipUrl: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&w=600&q=80'
-  });
+  console.log('🧾 11. Invoices seeded');
 
-  // Invoice 4: Room A101 (Kanda / August 2026) -> Paid
-  await upsertInvoice({
-    invoiceNumber: 'INV-202608-A101',
-    roomId: roomA101.id,
-    tenantId: tenantKanda.id,
-    billingCycle: '08-2026',
-    roomPrice: 4000.0,
-    waterTotal: 108.0, // 6 units * 18
-    electricTotal: 560.0, // 80 units * 7
-    commonFee: 100.0,
-    otherFee: 0.0,
-    grandTotal: 4768.0,
-    status: 'paid',
-    dueDate: new Date('2026-09-05'),
-    paidAt: new Date('2026-08-28T09:30:00Z'),
-    paymentMethod: 'PROMPTPAY',
-    slipUrl: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&w=600&q=80'
-  });
-
-  // Invoice 5: Room A102 (Thanakorn / August 2026) -> Pending
-  await upsertInvoice({
-    invoiceNumber: 'INV-202608-A102',
-    roomId: roomA102.id,
-    tenantId: tenantThanakorn.id,
-    billingCycle: '08-2026',
-    roomPrice: 4000.0,
-    waterTotal: 144.0,
-    electricTotal: 770.0,
-    commonFee: 100.0,
-    otherFee: 0.0,
-    grandTotal: 5014.0,
-    status: 'pending',
-    dueDate: new Date('2026-09-05')
-  });
-
-  // Invoice 6: Room A201 (Pimmada / July 2026) -> Overdue (เกินกำหนดชำระ มีค่าปรับ)
-  await upsertInvoice({
-    invoiceNumber: 'INV-202607-A201',
-    roomId: roomA201.id,
-    tenantId: tenantPimmada.id,
-    billingCycle: '07-2026',
-    roomPrice: 4500.0,
-    waterTotal: 180.0,
-    electricTotal: 700.0,
-    commonFee: 100.0,
-    otherFee: 100.0,
-    otherFeeNote: 'ค่าปรับชำระล่าช้าเกินกำหนด 10 วัน',
-    grandTotal: 5580.0,
-    status: 'overdue',
-    dueDate: new Date('2026-08-05')
-  });
-
-  console.log('🧾 Invoices seeded (pending, paid, overdue)');
-
-  // 10. Maintenance Requests
-  const sampleRequests = [
-    // 1. Pending for Somkiat (Room B201)
+  // =========================================================================
+  // 12. Maintenance Requests (แจ้งซ่อมแซม Admin Backoffice)
+  // =========================================================================
+  const maintenanceList = [
     {
       roomId: roomB201.id,
       tenantId: tenantSomkiat.id,
       buildingId: buildingB.id,
       title: 'ก๊อกน้ำอ่างล้างหน้ารั่วซึม',
-      description: 'มีน้ำหยดติ๋งๆ ตลอดเวลาปิดไม่สนิท น้ำซึมลงใต้เคาน์เตอร์',
-      imageUrl: null,
-      photoUrl: null,
-      technicianName: null,
+      description: 'มีน้ำหยดตลอดเวลาปิดไม่สนิท น้ำซึมลงใต้เคาน์เตอร์',
+      technicianName: 'ช่างวิชัย',
       repairCost: 0,
-      adminNote: 'รับเรื่องแล้ว จัดคิวช่างตรวจเช็คช่วงบ่ายครับ',
-      status: 'pending'
+      adminNote: 'รับเรื่องแล้ว จัดคิวช่างตรวจเช็คช่วงบ่าย',
+      status: 'pending',
+      payer: 'MANAGEMENT'
     },
-    // 2. In Progress for Somkiat (Room B201)
     {
       roomId: roomB201.id,
       tenantId: tenantSomkiat.id,
       buildingId: buildingB.id,
       title: 'เครื่องปรับอากาศไม่เย็น มีลมร้อนออกมา',
-      description: 'เปิดแอร์ 24 องศาแล้วห้องยังร้อน คอมเพรสเซอร์ตัดบ่อย มีเสียงฮึ่มๆ',
+      description: 'เปิดแอร์ 24 องศาแล้วห้องยังร้อน คอมเพรสเซอร์ตัดบ่อย',
       imageUrl: 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=600&q=80',
-      photoUrl: null,
       technicianName: 'ช่างสมชาย (แอร์เซอร์วิส)',
-      repairCost: 0,
-      adminNote: 'นัดช่างแอร์เข้าตรวจเช็คแรงดันน้ำยาแอร์และแผงคอยล์เย็น วันพรุ่งนี้ 10:00 น.',
-      status: 'in_progress'
+      repairCost: 500.0,
+      adminNote: 'นัดช่างแอร์เข้าตรวจเช็คแรงดันน้ำยาแอร์และแผงคอยล์เย็น',
+      status: 'in_progress',
+      payer: 'MANAGEMENT'
     },
-    // 3. Resolved for Somkiat (Room B201)
     {
       roomId: roomB201.id,
       tenantId: tenantSomkiat.id,
       buildingId: buildingB.id,
       title: 'ลูกบิดประตูด้านในล็อคฝืดและไขติดขัด',
-      description: 'ลูกบิดประตูระเบียงบิดยากมาก เกรงว่าจะติดอยู่ในระเบียง',
-      imageUrl: null,
-      photoUrl: null,
+      description: 'ลูกบิดประตูระเบียงบิดยากมาก',
       technicianName: 'ช่างวิชัย',
       repairCost: 350.0,
-      adminNote: 'ช่างได้ทำการเปลี่ยนตลับลูกบิดประตูสแตนเลสตัวใหม่ให้เรียบร้อยแล้ว ทดสอบการใช้งานปกติ',
+      adminNote: 'ช่างได้ทำการเปลี่ยนตลับลูกบิดประตูสแตนเลสตัวใหม่ให้เรียบร้อยแล้ว',
       status: 'resolved',
-      resolvedAt: new Date('2026-08-27T14:30:00Z')
-    },
-    // 4. Resolved for Somkiat (Room B201)
-    {
-      roomId: roomB201.id,
-      tenantId: tenantSomkiat.id,
-      buildingId: buildingB.id,
-      title: 'ท่อน้ำทิ้งใต้อ่างล้างจานตัน น้ำระบายช้ามาก',
-      description: 'ล้างจานแล้วน้ำเอ่อขึ้นมา ไหลลงท่อช้ามาก',
-      imageUrl: null,
-      photoUrl: null,
-      technicianName: 'ช่างวิชัย',
-      repairCost: 200.0,
-      adminNote: 'ลอกสิ่งอุดตันใน Trap ดักกลิ่นและทำความสะอาดท่อเรียบร้อย',
-      status: 'resolved',
-      resolvedAt: new Date('2026-08-20T11:00:00Z')
-    },
-    // 5. In Progress for Kanda (Room A101)
-    {
-      roomId: roomA101.id,
-      tenantId: tenantKanda.id,
-      buildingId: buildingA.id,
-      title: 'หลอดไฟระเบียงและพัดลมดูดอากาศในห้องน้ำดับ',
-      description: 'เปิดสวิตช์แล้วไฟไม่ติด พัดลมดูดอากาศไม่หมุน คาดว่าเบรกเกอร์ย่อยอาจทริป',
-      imageUrl: null,
-      photoUrl: null,
-      technicianName: 'ช่างสมหมาย',
-      repairCost: 0,
-      adminNote: 'ช่างกำลังเบิกหลอด LED และสวิตช์ไปเปลี่ยนให้ครับ',
-      status: 'in_progress'
-    },
-    // 6. Pending for Thanakorn (Room A102)
-    {
-      roomId: roomA102.id,
-      tenantId: tenantThanakorn.id,
-      buildingId: buildingA.id,
-      title: 'สายฉีดชำระน้ำรั่วจากสายยาง',
-      description: 'น้ำพุ่งออกจากสายถักสแตนเลส ต้องปิดวาล์วไว้ก่อน',
-      imageUrl: null,
-      photoUrl: null,
-      technicianName: null,
-      repairCost: 0,
-      adminNote: 'เตรียมสายฉีดชำระใหม่เข้าไปเปลี่ยนให้พรุ่งนี้เช้าครับ',
-      status: 'pending'
-    },
-    // 7. Resolved for Pimmada (Room A201)
-    {
-      roomId: roomA201.id,
-      tenantId: tenantPimmada.id,
-      buildingId: buildingA.id,
-      title: 'กระจกบานเลื่อนหน้าต่างฝืด ตกราง',
-      description: 'เลื่อนปิดหน้าต่างไม่ได้ ติดขัด',
-      imageUrl: null,
-      photoUrl: null,
-      technicianName: 'ช่างสมหมาย',
-      repairCost: 250.0,
-      adminNote: 'ปรับตั้งล้อบานเลื่อนและหยอดสารหล่อลื่นเรียบร้อย',
-      status: 'resolved',
-      resolvedAt: new Date('2026-08-24T16:00:00Z')
-    },
-    // 8. Cancelled for Siriporn (Room B101)
-    {
-      roomId: roomB101.id,
-      tenantId: tenantSiriporn.id,
-      buildingId: buildingB.id,
-      title: 'แจ้งซ่อมรีโมทแอร์กดไม่ติด',
-      description: 'หน้าจอดับ',
-      imageUrl: null,
-      photoUrl: null,
-      technicianName: null,
-      repairCost: 0,
-      adminNote: 'ผู้เช่าแจ้งว่าลองเปลี่ยนถ่านใหม่ 2 ก้อนแล้วเปิดติดใช้งานได้ตามปกติ ขอยกเลิกคำร้อง',
-      status: 'cancelled'
+      resolvedAt: new Date('2026-08-27T14:30:00Z'),
+      payer: 'MANAGEMENT'
     }
   ];
 
-  for (const req of sampleRequests) {
+  for (const req of maintenanceList) {
     const existing = await prisma.maintenanceRequest.findFirst({
-      where: {
-        roomId: req.roomId,
-        title: req.title
-      }
+      where: { roomId: req.roomId, title: req.title }
     });
-    if (existing) {
-      await prisma.maintenanceRequest.update({
-        where: { id: existing.id },
-        data: req
-      });
-    } else {
-      await prisma.maintenanceRequest.create({
-        data: req
-      });
+    if (!existing) {
+      await prisma.maintenanceRequest.create({ data: req });
     }
   }
 
-  console.log('🔧 Maintenance requests seeded across buildings and statuses');
+  console.log('🔧 12. Maintenance Requests seeded');
 
-  // 11. Smart Parcels
+  // =========================================================================
+  // 13. Smart Parcels (พัสดุ)
+  // =========================================================================
   const sampleParcels = [
-    // PENDING for Somkiat (Room B201)
     {
       roomId: roomB201.id,
       buildingId: buildingB.id,
@@ -878,107 +724,262 @@ async function main() {
       trackingNumber: 'KER882940192',
       courier: 'Kerry Express',
       photoUrl: 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=600&q=80',
-      status: 'PENDING',
-      receivedAt: new Date(Date.now() - 4 * 60 * 60 * 1000)
-    },
-    // PICKED_UP for Somkiat (Room B201)
-    {
-      roomId: roomB201.id,
-      buildingId: buildingB.id,
-      tenantId: tenantSomkiat.id,
-      trackingNumber: 'TH0192837465',
-      courier: 'Flash Express',
-      photoUrl: 'https://images.unsplash.com/photo-1566576912321-d58ddd7a6088?auto=format&fit=crop&w=600&q=80',
       status: 'PICKED_UP',
-      receivedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
-      pickedUpAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000)
-    },
-    // PENDING for Kanda (Room A101)
-    {
-      roomId: roomA101.id,
-      buildingId: buildingA.id,
-      tenantId: tenantKanda.id,
-      trackingNumber: 'ED987654321TH',
-      courier: 'ไปรษณีย์ไทย (EMS)',
-      photoUrl: 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=600&q=80',
-      status: 'PENDING',
-      receivedAt: new Date(Date.now() - 2 * 60 * 60 * 1000)
+      receivedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+      pickedUpAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000)
     }
   ];
 
   for (const p of sampleParcels) {
-    const existing = await prisma.parcel.findFirst({
-      where: { trackingNumber: p.trackingNumber }
-    });
-    if (existing) {
-      await prisma.parcel.update({
-        where: { id: existing.id },
-        data: p
-      });
-    } else {
-      await prisma.parcel.create({ data: p });
-    }
+    const existing = await prisma.parcel.findFirst({ where: { trackingNumber: p.trackingNumber } });
+    if (!existing) await prisma.parcel.create({ data: p });
   }
 
-  console.log('📦 Smart parcels seeded');
+  console.log('📦 13. Smart Parcels seeded');
 
-  // 12. Announcements
+  // =========================================================================
+  // 14. Announcements & AnnouncementRead (ข่าวสาร & สถานะการอ่าน)
+  // =========================================================================
   const sampleAnnouncements = [
     {
       title: 'แจ้งกำหนดการล้างถังพักน้ำส่วนกลางประจำปี',
-      content: 'นิติบุคคลจะทำการล้างทำความสะอาดถังพักน้ำประปาประจำปี ในวันอาทิตย์ที่ 6 กันยายน 2569 เวลา 09:00 - 15:00 น. ช่วงเวลาดังกล่าวจะงดจ่ายน้ำประปาชั่วคราว ขอความกรุณาลูกบ้านทุกท่านสำรองน้ำไว้ใช้ล่วงหน้า ขออภัยในความไม่สะดวกครับ',
+      content: 'นิติบุคคลจะทำการล้างทำความสะอาดถังพักน้ำประปาประจำปี ในวันอาทิตย์ที่ 6 กันยายน 2569 เวลา 09:00 - 15:00 น. ช่วงเวลาดังกล่าวจะงดจ่ายน้ำประปาชั่วคราว ขอความกรุณาลูกบ้านทุกท่านสำรองน้ำไว้ใช้ล่วงหน้า',
       imageUrl: 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=800&q=80',
       targetType: 'all',
-      targetValue: null,
       createdBy: 'Admin Manager',
       buildingId: buildingB.id
     },
     {
       title: 'ขอความร่วมมือคัดแยกขยะและทิ้งในจุดที่กำหนด',
-      content: 'เพื่อความสะอาดและสุขอนามัยที่ดีของอาคาร ขอความร่วมมือลูกบ้านทุกท่านช่วยคัดแยกขยะเปียกและขยะรีไซเคิลก่อนนำมาทิ้ง ณ ห้องขยะชั้น 1 พร้อมทั้งมัดปากถุงขยะให้มิดชิด ขอบคุณในความร่วมมือครับ',
-      imageUrl: null,
+      content: 'เพื่อความสะอาดและสุขอนามัยที่ดีของอาคาร ขอความร่วมมือลูกบ้านทุกท่านช่วยคัดแยกขยะเปียกและขยะรีไซเคิลก่อนนำมาทิ้ง ณ ห้องขยะชั้น 1',
       targetType: 'all',
-      targetValue: null,
       createdBy: 'Admin Manager',
-      buildingId: buildingB.id
-    },
-    {
-      title: 'แจ้งรอบเวลาเปิด-ปิดประตูอาคารและระบบรักษาความปลอดภัย',
-      content: 'เพื่อความปลอดภัยสูงสุดของลูกบ้าน ประตูทางเข้าคีย์การ์ดจะล็อคอัตโนมัติ 24 ชั่วโมง และ รปภ. จะเริ่มตรวจตราความปลอดภัยเข้มงวดตั้งแต่เวลา 22:00 - 05:00 น. หากมีผู้มาติดต่อกรุณาแจ้งนิติบุคคลล่วงหน้า',
-      imageUrl: null,
-      targetType: 'all',
-      targetValue: null,
-      createdBy: 'Admin Manager',
-      buildingId: buildingA.id
-    },
-    {
-      title: 'ประกาศทำความสะอาดพื้นที่ส่วนกลาง ทางเดินชั้น 2 (อาคาร B)',
-      content: 'แม่บ้านจะเข้าทำการขัดล้างพื้นทางเดินส่วนกลางบริเวณชั้น 2 ในวันศุกร์นี้ เวลา 10:00 - 12:00 น. ระวังพื้นลื่น',
-      imageUrl: null,
-      targetType: 'floor',
-      targetValue: '2',
-      createdBy: 'Admin Building B',
       buildingId: buildingB.id
     }
   ];
 
   for (const ann of sampleAnnouncements) {
-    const existing = await prisma.announcement.findFirst({
+    let savedAnn = await prisma.announcement.findFirst({
       where: { title: ann.title, buildingId: ann.buildingId }
     });
-    if (existing) {
-      await prisma.announcement.update({
-        where: { id: existing.id },
-        data: ann
-      });
-    } else {
-      await prisma.announcement.create({ data: ann });
+    if (!savedAnn) {
+      savedAnn = await prisma.announcement.create({ data: ann });
     }
+
+    // Seed AnnouncementRead for Somkiat
+    await prisma.announcementRead.upsert({
+      where: { announcementId_tenantId: { announcementId: savedAnn.id, tenantId: tenantSomkiat.id } },
+      update: {},
+      create: { announcementId: savedAnn.id, tenantId: tenantSomkiat.id }
+    });
   }
 
-  console.log('📢 Announcements seeded');
+  console.log('📢 14. Announcements & Read Status seeded');
 
-  // 13. Room Invites
+  // =========================================================================
+  // 15. Facilities & FacilityBookings (พื้นที่ส่วนกลางและการจอง)
+  // =========================================================================
+  const facilityFitness = await prisma.facility.upsert({
+    where: { id: '00000000-0000-0000-0000-0000000000f1' },
+    update: {},
+    create: {
+      id: '00000000-0000-0000-0000-0000000000f1',
+      buildingId: buildingB.id,
+      name: 'ห้องฟิตเนส (Fitness Center ชั้น 2)',
+      description: 'อุปกรณ์คาร์ดิโอ ดัมเบล และลู่วิ่งไฟฟ้า เปิด 06:00 - 22:00 น.',
+      imageUrl: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?auto=format&fit=crop&w=600&q=80',
+      isActive: true
+    }
+  });
+
+  const facilityCoworking = await prisma.facility.upsert({
+    where: { id: '00000000-0000-0000-0000-0000000000f2' },
+    update: {},
+    create: {
+      id: '00000000-0000-0000-0000-0000000000f2',
+      buildingId: buildingB.id,
+      name: 'ห้องประชุม & Co-Working Space (ชั้น 1)',
+      description: 'โต๊ะทำงานพร้อม Wi-Fi ความเร็วสูง ปลั๊กไฟ และกระดานไวท์บอร์ด',
+      imageUrl: 'https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=600&q=80',
+      isActive: true
+    }
+  });
+
+  const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  tomorrow.setHours(17, 0, 0, 0);
+  const tomorrowEnd = new Date(tomorrow.getTime() + 60 * 60 * 1000);
+
+  await prisma.facilityBooking.create({
+    data: {
+      facilityId: facilityFitness.id,
+      tenantId: tenantSomkiat.id,
+      buildingId: buildingB.id,
+      startTime: tomorrow,
+      endTime: tomorrowEnd,
+      status: 'CONFIRMED',
+      notes: 'จองออกกำลังกายช่วงเย็น'
+    }
+  }).catch(() => {});
+
+  console.log('🏋️ 15. Facilities & Bookings seeded');
+
+  // =========================================================================
+  // 16. Vehicles & Visitors (ทะเบียนรถและผู้มาติดต่อ)
+  // =========================================================================
+  await prisma.vehicle.upsert({
+    where: { id: '00000000-0000-0000-0000-0000000000c1' },
+    update: {},
+    create: {
+      id: '00000000-0000-0000-0000-0000000000c1',
+      tenantId: tenantSomkiat.id,
+      buildingId: buildingB.id,
+      licensePlate: '9กก-1234 กทม',
+      vehicleType: 'car',
+      brand: 'Honda Civic',
+      color: 'สีขาว',
+      status: 'APPROVED'
+    }
+  });
+
+  await prisma.visitor.create({
+    data: {
+      tenantId: tenantSomkiat.id,
+      buildingId: buildingB.id,
+      visitorName: 'คุณประสิทธิ์ แซ่ตั้ง',
+      licensePlate: '5ขข-5678 กทม',
+      expectedDate: new Date(Date.now() + 2 * 60 * 60 * 1000),
+      note: 'ส่งเอกสารและของใช้ส่วนตัว',
+      status: 'EXPECTED'
+    }
+  }).catch(() => {});
+
+  console.log('🚗 16. Vehicles & Visitors seeded');
+
+  // =========================================================================
+  // 17. Polls & PollVotes (การโหวตและมติลูกบ้าน)
+  // =========================================================================
+  let samplePoll = await prisma.poll.findFirst({ where: { buildingId: buildingB.id } });
+  if (!samplePoll) {
+    samplePoll = await prisma.poll.create({
+      data: {
+        buildingId: buildingB.id,
+        question: 'ท่านเห็นด้วยหรือไม่กับการขยายเวลาเปิดห้องฟิตเนสเป็น 24 ชั่วโมง?',
+        options: ['เห็นด้วยอย่างยิ่ง', 'เห็นด้วย แต่ต้องมีกล้องวงจรปิดครอบคลุม', 'ไม่เห็นด้วย เกรงว่าจะมีเสียงรบกวน'],
+        isActive: true
+      }
+    });
+  }
+
+  if (samplePoll) {
+    await prisma.pollVote.upsert({
+      where: { pollId_tenantId: { pollId: samplePoll.id, tenantId: tenantSomkiat.id } },
+      update: { optionIndex: 0 },
+      create: {
+        pollId: samplePoll.id,
+        tenantId: tenantSomkiat.id,
+        optionIndex: 0
+      }
+    }).catch(() => {});
+  }
+
+  console.log('🗳️ 17. Polls & Votes seeded');
+
+  // =========================================================================
+  // 18. IssueTickets (แจ้งเหตุ & ร้องเรียน LIFF)
+  // =========================================================================
+  await prisma.issueTicket.create({
+    data: {
+      userId: tenantSomkiat.id,
+      roomId: roomB201.id,
+      buildingId: buildingB.id,
+      category: 'COMPLAINT',
+      description: 'ช่วงดึกมีกลิ่นควันบุหรี่ลอยเข้ามาจากระเบียงห้องข้างๆ ขอความกรุณานิติตักเตือน',
+      imageUrls: [],
+      status: 'RESOLVED',
+      adminReply: 'นิติบุคคลได้ออกหนังสือแจ้งเตือนและติดป้ายห้ามสูบบุหรี่บริเวณโถงทางเดินเรียบร้อยแล้วครับ'
+    }
+  }).catch(() => {});
+
+  console.log('🎫 18. Issue Tickets seeded');
+
+  // =========================================================================
+  // 19. Vendors & Room Inspections (รายชื่อช่าง & การตรวจสภาพห้อง)
+  // =========================================================================
+  await prisma.vendor.create({
+    data: {
+      buildingId: buildingB.id,
+      name: 'ช่างสมชาย (แอร์เซอร์วิส & ไฟฟ้า)',
+      category: 'ช่างแอร์',
+      phone: '081-456-7890',
+      lineId: 'somchai_air',
+      note: 'ติดต่อได้ตลอด 24 ชั่วโมง มีเครื่องมือวัดระดับน้ำยาแอร์ครบชุด'
+    }
+  }).catch(() => {});
+
+  await prisma.roomInspection.create({
+    data: {
+      leaseId: leaseB201.id,
+      buildingId: buildingB.id,
+      type: 'MOVE_IN',
+      items: [
+        { label: 'เครื่องปรับอากาศ', condition: 'GOOD', note: 'เย็นฉ่ำ เสียงเงียบปกติ' },
+        { label: 'ผ้าม่านและมุ้งลวด', condition: 'GOOD', note: 'สะอาด ไม่มีรอยฉีกขาด' },
+        { label: 'สุขภัณฑ์ห้องน้ำ', condition: 'GOOD', note: 'น้ำไหลแรง ระบายน้ำดี' }
+      ],
+      photoUrls: [],
+      adminNote: 'ผู้เช่าตรวจรับมอบห้องพักเรียบร้อย สภาพสมบูรณ์พร้อมเข้าอยู่'
+    }
+  }).catch(() => {});
+
+  console.log('👷 19. Vendors & Room Inspections seeded');
+
+  // =========================================================================
+  // 20. NotificationLog & DeveloperFeedback (แจ้งเตือน & ข้อเสนอแนะ)
+  // =========================================================================
+  await prisma.notificationLog.create({
+    data: {
+      buildingId: buildingB.id,
+      tenantId: tenantSomkiat.id,
+      roomId: roomB201.id,
+      notificationType: 'INVOICE',
+      messagePreview: 'ใบแจ้งหนี้ค่าเช่าห้อง 201 ประจำเดือน 08-2026 ออกแล้ว ยอดชำระ ฿5,620',
+      status: 'SUCCESS'
+    }
+  }).catch(() => {});
+
+  await prisma.developerFeedback.create({
+    data: {
+      platform: 'CMS_ADMIN',
+      category: 'FEATURE_REQUEST',
+      title: 'ต้องการให้ระบบส่ง LINE แจ้งเตือนเมื่อลูกบ้านจองฟิตเนสสำเร็จ',
+      content: 'อยากให้มี Flex message สรุปเวลาจองยิงเข้า LINE ลูกบ้านอัตโนมัติ',
+      rating: 5,
+      senderRole: 'ADMIN',
+      senderId: superAdmin.id,
+      senderName: 'Super Admin',
+      buildingId: buildingB.id,
+      status: 'IN_REVIEW'
+    }
+  }).catch(() => {});
+
+  // =========================================================================
+  // 21. AuditLog (ประวัติการใช้งานระบบ)
+  // =========================================================================
+  await prisma.auditLog.create({
+    data: {
+      adminId: ownerUser.id,
+      action: 'UPDATE_BUILDING_SETTING',
+      entity: 'BUILDING_SETTING',
+      entityId: buildingB.id,
+      newValues: { waterRate: 20 }
+    }
+  }).catch(() => {});
+
+  console.log('📋 20-21. Notification Logs, Feedback & Audit Logs seeded');
+
+  // =========================================================================
+  // 22. Room Invites
+  // =========================================================================
   const sampleInvites = [
     { roomId: roomA103.id, code: 'INV103', expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), isUsed: false },
     { roomId: roomB102.id, code: 'INV102', expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), isUsed: false },
@@ -993,27 +994,23 @@ async function main() {
     });
   }
 
-  console.log('🎟️ Room Invites seeded (INV103, INV102, INV203)');
+  console.log('🎟️ 22. Room Invites seeded (INV103, INV102, INV203)');
 
-  console.log('\n🎉 ======================================================= 🎉');
-  console.log('   DATABASE SEEDING COMPLETED SUCCESSFULLY!');
-  console.log('   - 🏢 Buildings: อาคาร A, อาคาร B (พร้อม PromptPay QR)');
-  console.log('   - 🏠 Rooms: 101, 102, 103, 104, 201, 202, 203, 301');
-  console.log('   - 👥 Tenants: สมเกียรติ, กานดา, ธนกร, พิมพ์มาดา, วรพล, ศิริพร, อรรถพล');
-  console.log(`   - 📱 LIFF User ID linked: ${activeLiffLineUserId} -> สมเกียรติ (ห้อง 201 อาคาร B)`);
-  console.log('   - 📜 Lease Contracts & Move-Out History: Active & Ended with Deposit refund');
-  console.log('   - ⚡ Meter Records: ค่าน้ำ-ค่าไฟรอบ 07-2026, 08-2026');
-  console.log('   - 🧾 Invoices: รอดำเนินการ (Pending), ชำระแล้ว (Paid), เกินกำหนด (Overdue)');
-  console.log('   - 🔧 Maintenance: แจ้งซ่อมครบสถานะ (รอดำเนินการ, กำลังซ่อม, ซ่อมเสร็จ, ยกเลิก)');
-  console.log('   - 📦 Parcels: Shopee, Kerry, Flash, ไปรษณีย์ไทย (รอรับ / รับแล้ว)');
-  console.log('   - 📢 Announcements: ข่าวสารประกาศหอพัก');
-  console.log('   - 🎟️ Invite Codes: INV103, INV102, INV203 สำหรับทดสอบผูกห้องใน LIFF');
-  console.log('🎉 ======================================================= 🎉\n');
+  console.log('\n=============================================================');
+  console.log('  COMPLETE DATABASE MOCKUP SEEDING COMPLETED (ALL TABLES)!');
+  console.log('  - Buildings: อาคาร A, อาคาร B พร้อม PromptPay QR');
+  console.log('  - Users: Super Admin, Owner, Manager, Admins, Room Investor');
+  console.log('  - Rooms & Types: Residential, Commercial Shop, Vending, Parking');
+  console.log(`  - LIFF Tenant Linked: ${activeLiffLineUserId} -> สมเกียรติ (ห้อง 201 อาคาร B)`);
+  console.log('  - Features: Facilities, Bookings, Vehicles, Visitors, Polls, Vendors');
+  console.log('  - Records: Leases, MoveOuts, Invoices, Meters, Maintenance, Parcels');
+  console.log('  - System: Audit Logs, Feedback, Inspections, Notifications');
+  console.log('=============================================================\n');
 }
 
 main()
   .catch((e) => {
-    console.error('❌ Seeding error:', e);
+    console.error('Seeding error:', e);
     process.exit(1);
   })
   .finally(async () => {

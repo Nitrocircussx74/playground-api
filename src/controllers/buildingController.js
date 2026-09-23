@@ -287,6 +287,58 @@ class BuildingController {
       next(error);
     }
   }
+
+  /**
+   * GET /:buildingId/reports/monthly-csv?cycle=09-2026
+   * Export สรุปรายได้รายเดือนเป็น CSV (ไม่ต้องใช้ library เพิ่ม)
+   */
+  async exportMonthlyCsv(req, res, next) {
+    try {
+      const { buildingId } = req.params;
+      const cycle = req.query.cycle;
+
+      if (!cycle) {
+        return res.status(400).json({ success: false, message: 'กรุณาระบุ cycle เช่น 09-2026' });
+      }
+
+      const prisma = require('../config/prisma');
+      const invoices = await prisma.invoice.findMany({
+        where: { room: { buildingId }, billingCycle: cycle },
+        include: { room: true, tenant: true },
+        orderBy: [{ room: { roomNumber: 'asc' } }]
+      });
+
+      const header = 'ห้อง,ชั้น,ผู้เช่า,เบอร์โทร,ค่าเช่า,ค่าน้ำ,ค่าไฟ,ค่าส่วนกลาง,อื่นๆ,ค่าปรับ,ยอดรวม,สถานะ,ครบกำหนด';
+      const rows = invoices.map((inv) => {
+        const name = inv.tenant ? `${inv.tenant.firstName} ${inv.tenant.lastName}` : '-';
+        const phone = inv.tenant?.phone || '';
+        const due = inv.dueDate ? new Date(inv.dueDate).toLocaleDateString('th-TH') : '';
+        const escape = (v) => `"${String(v).replace(/"/g, '""')}"`;
+        return [
+          escape(inv.room?.roomNumber || ''),
+          inv.room?.floor || '',
+          escape(name),
+          phone,
+          Number(inv.roomPrice || 0),
+          Number(inv.waterTotal || 0),
+          Number(inv.electricTotal || 0),
+          Number(inv.commonFee || 0),
+          Number(inv.otherFee || 0),
+          Number(inv.lateFeeCharge || 0),
+          Number(inv.grandTotal || 0),
+          inv.status,
+          due
+        ].join(',');
+      });
+
+      const csv = [header, ...rows].join('\n');
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="report-${cycle}.csv"`);
+      return res.send('\uFEFF' + csv); // BOM เพื่อ Excel อ่านภาษาไทยถูก
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 module.exports = new BuildingController();

@@ -2,6 +2,9 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const meterImportController = require('../controllers/meterImportController');
+const requireRole = require('../middlewares/roleMiddleware');
+
+router.use(requireRole('admin'));
 
 // Memory storage for multer file upload
 const upload = multer({

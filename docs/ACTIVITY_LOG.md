@@ -93,8 +93,8 @@
 - **Test Verification**: รัน `yarn test` เต็ม Suite ผ่าน 206/206 (เพิ่มขึ้นจาก 192/193 เดิม)
 - **รวม Commit งาน Room Owner / Notification Log ที่ค้างอยู่**: Commit งานที่พัฒนาไว้ก่อนหน้าแต่ยังไม่เคย Commit เข้า Git History — เพิ่มโมเดล `NotificationLog` (ติดตามการส่งแจ้งเตือน LINE/SMS ราย Building/Tenant/Room), โมเดล `RoomResident` (ผู้อยู่อาศัยร่วมห้อง/Co-Resident), และความสัมพันธ์ `Room.owner` (User เจ้าของห้อง) พร้อม Controller/Service ที่ขยายรองรับ (`dashboardController`, `buildingController`, `roomController`, `maintenanceController`, `invoiceController`, `lineService`, `tenantService`) — ทดสอบผ่านครบก่อน Commit
 
-### Phase 14 (2026-09-10): Full Audit ระบบ HorHub (หอฮับ) + errorMiddleware statusCode Fix + Service Layer Refactor
-- **Audit ทั้งระบบ HorHub (LIFF Onboarding, Auth, Invite, Billing)**: ไล่ตรวจ Flow ทั้งหมดตั้งแต่ `authController.js`, `liffController.js`, `liffAuthMiddleware.js` จนถึง `prisma/schema.prisma` พบ 6 ประเด็น:
+### Phase 14 (2026-09-10): Full Audit ระบบ Horspace (ฮอร์สเปซ) + errorMiddleware statusCode Fix + Service Layer Refactor
+- **Audit ทั้งระบบ Horspace (LIFF Onboarding, Auth, Invite, Billing)**: ไล่ตรวจ Flow ทั้งหมดตั้งแต่ `authController.js`, `liffController.js`, `liffAuthMiddleware.js` จนถึง `prisma/schema.prisma` พบ 6 ประเด็น:
   1. **🔴 Critical — Account Takeover ผ่าน `GET /api/v1/liff/check-status?tenantId=...`**: `checkTenantStatus` มี 3 ทางผูก `lineUserId` อัตโนมัติ (phone/roomNumber/tenantId) แต่ทาง `tenantId` ทางเดียวไม่เช็ค `!matched.lineUserId` ก่อนเขียนทับเหมือน 2 ทางที่เหลือ — ใครก็ตามที่ล็อกอิน LINE ของตัวเองแล้วรู้ `tenantId` (UUID) ของคนอื่น ยึดบัญชีได้ทันทีโดยไม่ต้องรู้เบอร์โทร/PIN เลย
   2. **🟠 Payment Fallback ข้ามตึก**: `getSettingsForTenant` เดิมถ้า resolve ตึกของลูกบ้านไม่เจอ จะ Fallback ไป "ดึงตึกแรกในระบบ" แล้วส่ง PromptPay Number ของตึกนั้นกลับไปแทน เสี่ยงลูกบ้านโอนเงินผิดบัญชีข้ามตึก
   3. **🟡 เงื่อนไขห้องว่างไม่ตรงกันระหว่าง `registerTenantWithInvite` กับ `verifyInviteCode`**: Endpoint แรกเช็ค `room.status !== 'available' && !room.tenantId` (ต้องทั้งคู่จริง) ส่วน Endpoint หลังเช็คแค่ `room.status !== 'available'` — ทำให้ verify ผ่านแต่ register จริงอาจไม่ผ่าน
@@ -123,7 +123,7 @@
   - `src/controllers/liffController.js` (`silentLogin`): 1 จุด (`isDevOrMock` ที่ส่งต่อไป `tenantAuthService.silentLogin`)
   - ผลคือเปิด `LINE_AUTH_MOCK_MODE=true` ค้างไว้บนเครื่อง Dev ได้ถาวรแล้ว ไม่ต้องคอยเปิด-ปิดสลับไปมาก่อน/หลังรัน `yarn test` อีกต่อไป
   - อัปเดต `tests/unit/middlewares/liffAuthMiddleware.test.js` ให้ปลอม `config.line.mockMode = false` คู่กับ `config.nodeEnv` เสมอ (เดิมปลอมแค่ nodeEnv พอ .env จริงมี mockMode=true ค้างอยู่ก็ Short-circuit เหมือนเดิมจนเทสต์พัง)
-- **เปลี่ยน Default Theme Color ทั้งระบบจาก Blue → HorHub Teal**: Sample สีจากโลโก้จริงด้วยสคริปต์อ่าน Pixel PNG ได้ Cluster สีหลัก `#1B6C7D`–`#239C93` เลือก `#0E7490` (ใกล้เคียง Tailwind `cyan-700` ที่สุด) เป็นค่า Default แทน `#3B82F6` (Blue-500) เดิมทุกจุดที่เป็น Fallback (ไม่แตะค่าที่เป็น Preset ตัวเลือกให้แอดมินเลือกเอง เช่น "น้ำเงิน (Blue)" ใน `BuildingSettingsView.vue`):
+- **เปลี่ยน Default Theme Color ทั้งระบบจาก Blue → Horspace Teal**: Sample สีจากโลโก้จริงด้วยสคริปต์อ่าน Pixel PNG ได้ Cluster สีหลัก `#1B6C7D`–`#239C93` เลือก `#0E7490` (ใกล้เคียง Tailwind `cyan-700` ที่สุด) เป็นค่า Default แทน `#3B82F6` (Blue-500) เดิมทุกจุดที่เป็น Fallback (ไม่แตะค่าที่เป็น Preset ตัวเลือกให้แอดมินเลือกเอง เช่น "น้ำเงิน (Blue)" ใน `BuildingSettingsView.vue`):
   - `src/controllers/buildingController.js` (Default ตอนสร้างตึกใหม่ไม่ระบุสี), `src/services/tenantService.js` (7 จุด Fallback ตอนส่งข้อมูลให้ LIFF)
 - **ขยาย NotificationLog ให้ครอบคลุม LINE API Failure ระดับ Auth (ไม่ใช่แค่ Push Message)**: ตอบคำถาม "ควรมี api_log ไหม" — พบว่ามี `NotificationLog` + `lineService.logDelivery()` อยู่แล้วสำหรับ Push Message แต่ `verifyLineIdToken` (Token Verify) กับ `getUserProfile` (Profile Fetch) ไม่เคย Log เลย ถ้า LINE API มีปัญหาจะไม่มีทางรู้ย้อนหลัง
   - `prisma/schema.prisma`: เปลี่ยน `NotificationLog.buildingId` เป็น Nullable (`onDelete: SetNull`) เพราะเหตุการณ์ระดับ Auth มักยังไม่รู้ตึก — Push ผ่าน `prisma db push` แล้ว
@@ -133,7 +133,7 @@
 - **Test Verification**: รัน `yarn jest --runInBand` ผ่าน 211/211 ทุกครั้งที่แก้ (เพิ่มจาก 206 เดิมด้วย Unit Test ใหม่ 5 เคสคุม Logic การตัดสินใจ Log ของ `verifyLineIdToken`)
 
 ### Phase 16 (2026-09-11): ขยาย Scope รองรับคอนโด/หมู่บ้าน (Facility Booking, Vehicle/Visitor, Voting/Polls) + แก้บั๊ก LINE Notification เดิม
-- **บริบท**: ผู้ใช้ขอวางแผนขยาย HorHub จากหอพักอย่างเดียวให้รองรับคอนโด/หมู่บ้านด้วย หลัง Audit เจอว่า `Room.unitType`/`ownerId`/`areaSqm` และ `FeatureToggle` ต่อตึกเอื้อให้ทำแบบ Opt-in Module ใหม่ได้โดยไม่ต้อง Migrate ของเดิมแบบ Breaking Change เลย — วางแผนผ่าน Plan Mode ก่อนแล้วค่อย Implement (อนุมัติแผนแล้วที่ `.claude/plans/mossy-sprouting-lecun.md`)
+- **บริบท**: ผู้ใช้ขอวางแผนขยาย Horspace จากหอพักอย่างเดียวให้รองรับคอนโด/หมู่บ้านด้วย หลัง Audit เจอว่า `Room.unitType`/`ownerId`/`areaSqm` และ `FeatureToggle` ต่อตึกเอื้อให้ทำแบบ Opt-in Module ใหม่ได้โดยไม่ต้อง Migrate ของเดิมแบบ Breaking Change เลย — วางแผนผ่าน Plan Mode ก่อนแล้วค่อย Implement (อนุมัติแผนแล้วที่ `.claude/plans/mossy-sprouting-lecun.md`)
 - **เพิ่ม 6 Models ใหม่** (`prisma/schema.prisma`, Push ผ่าน `npx prisma db push` แล้ว):
   - `Facility`/`FacilityBooking`: พื้นที่ส่วนกลางที่จองได้ + การจอง เช็คช่วงเวลาซ้อนทับ Inline ใน Controller ด้วย Interval Overlap Query (`startTime < B.endTime AND endTime > B.startTime`), Index `[facilityId, startTime, endTime]`
   - `Vehicle`/`Visitor`: แยก 2 Model เพราะ Lifecycle ต่างกัน — ทะเบียนรถถาวรต้องอนุมัติ (`PENDING`/`APPROVED`/`REJECTED`) ส่วนแขกมาเยือนครั้งเดียวไม่ต้องอนุมัติ (`EXPECTED`/`CANCELLED`)
@@ -249,3 +249,7 @@
 | 35 | `playground-api/README.md` | Markdown | เอกสารคู่มือการใช้งานโปรเจกต์ภาษาไทย (Yarn Supported) |
 | 36 | `playground-api/docs/ACTIVITY_LOG.md` | Markdown | เอกสารบันทึกกิจกรรมการพัฒนาโปรเจกต์ |
 | 37 | `playground-api/tests/integration/maintenanceBilling.test.js` | Test File | Integration Tests สำหรับ Maintenance Payer + Auto-Billing เข้าใบแจ้งหนี้รอบถัดไป (Passed 6/6) |
+
+### Phase 19 (2026-09-18): Finalize Rebranding & Announcement Notification Gap
+- **Logo Branding**: แทนที่ไฟล์โลโก้เก่า (horhub) ใน frontend ด้วยไฟล์ใหม่ (horspace)
+- **Announcement Notification**: แก้ไขให้ประกาศต่างๆ จากส่วนกลางแสดงในกระดิ่งแจ้งเตือน (Tenant Notification Bell) ของลูกบ้าน (เดิมส่งแค่ LINE API อย่างเดียว) โดยปรับให้ `_getTargetUserIds` ส่งกลับทั้ง `tenantId` และ `buildingId` ไปใช้สร้าง `NotificationLog`

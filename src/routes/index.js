@@ -23,6 +23,8 @@ const facilityRoutes = require('./facilityRoutes');
 const vehicleRoutes = require('./vehicleRoutes');
 const pollRoutes = require('./pollRoutes');
 const feedbackRoutes = require('./feedbackRoutes');
+const inspectionRoutes = require('./inspectionRoutes');
+const vendorRoutes = require('./vendorRoutes');
 const liffController = require('../controllers/liffController');
 
 // Root Health Check Route
@@ -75,7 +77,10 @@ router.use('/api/admin', authenticateJWT, vehicleRoutes);
 router.use('/api/v1', authenticateJWT, vehicleRoutes);
 router.use('/api/admin', authenticateJWT, pollRoutes);
 router.use('/api/v1', authenticateJWT, pollRoutes);
-router.use('/api', authenticateJWT, feedbackRoutes);
+router.use('/api/admin', authenticateJWT, inspectionRoutes);
+router.use('/api/v1', authenticateJWT, inspectionRoutes);
+router.use('/api/admin', authenticateJWT, vendorRoutes);
+router.use('/api/v1', authenticateJWT, vendorRoutes);
 router.use('/api/admin/audit-logs', authenticateJWT, auditLogRoutes);
 router.use('/api/admin/dashboard', authenticateJWT, dashboardRoutes);
 router.use('/api/v1/dashboard', authenticateJWT, dashboardRoutes);

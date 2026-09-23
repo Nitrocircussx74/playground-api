@@ -1,6 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const moveOutController = require('../controllers/moveOutController');
+const requireRole = require('../middlewares/roleMiddleware');
+
+router.use(requireRole('admin'));
 
 // Move-out calculation preview simulation
 router.get('/leases/:id/move-out-calculation', (req, res, next) => moveOutController.getMoveOutCalculation(req, res, next));

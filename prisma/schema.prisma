@@ -103,6 +103,8 @@ model Building {
   vehicles            Vehicle[]
   visitors            Visitor[]
   polls               Poll[]
+  inspections         RoomInspection[]
+  vendors             Vendor[]
 
   @@map("buildings")
 }
@@ -161,7 +163,7 @@ model BuildingSetting {
   termsAndConditions String? @map("terms_and_conditions") @db.Text
 
   // 5. LINE Official Account & LIFF Settings (การตั้งค่า LINE OA ประจำตึก)
-  /// LINE OA Basic ID หรือ Handle (เช่น @horhub_a)
+  /// LINE OA Basic ID หรือ Handle (เช่น @horspace_a)
   lineOaId               String? @map("line_oa_id")
   /// LINE Messaging API Channel Access Token ประจำตึก (Long-lived Token)
   lineChannelAccessToken String? @map("line_channel_access_token") @db.Text
@@ -169,7 +171,7 @@ model BuildingSetting {
   lineChannelSecret      String? @map("line_channel_secret")
   /// LINE LIFF ID ประจำตึก (เช่น 200xxxxxxx-xxxxxxx)
   lineLiffId             String? @map("line_liff_id")
-  /// ลิงก์กดเพิ่มเพื่อน LINE OA (Add Friend URL เช่น https://line.me/R/ti/p/@horhub)
+  /// ลิงก์กดเพิ่มเพื่อน LINE OA (Add Friend URL เช่น https://line.me/R/ti/p/@horspace)
   lineAddFriendUrl       String? @map("line_add_friend_url")
 
   /// วันเวลาที่สร้างเรคคอร์ด
@@ -1014,6 +1016,7 @@ model LeaseContract {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   moveOutRecord MoveOutRecord?
+  inspections   RoomInspection[]
 
   @@map("lease_contracts")
 }
@@ -1228,3 +1231,37 @@ model DeveloperFeedback {
   @@index([status, createdAt])
   @@map("developer_feedbacks")
 }
+
+/// ตารางบันทึกการตรวจสภาพห้องก่อนเข้าอยู่ / หลังย้ายออก (Move-in / Move-out Inspection)
+model RoomInspection {
+  id         String        @id @default(uuid()) @db.Uuid
+  leaseId    String        @map("lease_id") @db.Uuid
+  lease      LeaseContract @relation(fields: [leaseId], references: [id], onDelete: Cascade)
+  buildingId String        @map("building_id") @db.Uuid
+  building   Building      @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  type       String        @default("MOVE_IN") // MOVE_IN | MOVE_OUT
+  items      Json          // [{ label, condition, note }]
+  photoUrls  Json?         @map("photo_urls") // string[]
+  adminNote  String?       @map("admin_note") @db.Text
+  createdAt  DateTime      @default(now()) @map("created_at")
+  updatedAt  DateTime      @updatedAt @map("updated_at")
+
+  @@map("room_inspections")
+}
+
+/// ตารางรายชื่อช่างและผู้รับเหมาประจำอาคาร (Vendor & Contractor Directory)
+model Vendor {
+  id         String   @id @default(uuid()) @db.Uuid
+  buildingId String   @map("building_id") @db.Uuid
+  building   Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  name       String
+  category   String   // ช่างไฟ, ช่างประปา, ช่างแอร์, ทำความสะอาด, อื่นๆ
+  phone      String?
+  lineId     String?  @map("line_id")
+  note       String?  @db.Text
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("vendors")
+}
+

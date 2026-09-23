@@ -14,9 +14,13 @@ class AnnouncementController {
           lineUserId: { not: null },
           rooms: targetBuildingId ? { some: { buildingId: targetBuildingId } } : undefined
         },
-        select: { lineUserId: true }
+        select: { id: true, lineUserId: true, rooms: { select: { buildingId: true } } }
       });
-      return tenants.map((t) => t.lineUserId).filter(Boolean);
+      return tenants.filter(t => t.lineUserId).map(t => ({
+        id: t.id,
+        lineUserId: t.lineUserId,
+        buildingId: t.rooms[0]?.buildingId || null
+      }));
     }
 
     if (normTarget === 'BUILDING') {
@@ -27,9 +31,13 @@ class AnnouncementController {
             some: { buildingId: targetBuildingId }
           }
         },
-        select: { lineUserId: true }
+        select: { id: true, lineUserId: true, rooms: { select: { buildingId: true } } }
       });
-      return tenants.map((t) => t.lineUserId).filter(Boolean);
+      return tenants.filter(t => t.lineUserId).map(t => ({
+        id: t.id,
+        lineUserId: t.lineUserId,
+        buildingId: targetBuildingId || t.rooms[0]?.buildingId || null
+      }));
     }
 
     if (normTarget === 'FLOOR') {
@@ -44,9 +52,13 @@ class AnnouncementController {
             }
           }
         },
-        select: { lineUserId: true }
+        select: { id: true, lineUserId: true, rooms: { select: { buildingId: true } } }
       });
-      return tenants.map((t) => t.lineUserId).filter(Boolean);
+      return tenants.filter(t => t.lineUserId).map(t => ({
+        id: t.id,
+        lineUserId: t.lineUserId,
+        buildingId: targetBuildingId || t.rooms[0]?.buildingId || null
+      }));
     }
 
     if (normTarget === 'ROOM') {
@@ -55,7 +67,11 @@ class AnnouncementController {
         include: { tenant: true }
       });
       if (room?.tenant?.lineUserId) {
-        return [room.tenant.lineUserId];
+        return [{
+          id: room.tenant.id,
+          lineUserId: room.tenant.lineUserId,
+          buildingId: room.buildingId
+        }];
       }
     }
 
@@ -106,15 +122,30 @@ class AnnouncementController {
         }
       });
 
-      // 2. ค้นหาเป้าหมายผู้เช่าเพื่อดึง lineUserId
-      const userIds = await this._getTargetUserIds({
+      // 2. ค้นหาเป้าหมายผู้เช่า
+      const targets = await this._getTargetUserIds({
         targetType: normTargetType,
         targetBuildingId,
         targetValue: finalTargetValue
       });
+      
+      const userIds = targets.map(t => t.lineUserId);
 
       // 3. ส่ง LINE Broadcast / Multicast (Array Chunking 500 UIDs)
       const recipientCount = await lineService.sendAnnouncementBroadcast(userIds, announcement);
+
+      // 4. บันทึกลง NotificationLog เพื่อให้ไปโผล่ในกระดิ่งแจ้งเตือนลูกบ้าน (Tenant Notification Bell)
+      if (targets.length > 0) {
+        await billingService.prisma.notificationLog.createMany({
+          data: targets.map(t => ({
+            tenantId: t.id,
+            buildingId: t.buildingId || targetBuildingId,
+            notificationType: 'ANNOUNCEMENT',
+            messagePreview: title,
+            status: 'SUCCESS'
+          }))
+        });
+      }
 
       return res.status(201).json({
         success: true,
@@ -140,7 +171,7 @@ class AnnouncementController {
       const targetBuildingId = buildingId || targetId || null;
       const finalTargetValue = targetValue || (normTargetType === 'FLOOR' ? String(floor) : targetId) || null;
 
-      const userIds = await this._getTargetUserIds({
+      const targets = await this._getTargetUserIds({
         targetType: normTargetType,
         targetBuildingId,
         targetValue: finalTargetValue
@@ -148,7 +179,7 @@ class AnnouncementController {
 
       return res.status(200).json({
         success: true,
-        recipientCount: userIds.length
+        recipientCount: targets.length
       });
     } catch (error) {
       next(error);

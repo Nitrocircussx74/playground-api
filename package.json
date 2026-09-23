@@ -6,9 +6,8 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "tunnel": "node scripts/tunnel.js 3000",
-    "dev:tunnel": "concurrently -n \"API,TUNNEL\" -c \"blue,magenta\" \"nodemon src/server.js\" \"node scripts/tunnel.js 3000\"",
-    "migrate": "node src/migrations/migrate.js",
+    "tunnel": "node scripts/tunnel.js",
+    "dev:tunnel": "concurrently -n \"API,TUNNEL\" -c \"blue,magenta\" \"nodemon src/server.js\" \"node scripts/tunnel.js\"",
     "seed": "node prisma/seed.js",
     "test": "PORT=9090 jest --runInBand --detectOpenHandles --forceExit",
     "test:watch": "PORT=9090 jest --watch",
@@ -23,12 +22,10 @@
     "passport",
     "google-auth",
     "postgresql",
-    "pg",
     "zod",
     "helmet",
     "rate-limit",
-    "cookie-parser",
-    "migrations"
+    "cookie-parser"
   ],
   "author": "",
   "license": "ISC",
@@ -50,7 +47,6 @@
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
     "pdfkit": "^0.20.1",
-    "pg": "^8.11.5",
     "promptpay-qr": "^0.5.0",
     "qrcode": "^1.5.4",
     "xlsx": "^0.18.5",

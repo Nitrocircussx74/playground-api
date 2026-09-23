@@ -140,7 +140,7 @@ class AuthController {
   }
 
   /**
-   * ตรวจสอบว่าเบอร์โทรศัพท์เป็นผู้ใช้เดิมในระบบ HorHub หรือเป็นลูกบ้านใหม่
+   * ตรวจสอบว่าเบอร์โทรศัพท์เป็นผู้ใช้เดิมในระบบ Horspace หรือเป็นลูกบ้านใหม่
    * POST /api/v1/liff/auth/verify-phone-status
    */
   async verifyPhoneStatus(req, res, next) {
@@ -212,10 +212,10 @@ class AuthController {
 
   async login(req, res, next) {
     try {
-      const { email } = req.body;
+      const { email, password } = req.body;
 
       // ค้นหาหรือบันทึกข้อมูลผู้ใช้ลง PostgreSQL Database
-      const user = await userService.findOrCreateLocalUser(email);
+      const user = await userService.findOrCreateLocalUser(email, password);
 
       const accessToken = authService.generateAccessToken(user);
       const refreshToken = authService.generateRefreshToken(user);

@@ -112,6 +112,9 @@ router.post('/issues', upload.any(), verifyImageMagicBytes, (req, res, next) => 
 // LIFF Parcels
 router.get('/parcels', (req, res, next) => parcelController.getParcelsForLiff(req, res, next));
 
+// LIFF Meter History (chart data 6 months)
+router.get('/meter-history', (req, res, next) => liffController.getMeterHistory(req, res, next));
+
 // LIFF Facility Booking (จองพื้นที่ส่วนกลาง)
 router.get('/facilities', (req, res, next) => facilityController.getFacilitiesForLiff(req, res, next));
 router.get('/facilities/:id/bookings', (req, res, next) => facilityController.getFacilityBookingsForLiff(req, res, next));
@@ -135,5 +138,11 @@ router.post('/polls/:id/vote', (req, res, next) => pollController.voteOnPoll(req
 router.get('/notifications', (req, res, next) => notificationController.getTenantNotifications(req, res, next));
 router.post('/notifications/read-all', (req, res, next) => notificationController.markAllTenantNotificationsRead(req, res, next));
 router.patch('/notifications/:id/read', (req, res, next) => notificationController.markTenantNotificationRead(req, res, next));
+
+// LIFF Room Inspections (ตรวจสภาพห้องพัก)
+router.get('/inspections', (req, res, next) => liffController.getInspections(req, res, next));
+
+// LIFF E-Contract (สัญญาเช่าห้องพัก)
+router.get('/contract', (req, res, next) => liffController.getTenantContract(req, res, next));
 
 module.exports = router;

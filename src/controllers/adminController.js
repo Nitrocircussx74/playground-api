@@ -1,17 +1,19 @@
+const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const billingService = require('../services/billingService');
 
-function hashPassword(password) {
-  const salt = crypto.randomBytes(16).toString('hex');
-  const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
-  return `${salt}:${hash}`;
+async function hashPassword(password) {
+  return await bcrypt.hash(password, 10);
 }
 
-function verifyPassword(password, storedPasswordHash) {
-  if (!storedPasswordHash || !storedPasswordHash.includes(':')) return false;
-  const [salt, originalHash] = storedPasswordHash.split(':');
-  const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
-  return hash === originalHash;
+async function verifyPassword(password, storedPasswordHash) {
+  if (!storedPasswordHash) return false;
+  if (storedPasswordHash.includes(':')) {
+    const [salt, originalHash] = storedPasswordHash.split(':');
+    const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
+    return hash === originalHash;
+  }
+  return await bcrypt.compare(password, storedPasswordHash);
 }
 
 class AdminController {
@@ -83,14 +85,15 @@ class AdminController {
         where: { id: userId }
       });
 
-      if (!user || !verifyPassword(currentPassword, user.passwordHash)) {
+      const isMatch = user ? await verifyPassword(currentPassword, user.passwordHash) : false;
+      if (!user || !isMatch) {
         return res.status(400).json({
           success: false,
           message: 'รหัสผ่านเดิมไม่ถูกต้อง'
         });
       }
 
-      const newPasswordHash = hashPassword(newPassword);
+      const newPasswordHash = await hashPassword(newPassword);
       await billingService.prisma.user.update({
         where: { id: userId },
         data: { passwordHash: newPasswordHash }
@@ -195,7 +198,7 @@ class AdminController {
         });
       }
 
-      const passwordHash = hashPassword(password);
+      const passwordHash = await hashPassword(password);
       const userRole = (role || 'MANAGER').toUpperCase();
 
       const newUser = await billingService.prisma.user.create({

@@ -75,11 +75,11 @@ describe('Building Settings & RBAC Integration Tests (OWNER vs MANAGER)', () => 
 
     test('PUT /api/admin/buildings/:buildingId/settings - OWNER อัปเดตการตั้งค่า LINE Official Account ประจำตึกสำเร็จ (200 OK)', async () => {
       const linePayload = {
-        lineOaId: '@horhub_branch_a',
+        lineOaId: '@horspace_branch_a',
         lineChannelAccessToken: 'test_custom_building_line_access_token_xyz_123',
         lineChannelSecret: 'test_custom_secret_456',
         lineLiffId: '2011289517-TESTLIFFID',
-        lineAddFriendUrl: 'https://line.me/R/ti/p/@horhub_branch_a'
+        lineAddFriendUrl: 'https://line.me/R/ti/p/@horspace_branch_a'
       };
 
       const response = await request(app)
@@ -89,11 +89,11 @@ describe('Building Settings & RBAC Integration Tests (OWNER vs MANAGER)', () => 
 
       expect(response.statusCode).toBe(200);
       expect(response.body.success).toBe(true);
-      expect(response.body.data.setting.lineOaId).toBe('@horhub_branch_a');
+      expect(response.body.data.setting.lineOaId).toBe('@horspace_branch_a');
       expect(response.body.data.setting.lineChannelAccessToken).toBe('test_custom_building_line_access_token_xyz_123');
       expect(response.body.data.setting.lineChannelSecret).toBe('test_custom_secret_456');
       expect(response.body.data.setting.lineLiffId).toBe('2011289517-TESTLIFFID');
-      expect(response.body.data.setting.lineAddFriendUrl).toBe('https://line.me/R/ti/p/@horhub_branch_a');
+      expect(response.body.data.setting.lineAddFriendUrl).toBe('https://line.me/R/ti/p/@horspace_branch_a');
     });
 
     test('GET /api/admin/buildings/:buildingId/line-quota - ดึงโควต้าข้อความ LINE สำเร็จ (คำนวณ percentage และ status ถูกต้อง)', async () => {

@@ -1,6 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const leaseController = require('../controllers/leaseController');
+const requireRole = require('../middlewares/roleMiddleware');
+
+router.use(requireRole('admin'));
 
 // All leases & tenancy history
 router.get('/leases', (req, res, next) => leaseController.getAllLeases(req, res, next));
@@ -15,5 +18,8 @@ router.get('/tenants/:tenantId/history', (req, res, next) => leaseController.get
 
 // Terminate lease / move-out endpoint
 router.post('/leases/:leaseId/terminate', (req, res, next) => leaseController.terminateLease(req, res, next));
+
+// Full contract details for E-Contract PDF
+router.get('/leases/:leaseId/contract', (req, res, next) => leaseController.getLeaseContractDetail(req, res, next));
 
 module.exports = router;

@@ -470,7 +470,7 @@ class TenantAuthService {
   }
 
   /**
-   * ตรวจสอบว่าเบอร์โทรศัพท์เป็นผู้ใช้เดิมในระบบ HorHub หรือเป็นลูกบ้านใหม่
+   * ตรวจสอบว่าเบอร์โทรศัพท์เป็นผู้ใช้เดิมในระบบ Horspace หรือเป็นลูกบ้านใหม่
    */
   async verifyPhoneStatus({ rawPhone }) {
     if (!rawPhone) {
@@ -493,7 +493,7 @@ class TenantAuthService {
           userName: fullName,
           tenantName: fullName,
           tenant: { id: tenant.id, firstName: tenant.firstName, lastName: tenant.lastName, phone: tenant.phone },
-          message: 'พบข้อมูลบัญชีของคุณในระบบ HorHub แล้ว กรุณากรอกรหัส PIN เดิมเพื่อยืนยันตัวตนและผูกเข้ากับตึกนี้'
+          message: 'พบข้อมูลบัญชีของคุณในระบบ Horspace แล้ว กรุณากรอกรหัส PIN เดิมเพื่อยืนยันตัวตนและผูกเข้ากับตึกนี้'
         }
       };
     }
@@ -706,8 +706,11 @@ class TenantAuthService {
       return { statusCode: 404, body: { success: false, message: 'ไม่พบข้อมูลลูกบ้านสำหรับตั้งรหัสผ่าน' } };
     }
 
-    // หากมีรหัสผ่านเดิมอยู่แล้ว และระบุ oldPassword มา ให้ตรวจก่อน
-    if (tenant.passwordHash && oldPassword) {
+    // หากมีรหัสผ่านเดิมอยู่แล้ว ต้องระบุ oldPassword และตรวจสอบความถูกต้องเสมอ
+    if (tenant.passwordHash) {
+      if (!oldPassword) {
+        return { statusCode: 400, body: { success: false, message: 'กรุณาระบุรหัสผ่านเดิมเพื่อยืนยันตัวตน' } };
+      }
       const isOldMatch = await bcrypt.compare(oldPassword, tenant.passwordHash);
       if (!isOldMatch) {
         return { statusCode: 400, body: { success: false, message: 'รหัสผ่านเดิมไม่ถูกต้อง' } };

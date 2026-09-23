@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const buildingController = require('../controllers/buildingController');
-const meterInvoiceController = require('../controllers/meterInvoiceController');
+const meterController = require('../controllers/meterController');
 const notificationController = require('../controllers/notificationController');
 const requireRole = require('../middlewares/roleMiddleware');
 
@@ -15,14 +15,17 @@ router.get('/:id/notification-logs', (req, res, next) => buildingController.getN
 router.get('/:buildingId/notification-logs', (req, res, next) => buildingController.getNotificationLogs(req, res, next));
 
 // In-App Notification Bell (Admin CMS) — เหตุการณ์ที่ลูกบ้านทำแล้วต้องให้แอดมินมาดู
-router.get('/:id/notifications', (req, res, next) => notificationController.getAdminNotifications(req, res, next));
-router.post('/:id/notifications/read-all', (req, res, next) => notificationController.markAllAdminNotificationsRead(req, res, next));
-router.patch('/:id/notifications/:notifId/read', (req, res, next) => notificationController.markAdminNotificationRead(req, res, next));
+router.get('/:id/notifications', requireRole('admin'), (req, res, next) => notificationController.getAdminNotifications(req, res, next));
+router.post('/:id/notifications/read-all', requireRole('admin'), (req, res, next) => notificationController.markAllAdminNotificationsRead(req, res, next));
+router.patch('/:id/notifications/:notifId/read', requireRole('admin'), (req, res, next) => notificationController.markAdminNotificationRead(req, res, next));
 
 // Meter Reading & Invoice Generation Endpoints
-router.get('/:buildingId/meters/draft', (req, res, next) => meterInvoiceController.getMetersDraft(req, res, next));
-router.post('/:buildingId/invoices/generate', (req, res, next) => meterInvoiceController.generateInvoices(req, res, next));
-router.post('/:buildingId/invoices/publish', (req, res, next) => meterInvoiceController.publishInvoices(req, res, next));
+router.get('/:buildingId/meters/draft', requireRole('admin'), (req, res, next) => meterController.getMetersDraft(req, res, next));
+router.post('/:buildingId/invoices/generate', requireRole('admin'), (req, res, next) => meterController.generateInvoices(req, res, next));
+router.post('/:buildingId/invoices/publish', requireRole('admin'), (req, res, next) => meterController.publishInvoices(req, res, next));
+
+// Financial Report Export (CSV)
+router.get('/:buildingId/reports/monthly-csv', requireRole('admin'), (req, res, next) => buildingController.exportMonthlyCsv(req, res, next));
 
 // Settings PUT & POST Endpoints (RESTRICTED to OWNER & super_admin ONLY!)
 router.post('/', requireRole('OWNER', 'super_admin'), (req, res, next) => buildingController.createBuilding(req, res, next));

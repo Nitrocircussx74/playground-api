@@ -1,9 +1,10 @@
 const { execSync } = require('child_process');
 const app = require('./app');
 const config = require('./config/env');
-const db = require('./config/db');
+const prisma = require('./config/prisma');
 
 const { initLateFeeCron } = require('./jobs/lateFeeCron');
+const { initLeaseExpiryCron } = require('./jobs/leaseExpiryCron');
 
 function killProcessOnPort(port) {
   try {
@@ -36,12 +37,18 @@ function startServer() {
     console.log(`Google Auth: http://localhost:${config.port}/auth/google`);
     console.log(`=================================`);
 
-    // ทดสอบเชื่อมต่อกับ PostgreSQL Database
-    await db.testConnection();
+    // ทดสอบเชื่อมต่อกับ Database ผ่าน Prisma
+    try {
+      await prisma.$connect();
+      console.log('Database connected via Prisma');
+    } catch (err) {
+      console.error('Database connection error:', err.message);
+    }
 
     // เริ่มต้นทำงาน Background Worker (Late Fee Cron Job)
     if (config.nodeEnv !== 'test') {
       initLateFeeCron();
+      initLeaseExpiryCron();
     }
   });
 

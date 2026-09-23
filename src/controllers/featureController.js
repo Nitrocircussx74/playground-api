@@ -1,4 +1,5 @@
 const billingService = require('../services/billingService');
+const authService = require('../services/authService');
 
 const STANDARD_FEATURE_METADATA = {
   ENABLE_MAINTENANCE_REQUEST: {
@@ -54,7 +55,50 @@ class FeatureController {
    */
   async getFeatures(req, res, next) {
     try {
-      const { buildingId } = req.query;
+      let { buildingId } = req.query;
+
+      // 0. Auto-resolve buildingId if not explicitly provided
+      if (!buildingId) {
+        // A. From req.user (JWT Authenticated)
+        if (req.user?.buildingId) {
+          buildingId = req.user.buildingId;
+        }
+
+        // B. From Authorization Bearer Token (if present)
+        if (!buildingId && req.headers?.authorization?.startsWith('Bearer ')) {
+          try {
+            const token = req.headers.authorization.split(' ')[1];
+            const decoded = authService.verifyAccessToken(token);
+            if (decoded?.buildingId) {
+              buildingId = decoded.buildingId;
+            } else if (decoded?.tenantId || decoded?.id) {
+              const tenant = await billingService.prisma.tenant.findUnique({
+                where: { id: decoded.tenantId || decoded.id },
+                include: {
+                  rooms: { select: { buildingId: true } },
+                  roomResidents: { where: { status: 'ACTIVE' }, include: { room: { select: { buildingId: true } } } }
+                }
+              });
+              buildingId = tenant?.rooms?.[0]?.buildingId || tenant?.roomResidents?.[0]?.room?.buildingId || null;
+            }
+          } catch (_) {}
+        }
+
+        // C. From LINE identity headers or query
+        const lineUserId = req.lineUserId || req.headers?.['x-line-user-id'] || req.query?.lineUserId;
+        if (!buildingId && lineUserId) {
+          try {
+            const tenant = await billingService.prisma.tenant.findUnique({
+              where: { lineUserId },
+              include: {
+                rooms: { select: { buildingId: true } },
+                roomResidents: { where: { status: 'ACTIVE' }, include: { room: { select: { buildingId: true } } } }
+              }
+            });
+            buildingId = tenant?.rooms?.[0]?.buildingId || tenant?.roomResidents?.[0]?.room?.buildingId || null;
+          } catch (_) {}
+        }
+      }
 
       // ดึงข้อมูลทั้งหมดที่เกี่ยวข้อง (ทั้งค่าเริ่มต้นส่วนกลาง และค่าเฉพาะตึก)
       const allRecords = await billingService.prisma.featureToggle.findMany({

@@ -1,6 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const parcelController = require('../controllers/parcelController');
+const requireRole = require('../middlewares/roleMiddleware');
+
+router.use(requireRole('admin'));
 
 // Building scoped endpoints
 router.get('/buildings/:buildingId/parcels', (req, res, next) => parcelController.getParcelsByBuilding(req, res, next));

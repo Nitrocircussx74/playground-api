@@ -312,7 +312,7 @@ class BillingService {
         (callerTenant && invoice.tenantId === callerTenant.id) ||
         callerRoomIds.includes(invoice.roomId);
 
-      if (!isOwner && invoice.tenant?.lineUserId && invoice.tenant.lineUserId !== lineUserId) {
+      if (!isOwner && (invoice.tenantId || invoice.tenant?.lineUserId)) {
         const error = new Error('ปฏิเสธการเข้าถึง: คุณไม่มีสิทธิ์ดูใบแจ้งหนี้ของผู้อื่น');
         error.statusCode = 403;
         throw error;
@@ -367,7 +367,7 @@ class BillingService {
       throw error;
     }
 
-    if (lineUserId && invoice.tenant?.lineUserId && invoice.tenant.lineUserId !== lineUserId) {
+    if (lineUserId) {
       const callerTenant = await prisma.tenant.findUnique({
         where: { lineUserId },
         include: { rooms: true, leaseContracts: { where: { status: 'ACTIVE' } } }
@@ -375,9 +375,12 @@ class BillingService {
       const callerRoomIds = (callerTenant?.rooms || []).map((r) => r.id);
       (callerTenant?.leaseContracts || []).forEach((c) => callerRoomIds.push(c.roomId));
 
-      const isOwner = (callerTenant && invoice.tenantId === callerTenant.id) || callerRoomIds.includes(invoice.roomId);
+      const isOwner =
+        invoice.tenant?.lineUserId === lineUserId ||
+        (callerTenant && invoice.tenantId === callerTenant.id) ||
+        callerRoomIds.includes(invoice.roomId);
 
-      if (!isOwner) {
+      if (!isOwner && (invoice.tenantId || invoice.tenant?.lineUserId)) {
         const error = new Error('ปฏิเสธการเข้าถึง: คุณไม่มีสิทธิ์แนบสลิปสำหรับบิลของผู้อื่น');
         error.statusCode = 403;
         throw error;

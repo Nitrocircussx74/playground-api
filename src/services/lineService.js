@@ -697,7 +697,7 @@ class LineService {
     // Fallback: หากลูกบ้านไม่ได้ใช้ LINE ให้ส่ง SMS จำลองแทน
     if (!invoice.tenant?.lineUserId) {
       const recipientPhone = invoice.tenant?.phone;
-      const smsText = `[HorHub] ใบแจ้งหนี้ประจำเดือน ${invoice.billingCycle || ''} ห้อง ${invoice.room?.roomNumber || ''} ยอดรวม ${totalStr} บาท ตรวจสอบบิลได้ที่ https://horhub.app/web/login`;
+      const smsText = `[Horspace] ใบแจ้งหนี้ประจำเดือน ${invoice.billingCycle || ''} ห้อง ${invoice.room?.roomNumber || ''} ยอดรวม ${totalStr} บาท ตรวจสอบบิลได้ที่ https://horspace.app/web/login`;
 
       return await this.sendSmsFallbackNotification({
         phone: recipientPhone,
@@ -769,7 +769,7 @@ class LineService {
     // Fallback: หากลูกบ้านไม่ได้ใช้ LINE ให้ส่ง SMS จำลองแทน
     if (!invoice.tenant?.lineUserId) {
       const recipientPhone = invoice.tenant?.phone;
-      const smsText = `[HorHub] แจ้งเตือนค้างชำระค่าเช่าห้อง ${invoice.room?.roomNumber || ''} รอบ ${invoice.billingCycle || ''} ยอดรวม ${totalStr} บาท กรุณาชำระที่ https://horhub.app/web/login`;
+      const smsText = `[Horspace] แจ้งเตือนค้างชำระค่าเช่าห้อง ${invoice.room?.roomNumber || ''} รอบ ${invoice.billingCycle || ''} ยอดรวม ${totalStr} บาท กรุณาชำระที่ https://horspace.app/web/login`;
 
       return await this.sendSmsFallbackNotification({
         phone: recipientPhone,
@@ -1460,6 +1460,64 @@ class LineService {
         status: 'FAILED',
         errorReason: error.message
       });
+      return false;
+    }
+  }
+
+  /**
+   * แจ้งเตือนสัญญาเช่าใกล้หมดอายุ (30/7/1 วัน)
+   */
+  async pushLeaseExpiryNotification(lineUserId, lease, daysLeft) {
+    if (!lineUserId) return false;
+    const roomNumber = lease.room?.roomNumber || '';
+    const endDate = new Date(lease.expectedEndDate).toLocaleDateString('th-TH');
+    const urgency = daysLeft <= 1 ? 'พรุ่งนี้!' : daysLeft <= 7 ? `อีก ${daysLeft} วัน` : `อีก ${daysLeft} วัน`;
+    const messagePreview = `สัญญาเช่าห้อง ${roomNumber} จะหมดอายุ${urgency} (${endDate})`;
+    const isMockUserId = !/^U[0-9a-fA-F]{32}$/.test(lineUserId);
+    const buildingId = lease.room?.buildingId || null;
+    const liffId = getLiffId();
+    const headerColor = daysLeft <= 1 ? '#dc2626' : daysLeft <= 7 ? '#d97706' : '#2563eb';
+
+    const flexMessage = {
+      type: 'flex',
+      altText: messagePreview,
+      contents: {
+        type: 'bubble',
+        header: {
+          type: 'box', layout: 'vertical',
+          backgroundColor: headerColor, paddingAll: '15px',
+          contents: [{ type: 'text', text: 'แจ้งเตือนสัญญาเช่า', weight: 'bold', size: 'lg', color: '#ffffff' }]
+        },
+        body: {
+          type: 'box', layout: 'vertical',
+          contents: [
+            { type: 'text', text: `ห้อง ${roomNumber}`, weight: 'bold', size: 'xl', color: '#0f172a' },
+            { type: 'text', text: `สัญญาจะหมดอายุวันที่ ${endDate}`, size: 'sm', color: '#475569', margin: 'sm' },
+            { type: 'text', text: `เหลือเวลาอีก ${daysLeft} วัน`, size: 'md', weight: 'bold', color: headerColor, margin: 'md' },
+            { type: 'text', text: 'กรุณาติดต่อแอดมินเพื่อต่อสัญญาหรือแจ้งย้ายออก', size: 'xs', color: '#64748b', margin: 'lg', wrap: true }
+          ]
+        },
+        footer: {
+          type: 'box', layout: 'vertical',
+          contents: [{
+            type: 'button', style: 'primary',
+            color: headerColor,
+            action: { type: 'uri', label: 'เปิดแอป', uri: `https://liff.line.me/${liffId}` }
+          }]
+        }
+      }
+    };
+
+    try {
+      if (process.env.NODE_ENV === 'test' || (isMockUserId && process.env.NODE_ENV !== 'production')) {
+        await this.logDelivery({ buildingId, tenantId: lease.tenantId || null, notificationType: 'LEASE_EXPIRY', messagePreview, status: 'SUCCESS' });
+        return { success: true, simulated: true };
+      }
+      await client.pushMessage({ to: lineUserId, messages: [flexMessage] });
+      await this.logDelivery({ buildingId, tenantId: lease.tenantId || null, notificationType: 'LEASE_EXPIRY', messagePreview, status: 'SUCCESS' });
+      return { success: true };
+    } catch (error) {
+      await this.logDelivery({ buildingId, tenantId: lease.tenantId || null, notificationType: 'LEASE_EXPIRY', messagePreview, status: 'FAILED', errorReason: error.message });
       return false;
     }
   }
