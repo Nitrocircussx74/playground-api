@@ -64,6 +64,8 @@ async function verifyLineIdToken(idToken) {
 }
 
 const authService = require('../services/authService');
+const prisma = require('../config/prisma');
+const pickActiveRoom = require('../utils/pickActiveRoom');
 
 /**
  * Middleware สำหรับยืนยันตัวตนผู้เช่าที่เข้าใช้งานผ่าน LINE LIFF
@@ -72,6 +74,9 @@ const authService = require('../services/authService');
  * 2. LINE ID Token (X-Line-Id-Token) จาก liff.getIDToken()
  */
 const liffAuthMiddleware = async (req, res, next) => {
+  req.buildingId = req.headers['x-building-id'] || req.query?.buildingId || req.body?.buildingId || null;
+  req.roomId = req.headers['x-room-id'] || req.query?.roomId || req.body?.roomId || null;
+
   const authHeader = req.headers['authorization'];
   const idToken = req.headers['x-line-id-token'];
   const queryToken = req.query?.token || req.query?.t;
@@ -83,7 +88,9 @@ const liffAuthMiddleware = async (req, res, next) => {
 
   if (rawToken) {
     try {
-      const decoded = authService.verifyAccessToken(rawToken);
+      const verified = authService.verifyAccessToken(rawToken);
+      const decoded = await authService.resolveCurrentClaims(verified);
+      if (!decoded) throw new Error('ไม่พบบัญชีผู้ใช้งานนี้ในระบบแล้ว');
       req.user = decoded;
       req.tenantId = decoded.tenantId || decoded.id;
       req.lineUserId = decoded.lineUserId || req.lineUserId;
@@ -174,5 +181,100 @@ const liffAuthMiddleware = async (req, res, next) => {
   }
 };
 
+const ROOM_SELECT = { select: { id: true, buildingId: true } };
+
+/**
+ * Room Owner Scoping — ต้องต่อท้าย liffAuthMiddleware เสมอ
+ * 1. ตัด Identity ที่ Client ส่งมาเอง (?lineUserId, ?tenantId, ?room, ?roomNumber, body.lineUserId/tenantId) ทิ้ง
+ *    นอก Development เพราะหลาย Controller ยัง Fallback ไปหาผู้เช่าจากค่าพวกนี้เมื่อ req.lineUserId ว่าง
+ *    (เช่น Web Tenant ที่ Login ด้วย JWT ไม่มี LINE) ทำให้ขอข้อมูล/ยึดบัญชีคนอื่นได้
+ * 2. ห้องที่มีสิทธิ์ = ห้องที่ถือครอง (Room.tenantId) + ผู้อยู่ร่วม ACTIVE + สัญญาเช่า ACTIVE ของตัวเองเท่านั้น
+ * 3. X-Room-Id / X-Building-Id ต้องอยู่ในห้องที่มีสิทธิ์ ไม่งั้นใช้ห้องแรกแทน (ไม่ตอบ 403 เพราะค่าเก่าค้างใน
+ *    localStorage หลังย้ายออก/ถูกถอดสิทธิ์ จะทำให้ LIFF ใช้งานไม่ได้ทั้งแอป) ผลลัพธ์อยู่ใน req.roomId /
+ *    req.buildingId (เชื่อถือได้) และ req.scope.roomIds สำหรับ Query
+ * ผู้ใช้ที่ยังไม่มี Record ผู้เช่า (ลงทะเบียน/Onboarding/เจ้าของโหมดพรีวิว) ไม่มีข้อมูลห้องให้หลุด จึงปล่อย
+ * req.buildingId ไว้ตามเดิมให้หน้า Onboarding ดึงธีมตึกได้
+ */
+const scopeTenantRooms = async (req, res, next) => {
+  try {
+    if (config.nodeEnv !== 'development') {
+      ['lineUserId', 'tenantId', 'room', 'roomNumber'].forEach((k) => delete req.query[k]);
+      if (req.body) {
+        delete req.body.lineUserId;
+        delete req.body.tenantId;
+      }
+    }
+
+    const where = req.tenantId ? { id: req.tenantId } : req.lineUserId ? { lineUserId: req.lineUserId } : null;
+    const tenant = where
+      ? await prisma.tenant.findUnique({
+          where,
+          select: {
+            id: true,
+            rooms: ROOM_SELECT,
+            roomResidents: { where: { status: 'ACTIVE' }, select: { room: ROOM_SELECT } },
+            leaseContracts: { where: { status: 'ACTIVE' }, select: { room: ROOM_SELECT } }
+          }
+        })
+      : null;
+
+    if (!tenant) {
+      req.scope = { tenantId: null, rooms: [], roomIds: [] };
+      return next();
+    }
+
+    const roomsById = new Map();
+    [...tenant.rooms, ...tenant.roomResidents.map((r) => r.room), ...tenant.leaseContracts.map((l) => l.room)]
+      .filter(Boolean)
+      .forEach((r) => roomsById.set(r.id, r));
+    const rooms = Array.from(roomsById.values());
+
+    const activeRoom = pickActiveRoom(rooms, { roomId: req.roomId, buildingId: req.buildingId });
+    if (req.roomId && req.roomId !== activeRoom?.id) {
+      console.warn(`[room-scope] tenant ${tenant.id} ขอห้อง ${req.roomId} ที่ไม่มีสิทธิ์ ใช้ห้อง ${activeRoom?.id || '-'} แทน`);
+    }
+
+    req.scope = { tenantId: tenant.id, rooms, roomIds: rooms.map((r) => r.id) };
+    req.roomId = activeRoom?.id || null;
+    req.buildingId = activeRoom?.buildingId || null;
+    return next();
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const STAFF_ROLES = ['owner', 'admin', 'manager', 'super_admin', 'superadmin'];
+
+/**
+ * กัน IDOR ของ Route ที่รับ :id ใบแจ้งหนี้ตรงๆ (ดูบิล, QR, แนบสลิป, PDF) ต้องต่อหลัง scopeTenantRooms
+ * เดิม getInvoiceQrImage ไม่เช็คเลย และที่เหลือเช็คเฉพาะตอนมี lineUserId ทำให้ Web Tenant (JWT ไม่มี LINE)
+ * เปิดบิลของใครก็ได้ถ้ารู้ id — ผู้เช่าต้องเป็นเจ้าของบิลหรือมีสิทธิ์ในห้องของบิลนั้นอยู่ (ถือครอง/ผู้อยู่ร่วม/สัญญา ACTIVE)
+ * แอดมิน/เจ้าของตึกที่เปิดผ่าน LIFF (ไม่มี Record ผู้เช่า) ผ่านได้ตามเดิม
+ */
+const requireOwnInvoice = async (req, res, next) => {
+  try {
+    if (!req.scope?.tenantId && STAFF_ROLES.includes((req.user?.role || '').toLowerCase())) {
+      return next();
+    }
+    const invoice = await prisma.invoice.findUnique({
+      where: { id: req.params.id },
+      select: { roomId: true, tenantId: true }
+    });
+    if (!invoice) {
+      return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลใบแจ้งหนี้' });
+    }
+    const allowed = Boolean(req.scope?.tenantId)
+      && (invoice.tenantId === req.scope.tenantId || req.scope.roomIds.includes(invoice.roomId));
+    if (!allowed) {
+      return res.status(403).json({ success: false, message: 'ปฏิเสธการเข้าถึง: คุณไม่มีสิทธิ์เข้าถึงใบแจ้งหนี้นี้' });
+    }
+    return next();
+  } catch (error) {
+    return next(error);
+  }
+};
+
 module.exports = liffAuthMiddleware;
 module.exports.verifyLineIdToken = verifyLineIdToken;
+module.exports.scopeTenantRooms = scopeTenantRooms;
+module.exports.requireOwnInvoice = requireOwnInvoice;

@@ -9,6 +9,7 @@ const path = require('path');
 const config = require('./config/env');
 const passport = require('./config/passport');
 const routes = require('./routes');
+const { jsonReplacer } = require('./utils/secrets');
 const { notFoundHandler, errorHandler } = require('./middlewares/errorMiddleware');
 
 const app = express();
@@ -43,7 +44,7 @@ const corsOptions = {
       : true,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'x-csrf-token', 'Origin', 'X-Line-Id-Token']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'x-csrf-token', 'Origin', 'X-Line-Id-Token', 'X-Building-Id', 'X-Room-Id', 'X-Line-User-Id']
 };
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
@@ -59,6 +60,9 @@ const limiter = rateLimit({
   }
 });
 app.use(limiter);
+
+// กัน hash/ความลับของตึกหลุดไปกับ res.json ทุก Endpoint (ดู utils/secrets.js)
+app.set('json replacer', jsonReplacer);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));

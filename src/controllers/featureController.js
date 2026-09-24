@@ -60,7 +60,7 @@ class FeatureController {
    */
   async getFeatures(req, res, next) {
     try {
-      let { buildingId } = req.query;
+      let buildingId = req.query?.buildingId || req.query?.building_id || req.headers?.['x-building-id'];
 
       // 0. Auto-resolve buildingId if not explicitly provided
       if (!buildingId) {
@@ -200,7 +200,12 @@ class FeatureController {
         });
       }
 
-      const meta = STANDARD_FEATURE_METADATA[key] || {};
+      // รับเฉพาะ Key ที่ระบบรองรับ กันแอดมินสร้าง Toggle ขยะที่ไม่มีหน้าไหนใน LIFF ใช้จริง
+      if (!STANDARD_FEATURE_METADATA[key]) {
+        return res.status(400).json({ success: false, message: `ไม่รู้จักฟีเจอร์ ${key}` });
+      }
+
+      const meta = STANDARD_FEATURE_METADATA[key];
       const targetBuildingId = buildingId || req.query.buildingId || null;
       const description = meta.description || req.body.description || `ฟีเจอร์ ${key}`;
 

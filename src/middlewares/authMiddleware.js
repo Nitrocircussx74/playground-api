@@ -3,7 +3,7 @@ const authService = require('../services/authService');
 /**
  * Middleware สำหรับยืนยันตัวตนด้วย JWT Access Token (Protect Route)
  */
-const authenticateJWT = (req, res, next) => {
+const authenticateJWT = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
 
@@ -19,7 +19,15 @@ const authenticateJWT = (req, res, next) => {
     // ตรวจสอบความถูกต้องของ Access Token
     const decodedPayload = authService.verifyAccessToken(token);
 
-    req.user = decodedPayload;
+    const currentClaims = await authService.resolveCurrentClaims(decodedPayload);
+    if (!currentClaims) {
+      return res.status(401).json({
+        success: false,
+        message: 'ไม่พบบัญชีผู้ใช้งานนี้ในระบบแล้ว กรุณาเข้าสู่ระบบใหม่'
+      });
+    }
+
+    req.user = currentClaims;
     next();
   } catch (error) {
     if (error.name === 'TokenExpiredError') {

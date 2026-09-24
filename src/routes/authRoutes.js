@@ -45,7 +45,7 @@ router.get(
  * @route   POST /auth/login
  * @desc    เข้าสู่ระบบ (Zod Validation) -> ส่งคืน Access Token ใน Body และฝัง Refresh Token ใน HttpOnly Cookie
  */
-router.post('/login', validate(loginSchema), authController.login);
+router.post('/login', pinAttemptLimiter, validate(loginSchema), authController.login);
 
 /**
  * @route   POST /auth/login/line

@@ -1,25 +1,34 @@
 const request = require('supertest');
 const app = require('../../src/app');
 const authService = require('../../src/services/authService');
+const prisma = require('../../src/config/prisma');
 
 describe('Role-Based Access Control (RBAC) Integration Tests', () => {
   let adminToken;
   let tenantToken;
 
-  beforeAll(() => {
-    adminToken = authService.generateAccessToken({
-      id: '00000000-0000-0000-0000-000000000001',
-      email: 'admin@test.com',
-      name: 'Admin User',
-      role: 'admin'
+  const ADMIN_ID = '00000000-0000-0000-0000-000000000001';
+  const TENANT_ID = '00000000-0000-0000-0000-000000000002';
+
+  beforeAll(async () => {
+    // Token ถูกยืนยันกับ DB ทุก Request (role ล่าสุด/บัญชีต้องมีอยู่จริง) จึงต้องมีแถวใน users
+    await prisma.user.upsert({
+      where: { id: ADMIN_ID },
+      update: { role: 'admin' },
+      create: { id: ADMIN_ID, email: 'rbac_admin@test.com', name: 'Admin User', role: 'admin', passwordHash: 'x' }
+    });
+    await prisma.user.upsert({
+      where: { id: TENANT_ID },
+      update: { role: 'tenant' },
+      create: { id: TENANT_ID, email: 'rbac_tenant@test.com', name: 'Tenant User', role: 'tenant', passwordHash: 'x' }
     });
 
-    tenantToken = authService.generateAccessToken({
-      id: '00000000-0000-0000-0000-000000000002',
-      email: 'tenant@test.com',
-      name: 'Tenant User',
-      role: 'tenant'
-    });
+    adminToken = authService.generateAccessToken({ id: ADMIN_ID, email: 'admin@test.com', name: 'Admin User', role: 'admin' });
+    tenantToken = authService.generateAccessToken({ id: TENANT_ID, email: 'tenant@test.com', name: 'Tenant User', role: 'tenant' });
+  });
+
+  afterAll(async () => {
+    await prisma.user.deleteMany({ where: { id: { in: [ADMIN_ID, TENANT_ID] } } });
   });
 
   describe('Admin-only Protected Endpoints Authorization Checks', () => {

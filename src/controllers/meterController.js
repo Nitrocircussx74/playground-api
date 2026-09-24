@@ -1,3 +1,4 @@
+const { getAllowedBuildingIds } = require('../middlewares/buildingAccessMiddleware');
 const billingService = require('../services/billingService');
 const lineService = require('../services/lineService');
 const { formatBillingCycle } = require('../utils/formatBillingCycle');
@@ -13,7 +14,10 @@ class MeterController {
       const where = {};
       if (roomId) where.roomId = roomId;
       if (billingCycle) where.billingCycle = billingCycle;
+      // buildingId ที่ระบุมาผ่านการตรวจสิทธิ์ที่ route แล้ว ถ้าไม่ระบุ จำกัดเฉพาะตึกที่มีสิทธิ์
+      const allowedBuildingIds = await getAllowedBuildingIds(req.user);
       if (buildingId) where.room = { buildingId };
+      else if (allowedBuildingIds) where.room = { buildingId: { in: allowedBuildingIds } };
 
       const records = await billingService.prisma.meterRecord.findMany({
         where,

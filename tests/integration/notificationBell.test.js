@@ -18,6 +18,12 @@ describe('In-App Notification Bell Integration Tests', () => {
 
     testBuilding = await billingService.prisma.building.findFirst();
 
+    await billingService.prisma.featureToggle.upsert({
+      where: { key_buildingId: { key: 'ENABLE_VEHICLE_MANAGEMENT', buildingId: testBuilding.id } },
+      update: { isActive: true },
+      create: { key: 'ENABLE_VEHICLE_MANAGEMENT', isActive: true, buildingId: testBuilding.id }
+    });
+
     testTenant = await billingService.prisma.tenant.create({
       data: { firstName: 'ทดสอบ', lastName: 'กระดิ่ง', phone: '0899988301', lineUserId: 'U_TEST_BELL_TENANT_999' }
     });

@@ -1,4 +1,5 @@
 const billingService = require('../services/billingService');
+const { isFeatureEnabled } = require('../middlewares/requireFeatureMiddleware');
 const lineService = require('../services/lineService');
 
 /**
@@ -144,7 +145,26 @@ class FacilityController {
   async getFacilitiesForLiff(req, res, next) {
     try {
       const tenant = await resolveTenant(req);
-      const buildingId = tenant?.rooms?.[0]?.buildingId;
+      const targetRoomId = req.roomId;
+      const targetBuildingId = req.buildingId;
+
+      let buildingId = null;
+      if (tenant?.rooms?.length > 0) {
+        if (targetRoomId) {
+          const matched = tenant.rooms.find((r) => r.id === targetRoomId);
+          if (matched) buildingId = matched.buildingId;
+        }
+        if (!buildingId && targetBuildingId) {
+          const matched = tenant.rooms.find((r) => r.buildingId === targetBuildingId);
+          if (matched) buildingId = matched.buildingId;
+        }
+        if (!buildingId) {
+          buildingId = tenant.rooms[0].buildingId;
+        }
+      } else if (targetBuildingId) {
+        buildingId = targetBuildingId;
+      }
+
       if (!buildingId) {
         return res.status(200).json({ success: true, data: [] });
       }
@@ -216,10 +236,7 @@ class FacilityController {
       }
 
       // เช็ค FeatureToggle ของตึกผู้เช่า (inline แทนการทำ middleware แยก เพราะต้อง resolve tenant->room->building ก่อน)
-      const toggle = await billingService.prisma.featureToggle.findFirst({
-        where: { key: 'ENABLE_FACILITY_BOOKING', buildingId: facility.buildingId }
-      });
-      if (toggle && !toggle.isActive) {
+      if (!(await isFeatureEnabled('ENABLE_FACILITY_BOOKING', facility.buildingId))) {
         return res.status(403).json({ success: false, message: 'ฟีเจอร์จองพื้นที่ส่วนกลางถูกปิดใช้งานสำหรับตึกนี้' });
       }
 

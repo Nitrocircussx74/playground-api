@@ -214,8 +214,7 @@ class AuthController {
     try {
       const { email, password } = req.body;
 
-      // ค้นหาหรือบันทึกข้อมูลผู้ใช้ลง PostgreSQL Database
-      const user = await userService.findOrCreateLocalUser(email, password);
+      const user = await userService.verifyLocalUser(email, password);
 
       const accessToken = authService.generateAccessToken(user);
       const refreshToken = authService.generateRefreshToken(user);

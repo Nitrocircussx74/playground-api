@@ -1,5 +1,8 @@
 const express = require('express');
+const { buildingParam, entityParam, resolvers } = require('../middlewares/buildingAccessMiddleware');
 const router = express.Router();
+router.param('id', entityParam(resolvers.vendor));
+router.param('buildingId', buildingParam);
 const vendorController = require('../controllers/vendorController');
 const requireRole = require('../middlewares/roleMiddleware');
 

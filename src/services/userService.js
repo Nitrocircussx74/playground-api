@@ -20,32 +20,17 @@ class UserService {
     });
   }
 
-  async findOrCreateLocalUser(email, password, name = 'User') {
-    if (!password) {
-      const error = new Error('กรุณาระบุรหัสผ่าน');
-      error.statusCode = 400;
+  /**
+   * ตรวจอีเมล/รหัสผ่านของบัญชีที่มีอยู่แล้วเท่านั้น (ห้ามสร้างบัญชีใหม่จากหน้า Login)
+   * ตอบข้อความเดียวกันทั้งกรณีไม่พบอีเมลและรหัสผิด กันการเดาว่าอีเมลไหนมีในระบบ
+   */
+  async verifyLocalUser(email, password) {
+    const user = await prisma.user.findUnique({ where: { email } });
+
+    if (!user || !(await verifyPassword(password, user.passwordHash))) {
+      const error = new Error('อีเมลหรือรหัสผ่านไม่ถูกต้อง');
+      error.statusCode = 401;
       throw error;
-    }
-
-    let user = await prisma.user.findUnique({ where: { email } });
-
-    if (!user) {
-      const passwordHash = await bcrypt.hash(password, 10);
-      user = await prisma.user.create({
-        data: {
-          email,
-          name,
-          role: 'TENANT',
-          passwordHash
-        }
-      });
-    } else {
-      const isValid = await verifyPassword(password, user.passwordHash);
-      if (!isValid) {
-        const error = new Error('อีเมลหรือรหัสผ่านไม่ถูกต้อง');
-        error.statusCode = 401;
-        throw error;
-      }
     }
 
     return user;

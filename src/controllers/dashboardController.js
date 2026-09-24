@@ -1,3 +1,4 @@
+const { resolveListBuildings } = require('../middlewares/buildingAccessMiddleware');
 const billingService = require('../services/billingService');
 const lineService = require('../services/lineService');
 const { setupThaiFonts } = require('../utils/pdfHelper');
@@ -256,9 +257,14 @@ class DashboardController {
    */
   async remindDebtors(req, res, next) {
     try {
+      const scope = await resolveListBuildings(req.user, req.body?.buildingId || req.query?.buildingId);
+      if (scope.forbidden) {
+        return res.status(403).json({ success: false, message: 'คุณไม่มีสิทธิ์เข้าถึงข้อมูลของอาคาร/ตึกนี้' });
+      }
       const debtors = await billingService.prisma.invoice.findMany({
         where: {
-          status: { in: ['pending', 'overdue'] }
+          status: { in: ['pending', 'overdue'] },
+          ...(scope.ids && { room: { buildingId: { in: scope.ids } } })
         },
         include: { room: true, tenant: true }
       });

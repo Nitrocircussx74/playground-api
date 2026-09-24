@@ -25,6 +25,7 @@ const pollRoutes = require('./pollRoutes');
 const feedbackRoutes = require('./feedbackRoutes');
 const inspectionRoutes = require('./inspectionRoutes');
 const vendorRoutes = require('./vendorRoutes');
+const inviteRoutes = require('./inviteRoutes');
 const liffController = require('../controllers/liffController');
 
 // Root Health Check Route
@@ -84,5 +85,7 @@ router.use('/api/v1', authenticateJWT, vendorRoutes);
 router.use('/api/admin/audit-logs', authenticateJWT, auditLogRoutes);
 router.use('/api/admin/dashboard', authenticateJWT, dashboardRoutes);
 router.use('/api/v1/dashboard', authenticateJWT, dashboardRoutes);
+router.use('/api/v1/invites', authenticateJWT, inviteRoutes);
+router.use('/api/admin/invites', authenticateJWT, inviteRoutes);
 
 module.exports = router;

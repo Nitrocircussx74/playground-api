@@ -1,3 +1,4 @@
+const { resolveListBuildings } = require('../middlewares/buildingAccessMiddleware');
 const billingService = require('../services/billingService');
 const auditService = require('../services/auditService');
 
@@ -9,7 +10,11 @@ class LeaseController {
     try {
       const { buildingId } = req.query;
 
-      const where = buildingId ? { OR: [{ buildingId }, { room: { buildingId } }] } : {};
+      const scope = await resolveListBuildings(req.user, buildingId);
+      if (scope.forbidden) {
+        return res.status(403).json({ success: false, message: 'คุณไม่มีสิทธิ์เข้าถึงข้อมูลของอาคาร/ตึกนี้' });
+      }
+      const where = scope.ids ? { OR: [{ buildingId: { in: scope.ids } }, { room: { buildingId: { in: scope.ids } } }] } : {};
 
       const leases = await billingService.prisma.leaseContract.findMany({
         where,

@@ -1,4 +1,5 @@
 const request = require('supertest');
+const bcrypt = require('bcryptjs');
 const app = require('../../src/app');
 const authService = require('../../src/services/authService');
 
@@ -17,6 +18,25 @@ describe('Full API Integration Tests (ทดสอบ Endpoints ทั้งห�
     };
     validAccessToken = authService.generateAccessToken(mockUser);
 
+    // Token ถูกยืนยันกับ DB ทุก Request จึงต้องมีบัญชีตาม id ใน Token จริง
+    await billingService.prisma.user.upsert({
+      where: { id: mockUser.id },
+      update: { role: 'admin' },
+      create: { id: mockUser.id, email: mockUser.email, name: mockUser.name, role: 'admin', passwordHash: 'x' }
+    });
+
+    // Login ต้องมีบัญชีอยู่ก่อนเท่านั้น (ห้ามสมัครอัตโนมัติ) จึงสร้างบัญชีทดสอบไว้ล่วงหน้า
+    await billingService.prisma.user.upsert({
+      where: { email: 'testuser@example.com' },
+      update: {},
+      create: {
+        email: 'testuser@example.com',
+        name: 'Test User',
+        role: 'tenant',
+        passwordHash: await bcrypt.hash('password123', 10)
+      }
+    });
+
     await billingService.prisma.tenant.upsert({
       where: { lineUserId: 'U_test_apiroutes_profile' },
       update: { phone: '0812345678' },
@@ -30,6 +50,7 @@ describe('Full API Integration Tests (ทดสอบ Endpoints ทั้งห�
   });
 
   afterAll(async () => {
+    await billingService.prisma.user.deleteMany({ where: { OR: [{ email: 'testuser@example.com' }, { id: '00000000-0000-0000-0000-000000000001' }] } });
     await billingService.prisma.tenant.deleteMany({
       where: { lineUserId: 'U_test_apiroutes_profile' }
     });
@@ -78,6 +99,14 @@ describe('Full API Integration Tests (ทดสอบ Endpoints ทั้งห�
       expect(cookies).toBeDefined();
       refreshTokenCookie = cookies.find((c) => c.startsWith('refreshToken='));
       expect(refreshTokenCookie).toBeDefined();
+    });
+
+    test('POST /auth/login - อีเมลที่ไม่มีในระบบ ต้องได้ 401 และห้ามสร้างบัญชีใหม่', async () => {
+      const email = 'nobody-registered@example.com';
+      const response = await request(app).post('/auth/login').send({ email, password: 'password123' });
+
+      expect(response.statusCode).toBe(401);
+      expect(await billingService.prisma.user.findUnique({ where: { email } })).toBeNull();
     });
 
     test('GET /auth/me - กรณีไม่แนบ Access Token ต้องตอบกลับ HTTP 401 Unauthorized', async () => {

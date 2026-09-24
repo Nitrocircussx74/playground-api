@@ -1,5 +1,7 @@
 const express = require('express');
+const { entityParam, resolvers } = require('../middlewares/buildingAccessMiddleware');
 const router = express.Router();
+router.param('id', entityParam(resolvers.lease));
 const moveOutController = require('../controllers/moveOutController');
 const requireRole = require('../middlewares/roleMiddleware');
 

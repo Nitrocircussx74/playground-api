@@ -1,13 +1,14 @@
 const express = require('express');
+const { invoiceParam, requireBuildingInRequest } = require('../middlewares/buildingAccessMiddleware');
 const router = express.Router();
+router.param('id', invoiceParam);
 const invoiceController = require('../controllers/invoiceController');
 const requireRole = require('../middlewares/roleMiddleware');
 
-router.get('/', (req, res, next) => invoiceController.getInvoices(req, res, next));
-router.post('/', requireRole('admin'), (req, res, next) => invoiceController.createInvoice(req, res, next));
+router.get('/', requireRole('admin', 'room_owner', 'investor'), requireBuildingInRequest, (req, res, next) => invoiceController.getInvoices(req, res, next));
+router.post('/', requireRole('admin'), requireBuildingInRequest, (req, res, next) => invoiceController.createInvoice(req, res, next));
 router.put('/:id', requireRole('admin'), (req, res, next) => invoiceController.updateInvoice(req, res, next));
-router.get('/:id/export', (req, res, next) => invoiceController.exportInvoicePdf(req, res, next));
-router.post('/:id/payment-slips', (req, res, next) => invoiceController.uploadPaymentSlip(req, res, next));
+router.get('/:id/export', requireRole('admin', 'room_owner', 'investor'), (req, res, next) => invoiceController.exportInvoicePdf(req, res, next));
 router.patch('/:id/status', requireRole('admin'), (req, res, next) => invoiceController.updateInvoiceStatus(req, res, next));
 router.post('/:id/pay-manual', requireRole('admin'), (req, res, next) => invoiceController.recordManualPayment(req, res, next));
 router.post('/:id/remind', requireRole('admin'), (req, res, next) => invoiceController.remindInvoice(req, res, next));

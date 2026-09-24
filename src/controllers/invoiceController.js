@@ -1,4 +1,6 @@
 const billingService = require('../services/billingService');
+const { getAllowedBuildingIds, resolveListBuildings } = require('../middlewares/buildingAccessMiddleware');
+const { roomScopedWhere, hasRoomScope } = require('../utils/roomScope');
 const lineService = require('../services/lineService');
 const PDFDocument = require('pdfkit');
 const { setupThaiFonts } = require('../utils/pdfHelper');
@@ -23,6 +25,10 @@ class InvoiceController {
         };
       } else if (buildingId) {
         where.room = { buildingId };
+      } else {
+        // ไม่ระบุตึก: จำกัดเฉพาะตึกที่มีสิทธิ์ (owner/super_admin เห็นทุกตึก)
+        const allowedBuildingIds = await getAllowedBuildingIds(req.user);
+        if (allowedBuildingIds) where.room = { buildingId: { in: allowedBuildingIds } };
       }
 
       const invoices = await billingService.prisma.invoice.findMany({
@@ -50,87 +56,13 @@ class InvoiceController {
    */
   async getPaidInvoicesForLiff(req, res, next) {
     try {
-      const lineUserId = req.lineUserId || req.query?.lineUserId;
-      const { tenantId, room: queryRoomNumber, roomNumber: queryRoomNumberAlt } = req.query || {};
-      const targetRoomNumber = queryRoomNumber || queryRoomNumberAlt;
-
-      let tenant = null;
-
-      // 1. ค้นหาจาก lineUserId ที่ยืนยันตัวตนผ่าน LIFF Token
-      if (lineUserId) {
-        tenant = await billingService.prisma.tenant.findUnique({
-          where: { lineUserId },
-          include: {
-            rooms: true,
-            leaseContracts: {
-              where: { status: 'ACTIVE' },
-              include: { room: true }
-            }
-          }
-        });
-      }
-
-      // 2. ค้นหาจาก tenantId (หากส่งมา)
-      if (!tenant && tenantId) {
-        tenant = await billingService.prisma.tenant.findUnique({
-          where: { id: tenantId },
-          include: {
-            rooms: true,
-            leaseContracts: {
-              where: { status: 'ACTIVE' },
-              include: { room: true }
-            }
-          }
-        });
-      }
-
-      // 3. ค้นหาจากหมายเลขห้อง (กรณี dev / test mode)
-      if (!tenant && targetRoomNumber) {
-        const room = await billingService.prisma.room.findFirst({
-          where: { roomNumber: targetRoomNumber },
-          include: {
-            tenant: {
-              include: {
-                rooms: true,
-                leaseContracts: {
-                  where: { status: 'ACTIVE' },
-                  include: { room: true }
-                }
-              }
-            }
-          }
-        });
-        if (room?.tenant) {
-          tenant = room.tenant;
-        }
-      }
-
-      if (!tenant) {
+      // เฉพาะบิลของห้องที่เลือกอยู่ (req.roomId ตรวจสิทธิ์แล้วใน scopeTenantRooms) ไม่รับ tenantId/roomNumber จาก Client
+      if (!hasRoomScope(req)) {
         return res.status(200).json({ success: true, data: [] });
       }
 
-      // รวบรวม ID ห้องพักทั้งหมดที่ผู้เช่าผูกอยู่ (ทั้งจาก Room.tenantId และ Active Lease Contract)
-      const roomIds = [];
-      if (tenant.rooms && tenant.rooms.length > 0) {
-        tenant.rooms.forEach((r) => roomIds.push(r.id));
-      }
-      if (tenant.leaseContracts && tenant.leaseContracts.length > 0) {
-        tenant.leaseContracts.forEach((c) => {
-          if (c.roomId && !roomIds.includes(c.roomId)) {
-            roomIds.push(c.roomId);
-          }
-        });
-      }
-
-      const orConditions = [{ tenantId: tenant.id }];
-      if (roomIds.length > 0) {
-        orConditions.push({ roomId: { in: roomIds } });
-      }
-
       const invoices = await billingService.prisma.invoice.findMany({
-        where: {
-          OR: orConditions
-        },
+        where: roomScopedWhere(req),
         orderBy: { createdAt: 'desc' },
         include: {
           room: {
@@ -239,38 +171,6 @@ class InvoiceController {
         success: false,
         message: error.message
       });
-    }
-  }
-
-  async uploadPaymentSlip(req, res, next) {
-    try {
-      const { id } = req.params;
-      const { slipUrl } = req.body;
-
-      const invoice = await billingService.prisma.invoice.findUnique({ where: { id } });
-      if (!invoice) {
-        return res.status(404).json({ success: false, message: 'Invoice not found' });
-      }
-
-      if (invoice.status === 'paid') {
-        return res.status(400).json({ success: false, message: 'Invoice is already paid' });
-      }
-
-      const updatedInvoice = await billingService.prisma.invoice.update({
-        where: { id },
-        data: {
-          slipUrl: slipUrl || 'https://images.unsplash.com/photo-1559526324-4b87b5e36e44?auto=format&fit=crop&w=600&q=80',
-          status: 'reviewing'
-        }
-      });
-
-      return res.status(200).json({
-        success: true,
-        message: 'Payment slip uploaded successfully, awaiting admin verification',
-        data: updatedInvoice
-      });
-    } catch (error) {
-      next(error);
     }
   }
 
@@ -813,7 +713,11 @@ class InvoiceController {
         status: { in: ['pending', 'overdue'] }
       };
       if (billingCycle) where.billingCycle = billingCycle;
-      if (buildingId) where.room = { buildingId };
+      const scope = await resolveListBuildings(req.user, buildingId);
+      if (scope.forbidden) {
+        return res.status(403).json({ success: false, message: 'คุณไม่มีสิทธิ์เข้าถึงข้อมูลของอาคาร/ตึกนี้' });
+      }
+      if (scope.ids) where.room = { buildingId: { in: scope.ids } };
 
       const unpaidInvoices = await billingService.prisma.invoice.findMany({
         where,
@@ -864,8 +768,12 @@ class InvoiceController {
   async processLateFees(req, res, next) {
     try {
       const { buildingId, targetDate } = req.body || {};
+      const scope = await resolveListBuildings(req.user, buildingId);
+      if (scope.forbidden) {
+        return res.status(403).json({ success: false, message: 'คุณไม่มีสิทธิ์เข้าถึงข้อมูลของอาคาร/ตึกนี้' });
+      }
       const lateFeeService = require('../services/lateFeeService');
-      const result = await lateFeeService.processLateFees({ buildingId, targetDate });
+      const result = await lateFeeService.processLateFees({ buildingIds: scope.ids, targetDate });
 
       return res.status(200).json({
         success: true,

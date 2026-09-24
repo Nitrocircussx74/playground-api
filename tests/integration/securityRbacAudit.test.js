@@ -69,6 +69,14 @@ describe('Security & RBAC Protection Integration Tests', () => {
       }
     });
     managerToken = authService.generateAccessToken(managerUser);
+
+    // admin/manager เข้าถึงผู้เช่าได้เฉพาะตึกที่ได้รับสิทธิ์ (ลบอัตโนมัติเมื่อลบผู้ใช้/ตึก ตาม onDelete: Cascade)
+    await billingService.prisma.userBuildingPermission.createMany({
+      data: [
+        { userId: adminUser.id, buildingId: testBuilding.id },
+        { userId: managerUser.id, buildingId: testBuilding.id }
+      ]
+    });
   });
 
   describe('1. Authentication Validation (POST /auth/login)', () => {

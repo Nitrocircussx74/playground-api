@@ -2,6 +2,8 @@ const jwt = require('jsonwebtoken');
 const config = require('../config/env');
 const prisma = require('../config/prisma');
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * Service สำหรับจัดการการสร้าง ตรวจสอบ และหมุนเวียน (Rotate) JWT Access & Refresh Tokens
  */
@@ -52,6 +54,24 @@ class AuthService {
    */
   verifyAccessToken(token) {
     return jwt.verify(token, config.jwt.accessSecret);
+  }
+
+  /**
+   * ยืนยัน Claims ของ Access Token กับ DB ทุก Request: บัญชีถูกลบ = null, บัญชีในตาราง users ใช้ role ล่าสุดจาก DB
+   * (ถูกลดสิทธิ์/เปลี่ยน role แล้วมีผลทันที ไม่ต้องรอ Token อายุ 15 นาทีหมด) ส่วนผู้เช่า (id อยู่ในตาราง tenants
+   * ไม่ใช่ users) คง role ตาม Token เพราะออกจากการเข้าสู่ระบบด้วย PIN/LINE
+   * ponytail: 1-2 Query ต่อ Request ถ้าโหลดสูงให้ใช้ Cache สั้นๆ (เช่น 30 วินาที) หรือ tokenVersion ใน Token
+   * @param {Object} decoded Payload ที่ verify แล้ว
+   * @returns {Promise<Object|null>}
+   */
+  async resolveCurrentClaims(decoded) {
+    if (!UUID_RE.test(decoded?.id || '')) return null;
+
+    const user = await prisma.user.findUnique({ where: { id: decoded.id }, select: { role: true } });
+    if (user) return { ...decoded, role: user.role };
+
+    const tenant = await prisma.tenant.findUnique({ where: { id: decoded.id }, select: { id: true } });
+    return tenant ? decoded : null;
   }
 
   /**

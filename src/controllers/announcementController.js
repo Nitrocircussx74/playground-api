@@ -285,29 +285,42 @@ class AnnouncementController {
         });
       }
 
+      const targetRoomId = req.roomId;
+      const targetBuildingId = req.buildingId;
+
       let tenantRoom = null;
       if (tenant?.rooms?.length > 0) {
-        tenantRoom = tenant.rooms[0];
+        if (targetRoomId) {
+          tenantRoom = tenant.rooms.find((r) => r.id === targetRoomId);
+        }
+        if (!tenantRoom && targetBuildingId) {
+          tenantRoom = tenant.rooms.find((r) => r.buildingId === targetBuildingId);
+        }
+        if (!tenantRoom) {
+          tenantRoom = tenant.rooms[0];
+        }
       }
+
+      const effectiveBuildingId = tenantRoom?.buildingId || targetBuildingId || null;
 
       let whereCondition = {
         OR: [
-          { targetType: 'ALL' },
-          { targetType: 'all' }
+          { targetType: { in: ['ALL', 'all'] }, buildingId: null },
+          ...(effectiveBuildingId ? [
+            { targetType: { in: ['ALL', 'all'] }, buildingId: effectiveBuildingId },
+            { targetType: { in: ['BUILDING', 'building'] }, buildingId: effectiveBuildingId }
+          ] : [])
         ]
       };
 
       if (tenantRoom) {
         whereCondition = {
           OR: [
-            { targetType: 'ALL' },
-            { targetType: 'all' },
-            { targetType: 'BUILDING', buildingId: tenantRoom.buildingId },
-            { targetType: 'building', buildingId: tenantRoom.buildingId },
-            { targetType: 'FLOOR', targetValue: String(tenantRoom.floor), buildingId: tenantRoom.buildingId },
-            { targetType: 'floor', targetValue: String(tenantRoom.floor), buildingId: tenantRoom.buildingId },
-            { targetType: 'ROOM', targetValue: tenantRoom.id },
-            { targetType: 'room', targetValue: tenantRoom.id }
+            { targetType: { in: ['ALL', 'all'] }, buildingId: null },
+            { targetType: { in: ['ALL', 'all'] }, buildingId: tenantRoom.buildingId },
+            { targetType: { in: ['BUILDING', 'building'] }, buildingId: tenantRoom.buildingId },
+            { targetType: { in: ['FLOOR', 'floor'] }, targetValue: String(tenantRoom.floor), buildingId: tenantRoom.buildingId },
+            { targetType: { in: ['ROOM', 'room'] }, targetValue: tenantRoom.id }
           ]
         };
       }
