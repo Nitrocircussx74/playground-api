@@ -21,6 +21,7 @@ router.post('/rooms/:roomId/leases', (req, res, next) => leaseController.createL
 router.get('/tenants/:tenantId/history', (req, res, next) => leaseController.getTenantLeaseHistory(req, res, next));
 
 // Terminate lease / move-out endpoint
+router.patch('/leases/:leaseId/initial-readings', (req, res, next) => leaseController.updateInitialReadings(req, res, next));
 router.post('/leases/:leaseId/terminate', (req, res, next) => leaseController.terminateLease(req, res, next));
 
 // Full contract details for E-Contract PDF

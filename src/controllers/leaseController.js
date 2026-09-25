@@ -233,6 +233,49 @@ class LeaseController {
   }
 
   /**
+   * จดเลขมิเตอร์น้ำ/ไฟ ณ วันเข้าพักทีหลัง (PATCH /api/admin/leases/:leaseId/initial-readings)
+   * สำหรับสัญญาที่แอดมินไม่ได้อยู่ตอนสร้าง เช่น ผู้เช่าลงทะเบียนเองผ่าน Invite Code ในกรณี LIFF
+   * บิลรอบแรกของสัญญานี้จะคิดหน่วยจากเลขนี้ (ดู billingService.getPreviousReading)
+   */
+  async updateInitialReadings(req, res, next) {
+    try {
+      const { leaseId } = req.params;
+      const initialWaterReading = parseOptionalReading(req.body.initialWaterReading, 'น้ำ');
+      const initialElectricReading = parseOptionalReading(req.body.initialElectricReading, 'ไฟ');
+      if (initialWaterReading === null && initialElectricReading === null) {
+        return res.status(400).json({ success: false, message: 'กรุณาระบุเลขมิเตอร์น้ำหรือไฟอย่างน้อยหนึ่งค่า' });
+      }
+
+      const lease = await billingService.prisma.leaseContract.findUnique({ where: { id: leaseId } });
+      if (!lease) {
+        return res.status(404).json({ success: false, message: 'ไม่พบสัญญาเช่าที่ระบุ' });
+      }
+      if (lease.status !== 'ACTIVE') {
+        return res.status(400).json({ success: false, message: 'แก้เลขมิเตอร์ได้เฉพาะสัญญาที่ยังพักอยู่' });
+      }
+
+      const data = {
+        ...(initialWaterReading !== null && { initialWaterReading }),
+        ...(initialElectricReading !== null && { initialElectricReading })
+      };
+      const updated = await billingService.prisma.leaseContract.update({ where: { id: leaseId }, data });
+
+      await auditService.logAction({
+        adminId: req.user?.id,
+        action: 'UPDATE',
+        entity: 'LEASE_CONTRACT',
+        entityId: leaseId,
+        oldValues: { initialWaterReading: lease.initialWaterReading, initialElectricReading: lease.initialElectricReading },
+        newValues: { initialWaterReading: updated.initialWaterReading, initialElectricReading: updated.initialElectricReading }
+      });
+
+      return res.status(200).json({ success: true, message: 'บันทึกเลขมิเตอร์วันเข้าพักเรียบร้อยแล้ว', data: updated });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * ดึงรายละเอียดสัญญาเช่าฉบับสมบูรณ์สำหรับออก E-Contract (GET /api/admin/leases/:leaseId/contract)
    */
   async getLeaseContractDetail(req, res, next) {

@@ -116,4 +116,24 @@ describe('ย้ายออก: คิดเงินจาก BuildingSetting,
       .send({ tenantId: newTenant.id, startDate: start.toISOString(), expectedEndDate: start.toISOString(), initialWaterReading: -5 });
     expect(bad.statusCode).toBe(400);
   });
+
+  test('จดเลขมิเตอร์วันเข้าพักทีหลัง (สัญญาที่สร้างผ่าน invite code): PATCH initial-readings ใช้เป็นเลขเริ่มนับ และตรวจ input/สถานะสัญญา', async () => {
+    const { lease, room } = await setup(10000);
+    const url = `/api/admin/leases/${lease.id}/initial-readings`;
+    // ไม่มี record ใหม่กว่าวันเริ่มสัญญา + เลขที่จดต้องกลายเป็นเลขก่อนหน้าของรอบแรก
+    await prisma.meterRecord.updateMany({ where: { roomId: room.id }, data: { recordedAt: new Date(Date.now() - 10 * 86400000) } });
+    await prisma.leaseContract.update({ where: { id: lease.id }, data: { startDate: new Date(Date.now() - 86400000) } });
+
+    expect((await request(app).patch(url).set(auth).send({})).statusCode).toBe(400);
+    expect((await request(app).patch(url).set(auth).send({ initialWaterReading: -1 })).statusCode).toBe(400);
+    expect((await request(app).patch(`/api/admin/leases/00000000-0000-4000-8000-000000000000/initial-readings`).set(auth).send({ initialWaterReading: 1 })).statusCode).toBe(404);
+
+    const ok = await request(app).patch(url).set(auth).send({ initialWaterReading: 120, initialElectricReading: 1050 });
+    expect(ok.statusCode).toBe(200);
+    expect((await billingService.getPreviousReading(prisma, room.id, 'water', nextCycle())).previousReading).toBe(120);
+    expect((await billingService.getPreviousReading(prisma, room.id, 'electric', nextCycle())).previousReading).toBe(1050);
+
+    await request(app).post(`/api/admin/leases/${lease.id}/process-move-out`).set(auth).send({});
+    expect((await request(app).patch(url).set(auth).send({ initialWaterReading: 130 })).statusCode).toBe(400);
+  });
 });
