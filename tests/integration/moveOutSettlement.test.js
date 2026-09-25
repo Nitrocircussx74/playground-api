@@ -3,6 +3,12 @@ const app = require('../../src/app');
 const authService = require('../../src/services/authService');
 const billingService = require('../../src/services/billingService');
 const { prisma } = billingService;
+const { formatBillingCycle } = require('../../src/utils/formatBillingCycle');
+
+const nextCycle = () => {
+  const d = new Date();
+  return formatBillingCycle(new Date(d.getFullYear(), d.getMonth() + 1, 1));
+};
 
 describe('ย้ายออก: คิดเงินจาก BuildingSetting, บันทึกเลขมิเตอร์สุดท้าย, ตัดบิลค้างด้วยมัดจำ, ตรวจ input', () => {
   const tag = `mo${Date.now()}`;
@@ -71,8 +77,11 @@ describe('ย้ายออก: คิดเงินจาก BuildingSetting,
     expect(paid.status).toBe('paid');
     expect(paid.paymentMethod).toBe('DEPOSIT');
 
-    expect((await billingService.getPreviousReading(prisma, room.id, 'water', '09-2026')).previousReading).toBe(150);
-    expect((await billingService.getPreviousReading(prisma, room.id, 'electric', '09-2026')).previousReading).toBe(1100);
+    // เลขตอนย้ายออกเป็น record ชุดเดิมของห้อง รอบ MM-YYYY ของเดือนที่ย้ายออก (ไม่มีรอบพิเศษ)
+    const records = await prisma.meterRecord.findMany({ where: { roomId: room.id, meterType: 'water' } });
+    expect(records.map((r) => r.billingCycle).sort()).toEqual(['08-2026', formatBillingCycle(new Date())].sort());
+    expect((await billingService.getPreviousReading(prisma, room.id, 'water', nextCycle())).previousReading).toBe(150);
+    expect((await billingService.getPreviousReading(prisma, room.id, 'electric', nextCycle())).previousReading).toBe(1100);
   });
 
   test('ย้ายออกเมื่อมัดจำไม่พอ: netRefund ติดลบ และบิลค้างยังไม่ถูกตัดจ่าย', async () => {
@@ -81,5 +90,30 @@ describe('ย้ายออก: คิดเงินจาก BuildingSetting,
     expect(res.statusCode).toBe(200);
     expect(Number(res.body.data.moveOutRecord.netRefund)).toBe(-2000);
     expect((await prisma.invoice.findUnique({ where: { id: invoice.id } })).status).toBe('pending');
+  });
+
+  test('ผู้เช่าใหม่: บิลรอบแรกคิดหน่วยจากเลขที่จดตอนเข้าพัก ไม่ใช่เลขตอนคนเก่าย้ายออก และรอบถัดไปใช้ record ของตัวเอง', async () => {
+    const { lease, room } = await setup(10000);
+    await request(app).post(`/api/admin/leases/${lease.id}/process-move-out`).set(auth).send({ finalWaterMeter: 150, finalElectricMeter: 1100 });
+
+    const newTenant = await prisma.tenant.create({ data: { firstName: 'new', lastName: tag, phone: `09${Math.floor(Math.random() * 1e8)}` } });
+    created.tenants.push(newTenant.id);
+    const start = new Date(Date.now() + 86400000);
+    const res = await request(app).post(`/api/admin/rooms/${room.id}/leases`).set(auth)
+      .send({ tenantId: newTenant.id, startDate: start.toISOString(), expectedEndDate: new Date(Date.now() + 30 * 86400000).toISOString(), initialWaterReading: 160, initialElectricReading: 1130 });
+    expect(res.statusCode).toBe(201);
+    created.leases.push(res.body.data.id);
+
+    expect((await billingService.getPreviousReading(prisma, room.id, 'water', nextCycle())).previousReading).toBe(160);
+    expect((await billingService.getPreviousReading(prisma, room.id, 'electric', nextCycle())).previousReading).toBe(1130);
+
+    // มี record ของผู้เช่าใหม่เองหลังวันเข้าพักแล้ว รอบถัดไปต้องนับต่อจาก record นั้น
+    await prisma.meterRecord.create({ data: { roomId: room.id, meterType: 'water', billingCycle: '12-2099', previousReading: 160, currentReading: 175, unitsUsed: 15, recordedAt: new Date(start.getTime() + 86400000) } });
+    expect((await billingService.getPreviousReading(prisma, room.id, 'water', '01-2100')).previousReading).toBe(175);
+
+    // เลขไม่ถูกต้อง: 400
+    const bad = await request(app).post(`/api/admin/rooms/${room.id}/leases`).set(auth)
+      .send({ tenantId: newTenant.id, startDate: start.toISOString(), expectedEndDate: start.toISOString(), initialWaterReading: -5 });
+    expect(bad.statusCode).toBe(400);
   });
 });

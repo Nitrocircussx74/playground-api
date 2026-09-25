@@ -1,6 +1,7 @@
 const billingService = require('../services/billingService');
 const auditService = require('../services/auditService');
 const { releaseRoomTenancy } = require('../services/tenancyService');
+const { formatBillingCycle } = require('../utils/formatBillingCycle');
 
 const UNPAID_STATUSES = ['pending', 'overdue', 'reviewing'];
 const badRequest = (message) => Object.assign(new Error(message), { statusCode: 400 });
@@ -185,23 +186,25 @@ class MoveOutController {
           }
         });
 
-        // 2.1 เลขมิเตอร์ตอนย้ายออกเป็นเลขก่อนหน้าของผู้เช่าคนถัดไป ต้องบันทึกเป็น MeterRecord ไม่งั้นเขาถูกคิดหน่วยตั้งแต่เลขเก่า
-        // (billingCycle 'MOVEOUT' ไม่ชนรอบ MM-YYYY ของการออกบิล แต่ getPreviousReading ยังหยิบเป็นเลขก่อนหน้า)
-        for (const [meterType, previousReading, currentReading] of [
+        // 2.1 เลขมิเตอร์ตอนย้ายออกบันทึกเป็น MeterRecord ชุดเดิมของห้อง (มิเตอร์จริงไม่รีเซ็ต) รอบ MM-YYYY ของเดือนที่ย้ายออก
+        // รอบนั้นมี record อยู่แล้วให้แก้ค่า (หนึ่งรอบ = หนึ่ง record ต่อชนิดมิเตอร์ เหมือน recordMeterReading)
+        // ผู้เช่าใหม่ไม่ได้เริ่มนับจากเลขนี้: เริ่มจากเลข ณ วันเข้าพักที่จดในสัญญา (ดู getPreviousReading)
+        const moveOutCycle = formatBillingCycle(moveOutAt);
+        for (const [meterType, oldReading, currentReading] of [
           ['water', settlement.oldWater, newW],
           ['electric', settlement.oldElectric, newE]
         ]) {
-          await tx.meterRecord.create({
-            data: {
-              roomId: lease.roomId,
-              meterType,
-              billingCycle: 'MOVEOUT',
-              recordedAt: moveOutAt,
-              previousReading,
-              currentReading,
-              unitsUsed: currentReading - previousReading
-            }
-          });
+          const existing = await tx.meterRecord.findFirst({ where: { roomId: lease.roomId, meterType, billingCycle: moveOutCycle } });
+          if (existing) {
+            await tx.meterRecord.update({
+              where: { id: existing.id },
+              data: { currentReading, unitsUsed: currentReading - Number(existing.previousReading), recordedAt: moveOutAt }
+            });
+          } else {
+            await tx.meterRecord.create({
+              data: { roomId: lease.roomId, meterType, billingCycle: moveOutCycle, recordedAt: moveOutAt, previousReading: oldReading, currentReading, unitsUsed: currentReading - oldReading }
+            });
+          }
         }
 
         // 2.2 มัดจำครอบคลุมยอดหักทั้งหมด = บิลค้างถูกชำระด้วยมัดจำแล้ว (ไม่งั้นบิลยังค้างและค่าปรับเดินต่อทั้งที่หักเงินไปแล้ว)

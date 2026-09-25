@@ -1,6 +1,7 @@
 const { resolveListBuildings } = require('../middlewares/buildingAccessMiddleware');
 const billingService = require('../services/billingService');
 const auditService = require('../services/auditService');
+const parseOptionalReading = require('../utils/parseOptionalReading');
 const { releaseRoomTenancy } = require('../services/tenancyService');
 
 class LeaseController {
@@ -95,6 +96,8 @@ class LeaseController {
     try {
       const { roomId } = req.params;
       const { tenantId, startDate, expectedEndDate, depositAmount, adminNote } = req.body;
+      const initialWaterReading = parseOptionalReading(req.body.initialWaterReading, 'น้ำ');
+      const initialElectricReading = parseOptionalReading(req.body.initialElectricReading, 'ไฟ');
 
       if (!tenantId || !startDate || !expectedEndDate) {
         return res.status(400).json({
@@ -118,6 +121,8 @@ class LeaseController {
             startDate: new Date(startDate),
             expectedEndDate: new Date(expectedEndDate),
             depositAmount: depositAmount ? Number(depositAmount) : 0,
+            initialWaterReading,
+            initialElectricReading,
             status: 'ACTIVE',
             adminNote: adminNote || null
           },

@@ -1000,6 +1000,10 @@ model LeaseContract {
   /// จำนวนเงินประกัน/มัดจำ (Decimal)
   depositAmount Decimal @default(0.00) @map("deposit_amount") @db.Decimal(10, 2)
 
+  /// เลขมิเตอร์น้ำ/ไฟ ณ วันที่ผู้เช่าเข้าพัก (มิเตอร์จริงไม่รีเซ็ต: บิลรอบแรกของสัญญานี้คิดหน่วยจากเลขนี้ ไม่ใช่เลขของผู้เช่าคนก่อน) null = ไม่ได้จด
+  initialWaterReading    Decimal? @map("initial_water_reading") @db.Decimal(10, 2)
+  initialElectricReading Decimal? @map("initial_electric_reading") @db.Decimal(10, 2)
+
   /// สถานะสัญญา (ACTIVE = กำลังเช่าอยู่, ENDED = สิ้นสุดสัญญา/ย้ายออกแล้ว, CANCELLED = ยกเลิกสัญญา)
   status String @default("ACTIVE")
 

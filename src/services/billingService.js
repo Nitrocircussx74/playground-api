@@ -96,6 +96,14 @@ class BillingService {
       },
       orderBy: { recordedAt: 'desc' }
     });
+
+    // มิเตอร์จริงไม่รีเซ็ตเมื่อเปลี่ยนผู้เช่า: ถ้า record ล่าสุดเป็นของช่วงก่อนสัญญาปัจจุบันเริ่ม (ผู้เช่าเก่า/ช่วงห้องว่าง)
+    // ให้เริ่มนับจากเลขที่จดไว้ ณ วันที่ผู้เช่าใหม่เข้าพัก (ถ้าจดไว้) ไม่งั้นผู้เช่าใหม่ถูกคิดหน่วยของคนก่อน
+    const lease = await db.leaseContract.findFirst({ where: { roomId, status: 'ACTIVE' }, orderBy: { startDate: 'desc' } });
+    const initial = meterType === 'water' ? lease?.initialWaterReading : lease?.initialElectricReading;
+    if (initial != null && (!previous || previous.recordedAt <= lease.startDate)) {
+      return { previousReading: Number(initial), thisCycle };
+    }
     return { previousReading: previous ? Number(previous.currentReading) : 0, thisCycle };
   }
 
