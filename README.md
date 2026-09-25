@@ -134,7 +134,7 @@ playground-api/
 │   ├── validators/           # Zod Validation Schemas
 │   ├── app.js
 │   └── server.js
-├── tests/                    # API Integration & Unit Tests (280/280 Passed)
+├── tests/                    # API Integration & Unit Tests (372/372 Passed)
 └── package.json
 ```
 
@@ -146,7 +146,7 @@ playground-api/
 # 1. ติดตั้ง Dependencies
 yarn install
 
-# 2. ตั้งค่าไฟล์ .env
+# 2. ตั้งค่าไฟล์ .env (ตั้ง TEST_DATABASE_URL สำหรับเทสต์, PUBLIC_BASE_URL และ TRUST_PROXY สำหรับ Production)
 cp .env.example .env
 
 # 3. อัปเดต Database Schema & Seed Data ด้วย Prisma
