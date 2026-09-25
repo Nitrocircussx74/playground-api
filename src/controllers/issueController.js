@@ -1,4 +1,6 @@
+const { resolveListBuildings } = require('../middlewares/buildingAccessMiddleware');
 const billingService = require('../services/billingService');
+const { isFeatureEnabled } = require('../middlewares/requireFeatureMiddleware');
 const lineService = require('../services/lineService');
 
 class IssueController {
@@ -46,6 +48,10 @@ class IssueController {
           success: false,
           message: 'ไม่พบข้อมูลห้องพักที่ผูกกับบัญชีของคุณ ไม่สามารถส่งเรื่องแจ้งเหตุได้'
         });
+      }
+
+      if (!(await isFeatureEnabled('ENABLE_MAINTENANCE_REQUEST', targetRoom.buildingId))) {
+        return res.status(403).json({ success: false, message: 'ฟีเจอร์แจ้งซ่อมและร้องเรียนถูกปิดใช้งานสำหรับตึกนี้' });
       }
 
       const { description, category } = req.body;
@@ -120,8 +126,18 @@ class IssueController {
         return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลผู้เช่า' });
       }
 
+      const targetRoomId = req.roomId;
+      const targetBuildingId = req.buildingId;
+
+      const where = { userId: tenant.id };
+      if (targetRoomId) {
+        where.roomId = targetRoomId;
+      } else if (targetBuildingId) {
+        where.buildingId = targetBuildingId;
+      }
+
       const issues = await billingService.prisma.issueTicket.findMany({
-        where: { userId: tenant.id },
+        where,
         orderBy: { createdAt: 'desc' },
         include: { room: true, building: true }
       });
@@ -164,8 +180,12 @@ class IssueController {
   async getAllIssuesForAdmin(req, res, next) {
     try {
       const { buildingId, status, category } = req.query;
+      const scope = await resolveListBuildings(req.user, buildingId);
+      if (scope.forbidden) {
+        return res.status(403).json({ success: false, message: 'คุณไม่มีสิทธิ์เข้าถึงข้อมูลของอาคาร/ตึกนี้' });
+      }
       const where = {};
-      if (buildingId) where.buildingId = buildingId;
+      if (scope.ids) where.buildingId = { in: scope.ids };
       if (status) where.status = status.toUpperCase();
       if (category) where.category = category.toUpperCase();
 

@@ -280,3 +280,36 @@
 - Facility Booking ยังไม่มี Workflow อนุมัติ (Auto-`CONFIRMED` เสมอ), Poll ยังไม่รองรับ AGM/Quorum/ถ่วงน้ำหนักตามกรรมสิทธิ์
 - ฟีเจอร์เก่าอื่นๆ (แจ้งซ่อม/บิล/พัสดุ/ข่าวสาร/ใบเสร็จ/Digital ID) ยัง**ไม่มี**การเช็ค `FeatureToggle` ฝั่ง Backend เหมือนกัน (Toggle ซ่อนแค่ UI ทางเข้าเท่านั้น) — เป็น Known Limitation ตั้งใจตั้งแต่ Phase 16 ไม่ใช่บั๊ก ถ้าต้องการให้บังคับจริงฝั่ง Backend ด้วยเหมือน `ENABLE_E_CONTRACT`/Facility/Vehicle/Poll ต้องแจ้งทำเพิ่ม (ไม่ใช่ Auto-fix ตาม YAGNI)
 - Jest Hang ถ้าไม่ใส่ `--forceExit` ยังไม่ได้ไล่หาสาเหตุจริง (สงสัย Prisma Connection Pool หรือ `express-rate-limit` Timer)
+
+---
+
+### Phase 21 (2026-09-23): Delete Building Feature (Backend API & RBAC)
+
+- **บริบท**: เพิ่มฟีเจอร์สำหรับการลบตึก/อาคารที่ไม่ใช้งานออกจากระบบ พร้อมมาตรการป้องกันความปลอดภัยของข้อมูล (Data Loss Prevention)
+- **DELETE /api/v1/buildings/:id**: เพิ่ม endpoint สำหรับลบอาคาร พร้อม middleware `requireRole('OWNER', 'super_admin')`
+- **Data Loss Prevention Guards**:
+  - ตรวจสอบตึกที่ต้องการลบ (404 หากไม่พบ)
+  - ห้ามลบหากเหลือตึกเดียวในระบบ (`totalBuildings <= 1` ตอบ 400)
+  - ห้ามลบหากตึกยังมีห้องพักผูกอยู่ (`roomsCount > 0` ตอบ 400 พร้อมแจ้งเตือนให้ย้ายหรือลบห้องพักทั้งหมดออกก่อน)
+- **Cascade & Cleanup**: ลบ Maintenance Requests และปลด `buildingId` ใน Notification Logs ที่เกี่ยวข้อง ก่อนลบตัวอาคารด้วย Prisma Transaction
+- **Audit Log**: บันทึกการกระทำลงในตาราง `AuditLog` (action: `DELETE`, entity: `BUILDING`)
+- **Test Verification**: สร้าง `tests/integration/buildingDelete.test.js` (Passed 5/5) และรันชุดทดสอบทั้งหมด `PORT=9090 yarn test` ผ่านครบ **280/280** (42 test suites)
+
+---
+
+### Phase 22 (2026-09-24): Fix Room Invite Code Endpoints & 404 on /api/v1/invites
+
+- **บริบท**: แก้ไขปัญหาที่ผู้ใช้กดสร้างรหัสเชิญห้องพักแล้วขึ้นข้อผิดพลาด `ไม่พบ Endpoint นี้ - /api/v1/invites` (404)
+- **Root Cause**:
+  - `RoomInviteModal.vue` ในฝั่ง Frontend เรียกใช้งาน API `/api/v1/invites` (POST), `/api/v1/invites/room/:roomId` (GET) และ `/api/v1/invites/:id` (DELETE)
+  - ใน Backend มีเพียง `/api/v1/rooms/:id/invites` แต่ยังไม่มี `inviteRoutes` เชื่อมต่อเส้นทาง `/api/v1/invites` และ `revokeRoomInvite` ใน Controller ยังไม่ได้ถูกผูก Route
+- **Implementation**:
+  - สร้าง `src/routes/inviteRoutes.js` รองรับ `POST /`, `GET /room/:roomId`, `DELETE /:id`
+  - ติดตั้ง `inviteRoutes` ใน `src/routes/index.js` ภายใต้ prefix `/api/v1/invites` และ `/api/admin/invites`
+  - เพิ่ม Route `DELETE /:id/invites/:inviteId` ใน `src/routes/roomRoutes.js`
+  - อัปเดต `src/controllers/roomController.js`: รองรับการรับ `id` จากทั้ง `req.params` และ `req.body.roomId`, รองรับ `expiresInHours` ที่ส่งมาจาก Frontend
+  - อัปเดต `tests/integration/invite.test.js` ครอบคลุมทั้ง 3 endpoint ใหม่
+- **Test Verification**:
+  - รัน `PORT=9090 yarn test` ผ่านครบ **282/282 tests** (42 test suites)
+  - ทดสอบสดผ่าน live API port 3000 สำเร็จทั้งสร้าง, เรียกดู, และยกเลิกรหัสเชิญ
+

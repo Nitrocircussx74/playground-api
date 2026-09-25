@@ -10,6 +10,7 @@ describe('Room Inspection and Vendor Management Integration Tests', () => {
   let testLease;
   let createdInspectionId;
   let createdVendorId;
+  let grantedPermission = false;
 
   beforeAll(async () => {
     adminUser = await prisma.user.findFirst({
@@ -19,6 +20,15 @@ describe('Room Inspection and Vendor Management Integration Tests', () => {
     testLease = await prisma.leaseContract.findFirst();
 
     adminToken = authService.generateAccessToken(adminUser);
+
+    // role admin เข้าถึงได้เฉพาะตึกที่ได้รับสิทธิ์ ถ้ายังไม่มีให้เพิ่มไว้ชั่วคราวแล้วลบตอนจบ
+    if (adminUser && testBuilding) {
+      const where = { userId_buildingId: { userId: adminUser.id, buildingId: testBuilding.id } };
+      if (!(await prisma.userBuildingPermission.findUnique({ where }))) {
+        await prisma.userBuildingPermission.create({ data: { userId: adminUser.id, buildingId: testBuilding.id } });
+        grantedPermission = true;
+      }
+    }
   });
 
   describe('Room Inspection API', () => {
@@ -136,6 +146,9 @@ describe('Room Inspection and Vendor Management Integration Tests', () => {
   });
 
   afterAll(async () => {
+    if (grantedPermission) {
+      await prisma.userBuildingPermission.deleteMany({ where: { userId: adminUser.id, buildingId: testBuilding.id } });
+    }
     if (createdInspectionId) {
       await prisma.roomInspection.delete({ where: { id: createdInspectionId } }).catch(() => {});
     }

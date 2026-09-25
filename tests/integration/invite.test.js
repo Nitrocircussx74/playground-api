@@ -8,13 +8,18 @@ describe('Room Invite Code & Registration Integration Tests', () => {
   let testRoom;
   let inviteCode;
 
+  let adminUser;
+  let testBuilding;
+
   beforeAll(async () => {
-    adminToken = authService.generateAccessToken({
-      id: '00000000-0000-0000-0000-000000000001',
-      email: 'admin@test.com',
-      name: 'Admin User',
-      role: 'admin'
+    adminUser = await billingService.prisma.user.create({
+      data: { email: `invite_admin_${Date.now()}@test.com`, passwordHash: 'x', name: 'Admin User', role: 'admin' }
     });
+    adminToken = authService.generateAccessToken(adminUser);
+
+    // แอดมินระดับ admin เข้าถึงได้เฉพาะห้องในตึกที่ได้รับสิทธิ์
+    testBuilding = await billingService.prisma.building.create({ data: { name: 'Invite Test Building' } });
+    await billingService.prisma.userBuildingPermission.create({ data: { userId: adminUser.id, buildingId: testBuilding.id } });
 
     // Create a fresh test available room
     testRoom = await billingService.prisma.room.create({
@@ -22,7 +27,8 @@ describe('Room Invite Code & Registration Integration Tests', () => {
         roomNumber: 'TEST999',
         floor: 9,
         price: 5000,
-        status: 'available'
+        status: 'available',
+        buildingId: testBuilding.id
       }
     });
   });
@@ -33,6 +39,8 @@ describe('Room Invite Code & Registration Integration Tests', () => {
       await billingService.prisma.roomInvite.deleteMany({ where: { roomId: testRoom.id } });
       await billingService.prisma.room.delete({ where: { id: testRoom.id } }).catch(() => {});
     }
+    await billingService.prisma.building.delete({ where: { id: testBuilding.id } }).catch(() => {});
+    await billingService.prisma.user.delete({ where: { id: adminUser.id } }).catch(() => {});
   });
 
   describe('Admin Invite Code Generator Endpoints', () => {
@@ -49,15 +57,46 @@ describe('Room Invite Code & Registration Integration Tests', () => {
       inviteCode = response.body.data.code;
     });
 
-    test('GET /api/v1/rooms/:id/invites - ดึงรายการ Invite Codes ของห้องพัก', async () => {
+    test('POST /api/v1/invites - สร้างรหัสเชิญผ่าน /api/v1/invites (201 Created)', async () => {
       const response = await request(app)
-        .get(`/api/v1/rooms/${testRoom.id}/invites`)
+        .post('/api/v1/invites')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          roomId: testRoom.id,
+          expiresInHours: 48
+        });
+
+      expect(response.statusCode).toBe(201);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.code).toBeDefined();
+      expect(response.body.data.code.length).toBe(6);
+    });
+
+    test('GET /api/v1/invites/room/:roomId - ดึงรายการ Invite Codes ผ่าน /api/v1/invites/room/:roomId', async () => {
+      const response = await request(app)
+        .get(`/api/v1/invites/room/${testRoom.id}`)
         .set('Authorization', `Bearer ${adminToken}`);
 
       expect(response.statusCode).toBe(200);
       expect(response.body.success).toBe(true);
       expect(Array.isArray(response.body.data)).toBe(true);
       expect(response.body.data.length).toBeGreaterThan(0);
+    });
+
+    test('DELETE /api/v1/invites/:id - ยกเลิกรหัสเชิญสำเร็จ (200 OK)', async () => {
+      // สร้าง invite ชั่วคราวเพื่อทดสอบ revoke
+      const createRes = await request(app)
+        .post('/api/v1/invites')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ roomId: testRoom.id });
+
+      const inviteId = createRes.body.data.id;
+      const response = await request(app)
+        .delete(`/api/v1/invites/${inviteId}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
     });
   });
 

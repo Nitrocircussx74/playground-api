@@ -11,7 +11,8 @@ describe('Targeted Broadcast & LINE Multicast Integration Tests', () => {
 
   beforeAll(async () => {
     const adminUser = await billingService.prisma.user.findFirst({
-      where: { role: { in: ['SUPERADMIN', 'OWNER', 'ADMIN', 'super_admin', 'owner', 'admin'] } }
+      // ต้องเป็นแอดมินสิทธิ์เต็มเท่านั้น: แอดมินระดับ admin เข้าถึงได้เฉพาะตึกที่มีสิทธิ์ และ findFirst ไม่รับประกันว่าจะได้คนไหน
+      where: { role: { in: ['SUPERADMIN', 'OWNER', 'super_admin', 'owner'] } }
     });
     adminToken = authService.generateAccessToken(adminUser);
 

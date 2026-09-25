@@ -1,4 +1,5 @@
 const billingService = require('../services/billingService');
+const { isFeatureEnabled } = require('../middlewares/requireFeatureMiddleware');
 const lineService = require('../services/lineService');
 
 /**
@@ -177,7 +178,25 @@ class PollController {
         return res.status(200).json({ success: true, data: [] });
       }
 
-      const tenantBuildingId = tenant.rooms?.[0]?.buildingId || null;
+      const targetRoomId = req.roomId;
+      const targetBuildingId = req.buildingId;
+
+      let tenantBuildingId = null;
+      if (tenant.rooms?.length > 0) {
+        if (targetRoomId) {
+          const matched = tenant.rooms.find((r) => r.id === targetRoomId);
+          if (matched) tenantBuildingId = matched.buildingId;
+        }
+        if (!tenantBuildingId && targetBuildingId) {
+          const matched = tenant.rooms.find((r) => r.buildingId === targetBuildingId);
+          if (matched) tenantBuildingId = matched.buildingId;
+        }
+        if (!tenantBuildingId) {
+          tenantBuildingId = tenant.rooms[0].buildingId;
+        }
+      } else if (targetBuildingId) {
+        tenantBuildingId = targetBuildingId;
+      }
       const now = new Date();
 
       const polls = await billingService.prisma.poll.findMany({
@@ -228,15 +247,9 @@ class PollController {
         return res.status(404).json({ success: false, message: 'ไม่พบโพลนี้' });
       }
 
-      // เช็ค FeatureToggle ของตึกผู้เช่า (inline แทนการทำ middleware แยก เพราะต้อง resolve tenant->room->building ก่อน)
-      const tenantBuildingId = tenant.rooms?.[0]?.buildingId || null;
-      if (tenantBuildingId) {
-        const toggle = await billingService.prisma.featureToggle.findFirst({
-          where: { key: 'ENABLE_VOTING', buildingId: tenantBuildingId }
-        });
-        if (toggle && !toggle.isActive) {
-          return res.status(403).json({ success: false, message: 'ฟีเจอร์โหวตถูกปิดใช้งานสำหรับตึกนี้' });
-        }
+      // เช็คตามตึกของโพล (ไม่ใช่ห้องแรกของผู้เช่า ที่อาจอยู่คนละตึกถ้าเช่าหลายตึก)
+      if (!(await isFeatureEnabled('ENABLE_VOTING', poll.buildingId || tenant.rooms?.[0]?.buildingId || null))) {
+        return res.status(403).json({ success: false, message: 'ฟีเจอร์โหวตถูกปิดใช้งานสำหรับตึกนี้' });
       }
 
       const now = new Date();

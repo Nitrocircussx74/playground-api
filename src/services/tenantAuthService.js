@@ -3,6 +3,24 @@ const prisma = require('../config/prisma');
 const authService = require('./authService');
 const { verifyLineIdToken } = require('../middlewares/liffAuthMiddleware');
 const { getPhoneVariants } = require('../utils/normalizePhone');
+const attempts = require('../utils/attemptLimiter');
+const { findAdminUserByPhone, assertCanClaimByPhone } = require('../utils/phoneClaim');
+
+const LOCKED_RESPONSE = {
+  statusCode: 429,
+  body: { success: false, code: 'TOO_MANY_ATTEMPTS', message: 'กรอกรหัสผิดหลายครั้งเกินไป บัญชีนี้ถูกล็อกชั่วคราว กรุณาลองใหม่อีกครั้งใน 15 นาที' }
+};
+
+/**
+ * เทียบรหัสโดยนับความพยายามผิดต่อบัญชี: คืน true/false ตามผลเทียบ, คืน null เมื่อบัญชีถูกล็อก (ยังไม่เทียบรหัสเลย)
+ */
+async function verifyWithLimit(accountKey, compare) {
+  if (attempts.isLocked(accountKey)) return null;
+  const ok = await compare();
+  if (ok) attempts.clear(accountKey);
+  else attempts.recordFailure(accountKey);
+  return ok;
+}
 
 const TENANT_ROOM_INCLUDE = { rooms: { include: { building: true } } };
 
@@ -16,10 +34,7 @@ async function buildTenantUserPayload(tenant, overrides = {}) {
 
   if (tenant.phone) {
     try {
-      const adminUser = await prisma.user.findFirst({
-        where: { phone: { in: getPhoneVariants(tenant.phone) } }
-      });
-      if (adminUser && ['owner', 'admin', 'super_admin', 'superadmin', 'manager'].includes(adminUser.role?.toLowerCase())) {
+      if (await findAdminUserByPhone(tenant.phone)) {
         roles.push('owner');
         isOwner = true;
       }
@@ -181,7 +196,8 @@ class TenantAuthService {
       };
     }
 
-    const isMatch = await bcrypt.compare(String(pin), tenant.pinHash);
+    const isMatch = await verifyWithLimit(tenant.id, () => bcrypt.compare(String(pin), tenant.pinHash));
+    if (isMatch === null) return LOCKED_RESPONSE;
     if (!isMatch) {
       return { statusCode: 401, body: { success: false, code: 'INVALID_PIN', message: 'รหัส PIN 6 หลักไม่ถูกต้อง' } };
     }
@@ -292,17 +308,15 @@ class TenantAuthService {
       return { statusCode: 404, body: { success: false, message: 'ไม่พบข้อมูลลูกบ้านสำหรับตั้งค่าหรือรีเซ็ต PIN' } };
     }
 
-    // ป้องกัน Account Takeover: ถ้าบัญชีนี้ตั้ง PIN และผูก LINE ไว้แล้ว ห้ามให้ LINE คนอื่น
-    // (ที่แค่รู้เบอร์โทรของเจ้าของบัญชี) มารีเซ็ต PIN แทนเจ้าของตัวจริงได้
-    if (tenant.pinHash && tenant.lineUserId && lineUserId && tenant.lineUserId !== lineUserId) {
-      return {
-        statusCode: 403,
-        body: {
-          success: false,
-          code: 'ACCOUNT_ALREADY_LINKED',
-          message: 'บัญชีนี้ผูกกับ LINE อื่นและตั้งรหัส PIN ไว้แล้ว กรุณาติดต่อนิติบุคคลประจำหอพักเพื่อรีเซ็ต PIN'
-        }
-      };
+    // ป้องกัน Account Takeover: คนที่ไม่ใช่เจ้าของบัญชีเดิม ยึดด้วยเบอร์โทรได้เฉพาะบัญชีที่ยังไม่มีใครใช้ (ดู utils/phoneClaim.js)
+    // Session JWT ของบัญชีนี้เอง (tenantId ตรงกัน) ถือว่าเป็นเจ้าของบัญชี ข้ามกฎนี้ได้
+    if (!(tenantId && tenantId === tenant.id)) {
+      try {
+        await assertCanClaimByPhone(tenant, lineUserId);
+      } catch (error) {
+        if (!error.statusCode) throw error;
+        return { statusCode: error.statusCode, body: { success: false, code: error.code, message: error.message } };
+      }
     }
 
     const pinHash = await bcrypt.hash(String(targetPin), 10);
@@ -554,7 +568,8 @@ class TenantAuthService {
 
     // หมายเหตุ: ไม่เช็คว่า tenant.lineUserId ตรงกับ lineUserId ปัจจุบันหรือไม่ เพราะ Endpoint นี้มีไว้รองรับ
     // Centralized User Identity (1 ผู้เช่า : หลาย LINE OA ID ต่อตึก) โดยตั้งใจ — ตัวพิสูจน์ตัวตนจริงคือ PIN ด้านล่าง
-    const isMatch = await bcrypt.compare(String(pin), tenant.pinHash);
+    const isMatch = await verifyWithLimit(tenant.id, () => bcrypt.compare(String(pin), tenant.pinHash));
+    if (isMatch === null) return LOCKED_RESPONSE;
     if (!isMatch) {
       return { statusCode: 401, body: { success: false, code: 'INVALID_PIN', message: 'รหัส PIN 6 หลักไม่ถูกต้อง' } };
     }
@@ -622,7 +637,8 @@ class TenantAuthService {
         };
       }
 
-      const isMatch = await bcrypt.compare(password, tenant.passwordHash);
+      const isMatch = await verifyWithLimit(tenant.id, () => bcrypt.compare(password, tenant.passwordHash));
+      if (isMatch === null) return LOCKED_RESPONSE;
       if (!isMatch) {
         return { statusCode: 401, body: { success: false, message: 'เบอร์โทรศัพท์หรือรหัสผ่านไม่ถูกต้อง' } };
       }
@@ -651,6 +667,9 @@ class TenantAuthService {
     });
 
     if (user && user.passwordHash) {
+      const accountKey = `user:${user.id}`;
+      if (attempts.isLocked(accountKey)) return LOCKED_RESPONSE;
+
       let isMatch = false;
       if (user.passwordHash.includes(':')) {
         const [salt, key] = user.passwordHash.split(':');
@@ -660,6 +679,9 @@ class TenantAuthService {
       } else {
         isMatch = await bcrypt.compare(password, user.passwordHash);
       }
+
+      if (isMatch) attempts.clear(accountKey);
+      else attempts.recordFailure(accountKey);
 
       if (isMatch) {
         const accessToken = authService.generateAccessToken(user);
@@ -754,15 +776,17 @@ class TenantAuthService {
     if (tenant) {
       const pinHash = tenant.pinHash || tenant.passwordHash;
       if (pinHash) {
-        isValidPin = await bcrypt.compare(String(pin).trim(), pinHash);
+        isValidPin = await verifyWithLimit(tenant.id, () => bcrypt.compare(String(pin).trim(), pinHash));
       }
     } else {
       // Fallback: ค้นหาในตาราง User
       userAccount = await prisma.user.findFirst({ where: { OR: phoneConditions } });
       if (userAccount && userAccount.passwordHash) {
-        isValidPin = await bcrypt.compare(String(pin).trim(), userAccount.passwordHash);
+        isValidPin = await verifyWithLimit(`user:${userAccount.id}`, () => bcrypt.compare(String(pin).trim(), userAccount.passwordHash));
       }
     }
+
+    if (isValidPin === null) return LOCKED_RESPONSE;
 
     if (!isValidPin) {
       return { statusCode: 401, body: { success: false, message: 'เบอร์โทรศัพท์หรือรหัส PIN ไม่ถูกต้อง' } };

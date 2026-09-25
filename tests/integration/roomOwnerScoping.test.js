@@ -120,9 +120,10 @@ describe('Room Owner Scoped Access Integration Tests (/api/v1/rooms, /api/v1/inv
     expect(remindRes.statusCode).toBe(200);
     expect(remindRes.body.success).toBe(true);
 
-    // 2. MANAGER เช็คจำนวนผู้รับประกาศ Broadcast
+    // 2. MANAGER เช็คจำนวนผู้รับประกาศ Broadcast (มีหลายตึกต้องระบุ buildingId เอง)
+    const perm = await billingService.prisma.userBuildingPermission.findFirst({ where: { userId: managerUser.id } });
     const countRes = await request(app)
-      .get('/api/admin/broadcasts/recipients-count?targetType=ALL')
+      .get(`/api/admin/broadcasts/recipients-count?targetType=ALL&buildingId=${perm.buildingId}`)
       .set('Authorization', `Bearer ${managerToken}`);
 
     expect(countRes.statusCode).toBe(200);

@@ -5,16 +5,29 @@ const lineService = require('./lineService');
 // ทั้งคู่จะเกิด Circular Dependency กันเข้ารอบ ทำให้ module.exports ฝั่งใดฝั่งหนึ่งได้ Object ที่โหลดไม่ครบ
 // (ขึ้นกับลำดับการโหลด) require แบบ Lazy ข้างในฟังก์ชันจะปลอดภัยเพราะถูกเรียกตอน Runtime ที่ทุกโมดูลโหลดเสร็จแล้ว
 
-// Rate Constants (No Magic Numbers)
-const WATER_MINIMUM_UNITS = 5;
-const WATER_MINIMUM_FEE = 150.0;
-const WATER_RATE_PER_UNIT = 18.0;
-const ELECTRIC_RATE_PER_UNIT = 8.0;
+// ค่าสำรองเมื่อตึกยังไม่มีแถว BuildingSetting (เท่ากับ @default ใน schema) — อัตราจริงอ่านจาก BuildingSetting เสมอ
+const DEFAULT_WATER_RATE = 18.0;
+const DEFAULT_ELECTRIC_RATE = 7.0;
 const DEFAULT_COMMON_FEE = 100.0;
+
+const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+
+/**
+ * วันครบกำหนดของรอบบิล "MM-YYYY" = วันที่ dueDateDay ของเดือนถัดจากรอบบิล (ไม่ผูกกับวันที่กดออกบิล)
+ * ถ้าเดือนนั้นสั้นกว่า dueDateDay (เช่น 31 ในเดือนกุมภาพันธ์) ใช้วันสุดท้ายของเดือน
+ */
+const dueDateForCycle = (billingCycle, dueDateDay) => {
+  const [m, y] = String(billingCycle).split('-').map(Number);
+  const lastDay = new Date(y, m + 1, 0).getDate();
+  return new Date(y, m, Math.min(dueDateDay, lastDay));
+};
 
 class BillingService {
   constructor() {
     this.prisma = prisma;
+    this.DEFAULT_COMMON_FEE = DEFAULT_COMMON_FEE;
+    this.round2 = round2;
+    this.dueDateForCycle = dueDateForCycle;
   }
 
   /**
@@ -36,22 +49,76 @@ class BillingService {
   }
 
   /**
-   * คำนวณค่าน้ำประปาตามขั้นต่ำและอัตราต่อหน่วย
+   * อัตราค่าน้ำ/ไฟและวันครบกำหนดของตึก จาก BuildingSetting (แหล่งเดียวของทุก flow การออกบิล)
+   * ใช้ ?? ไม่ใช่ || เพราะอัตรา 0 (ฟรี) เป็นค่าที่ถูกต้อง
    */
-  calculateWaterFee(units) {
-    const u = Math.max(0, Number(units) || 0);
-    if (u <= WATER_MINIMUM_UNITS) {
-      return WATER_MINIMUM_FEE;
-    }
-    return WATER_MINIMUM_FEE + (u - WATER_MINIMUM_UNITS) * WATER_RATE_PER_UNIT;
+  async getBillingRates(buildingId, db = prisma) {
+    const setting = buildingId ? await db.buildingSetting.findUnique({ where: { buildingId } }) : null;
+    return {
+      waterRate: Number(setting?.waterRate ?? DEFAULT_WATER_RATE),
+      electricRate: Number(setting?.electricRate ?? DEFAULT_ELECTRIC_RATE),
+      dueDateDay: setting?.dueDateDay || 5
+    };
+  }
+
+  /** ค่าน้ำ = หน่วยที่ใช้ x อัตราต่อหน่วยของตึก (ไม่มีขั้นต่ำ ตามการตั้งค่าตึก) */
+  calculateWaterFee(units, waterRate = DEFAULT_WATER_RATE) {
+    return round2(Math.max(0, Number(units) || 0) * waterRate);
+  }
+
+  /** ค่าไฟ = หน่วยที่ใช้ x อัตราต่อหน่วยของตึก */
+  calculateElectricFee(units, electricRate = DEFAULT_ELECTRIC_RATE) {
+    return round2(Math.max(0, Number(units) || 0) * electricRate);
   }
 
   /**
-   * คำนวณค่าไฟฟ้าตามอัตราต่อหน่วย
+   * เลขบิลที่ไม่ซ้ำข้ามตึก: เลขห้องซ้ำกันได้ระหว่างตึก (unique เฉพาะ roomNumber+buildingId)
+   * จึงต้องมีรหัสสั้นของตึกอยู่ในเลขบิลด้วย
    */
-  calculateElectricFee(units) {
-    const u = Math.max(0, Number(units) || 0);
-    return u * ELECTRIC_RATE_PER_UNIT;
+  makeInvoiceNumber(room, billingCycle) {
+    const buildingPart = String(room.buildingId || 'NA').replace(/-/g, '').slice(0, 6).toUpperCase();
+    return `INV-${billingCycle.replace('-', '')}-${buildingPart}-${room.roomNumber}`;
+  }
+
+  /**
+   * เลขมิเตอร์ "ก่อนหน้า" ของรอบบิลนี้ = record ล่าสุดของรอบอื่น (ไม่นับรอบที่กำลังออกบิล)
+   * เดิมใช้ record ล่าสุดของห้องโดยไม่แยกรอบ ทำให้ออกบิลรอบเดิมซ้ำแล้วหน่วยที่ใช้กลายเป็น 0
+   * ถ้ารอบนี้เคยมี record แล้ว จะอ้างอิงเฉพาะ record ที่บันทึกก่อนหน้ารอบนี้
+   */
+  async getPreviousReading(db, roomId, meterType, billingCycle) {
+    const thisCycle = await db.meterRecord.findFirst({ where: { roomId, meterType, billingCycle } });
+    const previous = await db.meterRecord.findFirst({
+      where: {
+        roomId,
+        meterType,
+        billingCycle: { not: billingCycle },
+        ...(thisCycle && { recordedAt: { lt: thisCycle.recordedAt } })
+      },
+      orderBy: { recordedAt: 'desc' }
+    });
+    return { previousReading: previous ? Number(previous.currentReading) : 0, thisCycle };
+  }
+
+  /**
+   * ค่าซ่อมที่ผู้เช่าต้องจ่ายเอง (payer=TENANT) ที่ซ่อมเสร็จแล้ว: ที่ยังไม่เคยเรียกเก็บ + ที่เรียกเก็บกับบิลนี้อยู่แล้ว
+   * (ต้องนับกลุ่มหลังด้วย ไม่งั้นออกบิลซ้ำแล้วค่าซ่อมหายจากยอดทั้งที่ยังถูกมาร์กว่าเรียกเก็บแล้ว)
+   * unbilledIds = รายการที่ต้องมาร์ก billedInvoiceId หลังบันทึกบิล
+   */
+  async collectRepairCharges(db, roomId, invoiceId = null) {
+    const repairs = await db.maintenanceRequest.findMany({
+      where: {
+        roomId,
+        payer: 'TENANT',
+        status: { in: ['resolved', 'completed'] },
+        repairCost: { gt: 0 },
+        OR: [{ billedInvoiceId: null }, ...(invoiceId ? [{ billedInvoiceId: invoiceId }] : [])]
+      }
+    });
+    return {
+      total: repairs.reduce((sum, r) => sum + Number(r.repairCost), 0),
+      note: repairs.map((r) => `ค่าซ่อม: ${r.title} (฿${Number(r.repairCost).toLocaleString()})`).join(', '),
+      unbilledIds: repairs.filter((r) => !r.billedInvoiceId).map((r) => r.id)
+    };
   }
 
   /**
@@ -63,26 +130,13 @@ class BillingService {
       throw new Error(`Room with ID ${roomId} not found`);
     }
 
-    // ดึงข้อมูลมิเตอร์ล่าสุดของห้องนี้
-    const lastRecord = await prisma.meterRecord.findFirst({
-      where: { roomId, meterType },
-      orderBy: { createdAt: 'desc' }
-    });
-
-    const previousReading = lastRecord ? Number(lastRecord.currentReading) : 0;
+    const { previousReading, thisCycle } = await this.getPreviousReading(prisma, roomId, meterType, billingCycle);
     const unitsUsed = this.calculateUnitsUsed(previousReading, currentReading, isReset);
+    const readingData = { previousReading, currentReading: Number(currentReading), unitsUsed };
 
-    const record = await prisma.meterRecord.create({
-      data: {
-        roomId,
-        meterType,
-        previousReading,
-        currentReading: Number(currentReading),
-        unitsUsed,
-        billingCycle,
-        recordedAt: new Date()
-      }
-    });
+    const record = thisCycle
+      ? await prisma.meterRecord.update({ where: { id: thisCycle.id }, data: readingData })
+      : await prisma.meterRecord.create({ data: { roomId, meterType, billingCycle, recordedAt: new Date(), ...readingData } });
 
     return record;
   }
@@ -114,6 +168,8 @@ class BillingService {
       throw new Error(`Room ${room.roomNumber} has no active tenant assigned`);
     }
 
+    const { waterRate, electricRate, dueDateDay } = await this.getBillingRates(room.buildingId);
+
     let waterTotal = 0;
     let electricTotal = 0;
 
@@ -125,7 +181,7 @@ class BillingService {
         orderBy: { createdAt: 'desc' }
       });
       if (waterRecord) {
-        waterTotal = this.calculateWaterFee(waterRecord.unitsUsed);
+        waterTotal = this.calculateWaterFee(waterRecord.unitsUsed, waterRate);
       }
     }
 
@@ -137,104 +193,88 @@ class BillingService {
         orderBy: { createdAt: 'desc' }
       });
       if (electricRecord) {
-        electricTotal = this.calculateElectricFee(electricRecord.unitsUsed);
+        electricTotal = this.calculateElectricFee(electricRecord.unitsUsed, electricRate);
       }
     }
 
     const roomPrice = Number(room.price);
     const finalCommonFee = waiveCommonFee ? 0 : (commonFee != null ? Number(commonFee) : DEFAULT_COMMON_FEE);
-
-    // ดึงค่าซ่อมที่ลูกบ้านต้องจ่ายเอง (payer=TENANT) ของห้องนี้ ที่ซ่อมเสร็จแล้วแต่ยังไม่เคยถูกรวมเข้าบิลไหนมาก่อน
-    // เพื่อรวมเข้าค่าบริการอื่นๆ ของบิลรอบนี้อัตโนมัติ (กันเรียกเก็บซ้ำด้วยเงื่อนไข billedInvoiceId: null)
-    const pendingTenantRepairs = await prisma.maintenanceRequest.findMany({
-      where: {
-        roomId,
-        payer: 'TENANT',
-        status: { in: ['resolved', 'completed'] },
-        billedInvoiceId: null,
-        repairCost: { gt: 0 }
-      }
-    });
-    const pendingRepairTotal = pendingTenantRepairs.reduce((sum, r) => sum + Number(r.repairCost), 0);
-    const pendingRepairNote = pendingTenantRepairs
-      .map((r) => `ค่าซ่อม: ${r.title} (฿${Number(r.repairCost).toLocaleString()})`)
-      .join(', ');
-
-    const finalOtherFee = (Number(otherFee) || 0) + pendingRepairTotal;
-    const finalOtherFeeNote = [otherFeeNote, pendingRepairNote].filter(Boolean).join(' | ') || null;
-
-    const formattedCycle = billingCycle.replace('-', '');
-    const invoiceNumber = `INV-${formattedCycle}-${room.roomNumber}`;
+    const invoiceNumber = this.makeInvoiceNumber(room, billingCycle);
 
     // บันทึกใบแจ้งหนี้ในระบบ (Prisma Transaction)
     let invoice;
     try {
       invoice = await prisma.$transaction(async (tx) => {
-      const existingInvoice = await tx.invoice.findFirst({
-        where: { roomId, billingCycle }
-      });
-
-      let savedInvoice;
-
-      if (existingInvoice && existingInvoice.status === 'paid') {
-        throw new Error(`Invoice for room ${room.roomNumber} in cycle ${billingCycle} has already been paid and locked`);
-      }
-
-      if (existingInvoice) {
-        const existingLateFee = Number(existingInvoice.lateFeeCharge) || 0;
-        const grandTotal = roomPrice + waterTotal + electricTotal + finalCommonFee + finalOtherFee + existingLateFee;
-
-        savedInvoice = await tx.invoice.update({
-          where: { id: existingInvoice.id },
-          data: {
-            roomPrice,
-            waterTotal,
-            electricTotal,
-            commonFee: finalCommonFee,
-            otherFee: finalOtherFee,
-            otherFeeNote: finalOtherFeeNote,
-            grandTotal,
-            dueDate: dueDate ? new Date(dueDate) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-          },
-          include: { room: true, tenant: true }
+        const existingInvoice = await tx.invoice.findFirst({
+          where: { roomId, billingCycle }
         });
-      } else {
-        const grandTotal = roomPrice + waterTotal + electricTotal + finalCommonFee + finalOtherFee;
 
-        savedInvoice = await tx.invoice.create({
-          data: {
-            invoiceNumber,
-            roomId,
-            tenantId: room.tenantId,
-            billingCycle,
-            roomPrice,
-            waterTotal,
-            electricTotal,
-            commonFee: finalCommonFee,
-            otherFee: finalOtherFee,
-            otherFeeNote: finalOtherFeeNote,
-            lateFeeCharge: 0.00,
-            grandTotal,
-            status: 'pending',
-            dueDate: dueDate ? new Date(dueDate) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-          },
-          include: { room: true, tenant: true }
-        });
-      }
+        if (existingInvoice && existingInvoice.status === 'paid') {
+          throw new Error(`Invoice for room ${room.roomNumber} in cycle ${billingCycle} has already been paid and locked`);
+        }
 
-      // ปิดสถานะรายการแจ้งซ่อมที่เพิ่งถูกรวมเข้าบิลนี้ กันไม่ให้ไปถูกดึงมารวมซ้ำในบิลรอบถัดไป
-      if (pendingTenantRepairs.length > 0) {
-        await tx.maintenanceRequest.updateMany({
-          where: { id: { in: pendingTenantRepairs.map((r) => r.id) } },
-          data: { billedInvoiceId: savedInvoice.id }
-        });
-      }
+        // ค่าซ่อมที่ต้องเรียกเก็บ (รวมที่เคยรวมเข้าบิลนี้ไว้แล้ว กันหายเมื่อออกบิลซ้ำ) คิดใน Transaction เดียวกับบิล
+        const repairs = await this.collectRepairCharges(tx, roomId, existingInvoice?.id);
+        const finalOtherFee = (Number(otherFee) || 0) + repairs.total;
+        const finalOtherFeeNote = [otherFeeNote, repairs.note].filter(Boolean).join(' | ') || null;
+        const finalDueDate = dueDate ? new Date(dueDate) : dueDateForCycle(billingCycle, dueDateDay);
+
+        let savedInvoice;
+
+        if (existingInvoice) {
+          const existingLateFee = Number(existingInvoice.lateFeeCharge) || 0;
+          const grandTotal = round2(roomPrice + waterTotal + electricTotal + finalCommonFee + finalOtherFee + existingLateFee);
+
+          savedInvoice = await tx.invoice.update({
+            where: { id: existingInvoice.id },
+            data: {
+              roomPrice,
+              waterTotal,
+              electricTotal,
+              commonFee: finalCommonFee,
+              otherFee: finalOtherFee,
+              otherFeeNote: finalOtherFeeNote,
+              grandTotal,
+              dueDate: finalDueDate
+            },
+            include: { room: true, tenant: true }
+          });
+        } else {
+          const grandTotal = round2(roomPrice + waterTotal + electricTotal + finalCommonFee + finalOtherFee);
+
+          savedInvoice = await tx.invoice.create({
+            data: {
+              invoiceNumber,
+              roomId,
+              tenantId: room.tenantId,
+              billingCycle,
+              roomPrice,
+              waterTotal,
+              electricTotal,
+              commonFee: finalCommonFee,
+              otherFee: finalOtherFee,
+              otherFeeNote: finalOtherFeeNote,
+              lateFeeCharge: 0.00,
+              grandTotal,
+              status: 'pending',
+              dueDate: finalDueDate
+            },
+            include: { room: true, tenant: true }
+          });
+        }
+
+        // มาร์กค่าซ่อมที่เพิ่งรวมเข้าบิลนี้ กันไม่ให้ถูกดึงไปรวมซ้ำในบิลรอบถัดไป
+        if (repairs.unbilledIds.length > 0) {
+          await tx.maintenanceRequest.updateMany({
+            where: { id: { in: repairs.unbilledIds } },
+            data: { billedInvoiceId: savedInvoice.id }
+          });
+        }
 
         return savedInvoice;
       });
     } catch (error) {
-      // Race Condition: 2 Request สร้างบิลรอบ/ห้องเดียวกันพร้อมกัน ตัวที่แพ้จะชน Unique Constraint ของ
-      // invoiceNumber เพราะเช็ค existingInvoice ผ่าน Transaction ไปพร้อมกันทั้งคู่ก่อนใครจะ Commit ทัน —
+      // Race Condition: 2 Request สร้างบิลรอบ/ห้องเดียวกันพร้อมกัน ตัวที่แพ้ชน Unique Constraint ของ invoiceNumber
       // ถือว่า "สร้างสำเร็จ" เหมือนกัน คืนบิลที่ถูกสร้างไปแล้วแทนที่จะโยน Error ดิบให้ผู้ใช้เจอ 500
       if (error.code === 'P2002') {
         invoice = await prisma.invoice.findFirst({
@@ -380,6 +420,12 @@ class BillingService {
     if (!invoice) {
       const error = new Error('ไม่พบข้อมูลใบแจ้งหนี้');
       error.statusCode = 404;
+      throw error;
+    }
+
+    if (invoice.status === 'paid') {
+      const error = new Error('บิลนี้ชำระเงินเรียบร้อยแล้ว ไม่สามารถแนบสลิปเพิ่มได้');
+      error.statusCode = 409;
       throw error;
     }
 

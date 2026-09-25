@@ -9,6 +9,7 @@ describe('E-Contract PDF & Rental Agreement Integration Tests', () => {
   let testLease;
   let testTenant;
   let tenantToken;
+  let grantedPermission = null;
 
   beforeAll(async () => {
     adminUser = await prisma.user.findFirst({
@@ -19,6 +20,16 @@ describe('E-Contract PDF & Rental Agreement Integration Tests', () => {
     });
 
     adminToken = authService.generateAccessToken(adminUser);
+
+    // role admin เข้าถึงได้เฉพาะตึกที่ได้รับสิทธิ์ ถ้ายังไม่มีให้เพิ่มไว้ชั่วคราวแล้วลบตอนจบ
+    const leaseBuildingId = testLease?.buildingId || testLease?.room?.buildingId;
+    if (adminUser && leaseBuildingId) {
+      const where = { userId_buildingId: { userId: adminUser.id, buildingId: leaseBuildingId } };
+      if (!(await prisma.userBuildingPermission.findUnique({ where }))) {
+        await prisma.userBuildingPermission.create({ data: { userId: adminUser.id, buildingId: leaseBuildingId } });
+        grantedPermission = { userId: adminUser.id, buildingId: leaseBuildingId };
+      }
+    }
 
     if (testLease?.tenant) {
       testTenant = testLease.tenant;
@@ -133,5 +144,9 @@ describe('E-Contract PDF & Rental Agreement Integration Tests', () => {
       expect(res.body.success).toBe(true);
       expect(res.body.data.id).toBe(toggleLease.id);
     });
+  });
+
+  afterAll(async () => {
+    if (grantedPermission) await prisma.userBuildingPermission.deleteMany({ where: grantedPermission });
   });
 });

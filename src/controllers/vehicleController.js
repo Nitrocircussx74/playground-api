@@ -1,19 +1,30 @@
 const billingService = require('../services/billingService');
+const { isFeatureEnabled } = require('../middlewares/requireFeatureMiddleware');
 const lineService = require('../services/lineService');
+const pickActiveRoom = require('../utils/pickActiveRoom');
 
 /**
  * ดึงข้อมูลผู้เช่าจาก tenantId (Backend JWT) ก่อน แล้วค่อย fallback ไปที่ lineUserId (LINE ID Token)
  */
 async function resolveTenant(req) {
   const { tenantId, lineUserId } = req;
+  const include = { rooms: true, roomResidents: { where: { status: 'ACTIVE' }, include: { room: true } } };
   let tenant = null;
   if (tenantId) {
-    tenant = await billingService.prisma.tenant.findUnique({ where: { id: tenantId }, include: { rooms: true } });
+    tenant = await billingService.prisma.tenant.findUnique({ where: { id: tenantId }, include });
   }
   if (!tenant && lineUserId) {
-    tenant = await billingService.prisma.tenant.findUnique({ where: { lineUserId }, include: { rooms: true } });
+    tenant = await billingService.prisma.tenant.findUnique({ where: { lineUserId }, include });
   }
   return tenant;
+}
+
+/**
+ * ตึกของห้องที่ผู้เช่าเลือกอยู่ใน LIFF (ไม่ใช่ห้องแรกเสมอ) ให้รถ/แขกและ Feature Toggle ตามตึกที่สลับไป
+ */
+function resolveActiveBuildingId(tenant, req) {
+  const rooms = [...(tenant.rooms || []), ...(tenant.roomResidents || []).map((rr) => rr.room).filter(Boolean)];
+  return pickActiveRoom(rooms, { roomId: req.roomId, buildingId: req.buildingId })?.buildingId || null;
 }
 
 class VehicleController {
@@ -122,15 +133,12 @@ class VehicleController {
         return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลผู้เช่า' });
       }
 
-      const buildingId = tenant.rooms?.[0]?.buildingId;
+      const buildingId = resolveActiveBuildingId(tenant, req);
       if (!buildingId) {
         return res.status(400).json({ success: false, message: 'ไม่พบข้อมูลห้องพัก/ตึกของผู้เช่า' });
       }
 
-      const toggle = await billingService.prisma.featureToggle.findFirst({
-        where: { key: 'ENABLE_VEHICLE_MANAGEMENT', buildingId }
-      });
-      if (toggle && !toggle.isActive) {
+      if (!(await isFeatureEnabled('ENABLE_VEHICLE_MANAGEMENT', buildingId))) {
         return res.status(403).json({ success: false, message: 'ฟีเจอร์จัดการยานพาหนะถูกปิดใช้งานสำหรับตึกนี้' });
       }
 
@@ -170,7 +178,7 @@ class VehicleController {
         return res.status(200).json({ success: true, data: [] });
       }
       const vehicles = await billingService.prisma.vehicle.findMany({
-        where: { tenantId: tenant.id },
+        where: { tenantId: tenant.id, buildingId: resolveActiveBuildingId(tenant, req) || undefined },
         orderBy: { createdAt: 'desc' }
       });
       return res.status(200).json({ success: true, data: vehicles });
@@ -222,15 +230,12 @@ class VehicleController {
         return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลผู้เช่า' });
       }
 
-      const buildingId = tenant.rooms?.[0]?.buildingId;
+      const buildingId = resolveActiveBuildingId(tenant, req);
       if (!buildingId) {
         return res.status(400).json({ success: false, message: 'ไม่พบข้อมูลห้องพัก/ตึกของผู้เช่า' });
       }
 
-      const toggle = await billingService.prisma.featureToggle.findFirst({
-        where: { key: 'ENABLE_VEHICLE_MANAGEMENT', buildingId }
-      });
-      if (toggle && !toggle.isActive) {
+      if (!(await isFeatureEnabled('ENABLE_VEHICLE_MANAGEMENT', buildingId))) {
         return res.status(403).json({ success: false, message: 'ฟีเจอร์จัดการยานพาหนะ/แขกถูกปิดใช้งานสำหรับตึกนี้' });
       }
 
@@ -261,7 +266,7 @@ class VehicleController {
         return res.status(200).json({ success: true, data: [] });
       }
       const visitors = await billingService.prisma.visitor.findMany({
-        where: { tenantId: tenant.id },
+        where: { tenantId: tenant.id, buildingId: resolveActiveBuildingId(tenant, req) || undefined },
         orderBy: { expectedDate: 'desc' }
       });
       return res.status(200).json({ success: true, data: visitors });

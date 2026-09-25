@@ -32,6 +32,11 @@ describe('Meter Reading & Invoice Generation Flow Integration Tests', () => {
       }
     });
 
+    // แอดมินระดับ admin ต้องมีสิทธิ์รายตึกจึงจะเข้าถึงตึกนี้ได้ (ลบอัตโนมัติเมื่อลบตึก/ผู้ใช้ตาม onDelete: Cascade)
+    await billingService.prisma.userBuildingPermission.create({
+      data: { userId: adminUser.id, buildingId: testBuilding.id }
+    });
+
     await billingService.prisma.buildingSetting.create({
       data: {
         buildingId: testBuilding.id,

@@ -1,3 +1,4 @@
+const { getAllowedBuildingIds } = require('../middlewares/buildingAccessMiddleware');
 const billingService = require('../services/billingService');
 const lineService = require('../services/lineService');
 const { formatBillingCycle } = require('../utils/formatBillingCycle');
@@ -13,7 +14,10 @@ class MeterController {
       const where = {};
       if (roomId) where.roomId = roomId;
       if (billingCycle) where.billingCycle = billingCycle;
+      // buildingId ที่ระบุมาผ่านการตรวจสิทธิ์ที่ route แล้ว ถ้าไม่ระบุ จำกัดเฉพาะตึกที่มีสิทธิ์
+      const allowedBuildingIds = await getAllowedBuildingIds(req.user);
       if (buildingId) where.room = { buildingId };
+      else if (allowedBuildingIds) where.room = { buildingId: { in: allowedBuildingIds } };
 
       const records = await billingService.prisma.meterRecord.findMany({
         where,
@@ -80,14 +84,9 @@ class MeterController {
         });
       }
 
-      const setting = await billingService.prisma.buildingSetting.findUnique({
-        where: { buildingId }
-      });
-
-      const waterRate = Number(setting?.waterRate || 18.0);
-      const electricRate = Number(setting?.electricRate || 7.0);
-      const commonFee = 100.0;
-      const dueDateDay = setting?.dueDateDay || 5;
+      const cycle = billingCycle || formatBillingCycle(new Date());
+      const { waterRate, electricRate, dueDateDay } = await billingService.getBillingRates(buildingId);
+      const commonFee = billingService.DEFAULT_COMMON_FEE;
 
       const rooms = await billingService.prisma.room.findMany({
         where: { buildingId, status: 'occupied' },
@@ -97,15 +96,11 @@ class MeterController {
 
       const draftRooms = await Promise.all(
         rooms.map(async (room) => {
-          const lastWater = await billingService.prisma.meterRecord.findFirst({
-            where: { roomId: room.id, meterType: 'water' },
-            orderBy: { recordedAt: 'desc' }
-          });
-
-          const lastElectric = await billingService.prisma.meterRecord.findFirst({
-            where: { roomId: room.id, meterType: 'electric' },
-            orderBy: { recordedAt: 'desc' }
-          });
+          const prisma = billingService.prisma;
+          const [water, electric] = await Promise.all([
+            billingService.getPreviousReading(prisma, room.id, 'water', cycle),
+            billingService.getPreviousReading(prisma, room.id, 'electric', cycle)
+          ]);
 
           return {
             roomId: room.id,
@@ -120,8 +115,8 @@ class MeterController {
                   phone: room.tenant.phone
                 }
               : null,
-            previousWaterReading: lastWater ? Number(lastWater.currentReading) : 0,
-            previousElectricReading: lastElectric ? Number(lastElectric.currentReading) : 0
+            previousWaterReading: water.previousReading,
+            previousElectricReading: electric.previousReading
           };
         })
       );
@@ -130,7 +125,7 @@ class MeterController {
         success: true,
         data: {
           buildingId,
-          billingCycle: billingCycle || formatBillingCycle(new Date()),
+          billingCycle: cycle,
           rates: { waterRate, electricRate, commonFee, dueDateDay },
           rooms: draftRooms
         }
@@ -142,6 +137,9 @@ class MeterController {
 
   /**
    * สร้าง MeterRecord และออก Invoice ร่างสำหรับทุกห้องในตึก
+   * - เรียกซ้ำรอบเดิมได้อย่างปลอดภัย: เลขมิเตอร์ของรอบนี้ถูก "แก้ค่าเดิม" ไม่ใช่เพิ่มแถวใหม่ และเลขก่อนหน้าอ้างอิงรอบก่อนเสมอ
+   * - บิลที่ไม่ใช่ draft (เผยแพร่/ชำระ/รอตรวจสลิปแล้ว) จะไม่ถูกเขียนทับ ข้ามและรายงานใน skipped
+   * - ห้องที่ไม่ได้อยู่ในตึกนี้ / ไม่มีผู้เช่า ถูกข้ามและรายงานเช่นกัน ข้อมูลผิดพลาด (เลขมิเตอร์ต่ำลง ฯลฯ) ปฏิเสธทั้งชุด ไม่บันทึกบางส่วน
    */
   async generateInvoices(req, res, next) {
     try {
@@ -155,153 +153,144 @@ class MeterController {
         });
       }
 
-      const setting = await billingService.prisma.buildingSetting.findUnique({
-        where: { buildingId }
+      const commonFee = req.body.commonFee !== undefined ? Number(req.body.commonFee) : billingService.DEFAULT_COMMON_FEE;
+      const isAmount = (v) => v !== '' && v != null && Number.isFinite(Number(v)) && Number(v) >= 0;
+      const problems = [];
+      if (!isAmount(commonFee)) problems.push('commonFee ต้องเป็นตัวเลขไม่ติดลบ');
+      roomReadings.forEach((item, i) => {
+        const label = `รายการที่ ${i + 1}`;
+        if (!item?.roomId) problems.push(`${label}: ไม่ระบุ roomId`);
+        if (!isAmount(item?.currentWaterReading)) problems.push(`${label}: เลขมิเตอร์น้ำไม่ถูกต้อง`);
+        if (!isAmount(item?.currentElectricReading)) problems.push(`${label}: เลขมิเตอร์ไฟไม่ถูกต้อง`);
+        if (item?.otherFee != null && item.otherFee !== '' && !isAmount(item.otherFee)) problems.push(`${label}: otherFee ไม่ถูกต้อง`);
       });
+      if (problems.length > 0) {
+        return res.status(400).json({ success: false, message: problems[0], errors: problems });
+      }
 
-      const waterRate = Number(setting?.waterRate || 18.0);
-      const electricRate = Number(setting?.electricRate || 7.0);
-      const commonFee = req.body.commonFee !== undefined ? Number(req.body.commonFee) : 100.0;
-      const dueDateDay = setting?.dueDateDay || 5;
+      const { waterRate, electricRate, dueDateDay } = await billingService.getBillingRates(buildingId);
+      const dueDate = billingService.dueDateForCycle(billingCycle, dueDateDay);
+      const round2 = billingService.round2;
 
-      const now = new Date();
-      const dueDate = new Date(now.getFullYear(), now.getMonth() + 1, dueDateDay);
-
-      const resultInvoices = await billingService.prisma.$transaction(async (tx) => {
+      const { invoices: resultInvoices, skipped } = await billingService.prisma.$transaction(async (tx) => {
         const createdInvoices = [];
+        const skippedRooms = [];
+        const readingErrors = [];
 
         for (const item of roomReadings) {
-          const {
-            roomId,
-            currentWaterReading,
-            currentElectricReading,
-            otherFee = 0,
-            otherFeeNote = null,
-            reportedRevenue = null
-          } = item;
+          const { roomId, currentWaterReading, currentElectricReading, otherFee = 0, otherFeeNote = null, reportedRevenue = null } = item;
 
-          const room = await tx.room.findUnique({
-            where: { id: roomId },
-            include: { tenant: true }
-          });
-
-          if (!room || !room.tenantId) {
+          // ห้องต้องอยู่ในตึกของ route นี้ (กันส่ง roomId ของตึกอื่นมาปนเพื่อออกบิลข้ามตึก)
+          const room = await tx.room.findFirst({ where: { id: roomId, buildingId } });
+          if (!room) {
+            skippedRooms.push({ roomId, reason: 'ไม่พบห้องนี้ในตึกที่ระบุ' });
+            continue;
+          }
+          if (!room.tenantId) {
+            skippedRooms.push({ roomId, roomNumber: room.roomNumber, reason: 'ห้องนี้ไม่มีผู้เช่า' });
             continue;
           }
 
-          const lastWater = await tx.meterRecord.findFirst({
-            where: { roomId, meterType: 'water' },
-            orderBy: { recordedAt: 'desc' }
-          });
-          const lastElectric = await tx.meterRecord.findFirst({
-            where: { roomId, meterType: 'electric' },
-            orderBy: { recordedAt: 'desc' }
-          });
+          const existingInvoice = await tx.invoice.findFirst({ where: { roomId, billingCycle } });
+          if (existingInvoice && existingInvoice.status !== 'draft') {
+            skippedRooms.push({ roomId, roomNumber: room.roomNumber, reason: `บิลรอบนี้อยู่สถานะ ${existingInvoice.status} แล้ว ไม่เขียนทับ` });
+            continue;
+          }
 
-          const prevWater = lastWater ? Number(lastWater.currentReading) : 0;
-          const prevElectric = lastElectric ? Number(lastElectric.currentReading) : 0;
+          const water = await billingService.getPreviousReading(tx, roomId, 'water', billingCycle);
+          const electric = await billingService.getPreviousReading(tx, roomId, 'electric', billingCycle);
+          const currentWater = Number(currentWaterReading);
+          const currentElectric = Number(currentElectricReading);
 
-          const waterUnits = Math.max(0, Number(currentWaterReading) - prevWater);
-          const electricUnits = Math.max(0, Number(currentElectricReading) - prevElectric);
+          if (currentWater < water.previousReading || currentElectric < electric.previousReading) {
+            readingErrors.push(
+              `ห้อง ${room.roomNumber}: เลขมิเตอร์ปัจจุบันต่ำกว่าเลขก่อนหน้า (น้ำ ${water.previousReading}, ไฟ ${electric.previousReading})`
+            );
+            continue;
+          }
 
-          const waterTotal = Number((waterUnits * waterRate).toFixed(2));
-          const electricTotal = Number((electricUnits * electricRate).toFixed(2));
+          const waterUnits = currentWater - water.previousReading;
+          const electricUnits = currentElectric - electric.previousReading;
+          const waterTotal = billingService.calculateWaterFee(waterUnits, waterRate);
+          const electricTotal = billingService.calculateElectricFee(electricUnits, electricRate);
 
           let roomPrice = Number(room.price);
           let extraFee = Number(otherFee || 0);
           let extraFeeNote = otherFeeNote;
 
           if (room.billingModel === 'revenue_share' && room.revSharePercent && reportedRevenue != null) {
-            const revShare = Number((Number(reportedRevenue) * Number(room.revSharePercent) / 100).toFixed(2));
-            extraFee = revShare;
+            extraFee = round2((Number(reportedRevenue) * Number(room.revSharePercent)) / 100);
             extraFeeNote = `ส่วนแบ่งยอดขาย ${Number(room.revSharePercent)}% (ยอดขาย ฿${Number(reportedRevenue).toLocaleString()})`;
             roomPrice = 0;
           }
 
-          const grandTotal = Number((roomPrice + waterTotal + electricTotal + commonFee + extraFee).toFixed(2));
-          const recordedAt = new Date();
+          // ค่าซ่อมที่ผู้เช่าต้องจ่ายเอง (รวมที่เคยรวมเข้าบิลนี้แล้ว) — flow เดียวกับ billingService.generateInvoice
+          const repairs = await billingService.collectRepairCharges(tx, roomId, existingInvoice?.id);
+          extraFee = round2(extraFee + repairs.total);
+          extraFeeNote = [extraFeeNote, repairs.note].filter(Boolean).join(' | ') || null;
 
-          await tx.meterRecord.create({
-            data: {
-              roomId,
-              meterType: 'water',
-              previousReading: prevWater,
-              currentReading: Number(currentWaterReading),
-              unitsUsed: waterUnits,
-              billingCycle,
-              recordedAt
+          const lateFee = Number(existingInvoice?.lateFeeCharge) || 0;
+          const grandTotal = round2(roomPrice + waterTotal + electricTotal + commonFee + extraFee + lateFee);
+
+          // หนึ่งรอบ = หนึ่ง record ต่อห้อง/ชนิดมิเตอร์ (มีอยู่แล้วให้แก้ค่า ไม่เพิ่มแถวใหม่)
+          for (const [meterType, reading, current, units] of [
+            ['water', water, currentWater, waterUnits],
+            ['electric', electric, currentElectric, electricUnits]
+          ]) {
+            const readingData = { previousReading: reading.previousReading, currentReading: current, unitsUsed: units };
+            if (reading.thisCycle) {
+              await tx.meterRecord.update({ where: { id: reading.thisCycle.id }, data: readingData });
+            } else {
+              await tx.meterRecord.create({ data: { roomId, meterType, billingCycle, recordedAt: new Date(), ...readingData } });
             }
-          });
+          }
 
-          await tx.meterRecord.create({
-            data: {
-              roomId,
-              meterType: 'electric',
-              previousReading: prevElectric,
-              currentReading: Number(currentElectricReading),
-              unitsUsed: electricUnits,
-              billingCycle,
-              recordedAt
-            }
-          });
+          const invoiceData = {
+            roomPrice,
+            waterTotal,
+            electricTotal,
+            commonFee,
+            otherFee: extraFee,
+            otherFeeNote: extraFeeNote,
+            grandTotal,
+            status: 'draft',
+            dueDate
+          };
+          const invoice = existingInvoice
+            ? await tx.invoice.update({ where: { id: existingInvoice.id }, data: invoiceData, include: { room: true, tenant: true } })
+            : await tx.invoice.create({
+                data: { invoiceNumber: billingService.makeInvoiceNumber(room, billingCycle), roomId, tenantId: room.tenantId, billingCycle, ...invoiceData },
+                include: { room: true, tenant: true }
+              });
 
-          const cycleClean = billingCycle.replace('-', '');
-          const invoiceNumber = `INV-${cycleClean}-${room.roomNumber}`;
-
-          const existingInvoice = await tx.invoice.findFirst({
-            where: { roomId, billingCycle }
-          });
-
-          let invoice;
-          if (existingInvoice) {
-            invoice = await tx.invoice.update({
-              where: { id: existingInvoice.id },
-              data: {
-                roomPrice,
-                waterTotal,
-                electricTotal,
-                commonFee,
-                otherFee: extraFee,
-                otherFeeNote: extraFeeNote,
-                grandTotal,
-                status: 'draft',
-                dueDate
-              },
-              include: { room: true, tenant: true }
-            });
-          } else {
-            invoice = await tx.invoice.create({
-              data: {
-                invoiceNumber,
-                roomId,
-                tenantId: room.tenantId,
-                billingCycle,
-                roomPrice,
-                waterTotal,
-                electricTotal,
-                commonFee,
-                otherFee: extraFee,
-                otherFeeNote: extraFeeNote,
-                grandTotal,
-                status: 'draft',
-                dueDate
-              },
-              include: { room: true, tenant: true }
-            });
+          if (repairs.unbilledIds.length > 0) {
+            await tx.maintenanceRequest.updateMany({ where: { id: { in: repairs.unbilledIds } }, data: { billedInvoiceId: invoice.id } });
           }
 
           createdInvoices.push(invoice);
         }
 
-        return createdInvoices;
+        if (readingErrors.length > 0) {
+          const error = new Error(readingErrors[0]);
+          error.statusCode = 400;
+          error.data = readingErrors;
+          throw error; // rollback ทั้งชุด ไม่บันทึกบางส่วน
+        }
+
+        return { invoices: createdInvoices, skipped: skippedRooms };
       });
 
       return res.status(201).json({
         success: true,
-        message: `ออกบิลแบบ Draft สำเร็จจำนวน ${resultInvoices.length} ห้องพัก`,
-        data: resultInvoices
+        message: `ออกบิลแบบ Draft สำเร็จจำนวน ${resultInvoices.length} ห้องพัก${skipped.length ? ` (ข้าม ${skipped.length} ห้อง)` : ''}`,
+        data: resultInvoices,
+        skipped
       });
     } catch (error) {
+      // ออกบิลรอบ/ห้องเดียวกันพร้อมกัน: ตัวที่แพ้ชน Unique ของเลขบิล ให้ลองใหม่ (ตัวที่ชนะเก็บบิลไว้แล้ว)
+      if (error.code === 'P2002') {
+        return res.status(409).json({ success: false, message: 'มีการออกบิลรอบนี้พร้อมกัน กรุณาลองใหม่อีกครั้ง' });
+      }
       next(error);
     }
   }

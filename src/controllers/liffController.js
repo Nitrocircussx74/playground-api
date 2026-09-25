@@ -1,4 +1,5 @@
 const billingService = require('../services/billingService');
+const { isFeatureEnabled } = require('../middlewares/requireFeatureMiddleware');
 const tenantService = require('../services/tenantService');
 const tenantAuthService = require('../services/tenantAuthService');
 const lineService = require('../services/lineService');
@@ -39,7 +40,9 @@ class LiffController {
    */
   async checkTenantStatus(req, res, next) {
     try {
-      const { phone, roomNumber, tenantId } = req.query || {};
+      // ผูก LINE กับผู้เช่าจาก phone/roomNumber/tenantId ที่ไม่ผ่านการยืนยัน (PIN/Invite) ได้เฉพาะ Dev
+      // Production ต้องผูกผ่าน /auth/verify-phone หรือ /link-account ที่มี Rate Limit + ตรวจสอบเท่านั้น
+      const { phone, roomNumber, tenantId } = config.nodeEnv === 'development' ? req.query || {} : {};
       const result = await tenantService.checkTenantStatus({
         lineUserId: req.lineUserId,
         phone,
@@ -144,17 +147,20 @@ class LiffController {
    */
   async syncLineProfile(req, res, next) {
     try {
-      const { lineDisplayName, linePictureUrl, lineStatusMessage, tenantId, phone, roomNumber } = req.body;
+      const { lineDisplayName, linePictureUrl, lineStatusMessage, phone, roomNumber } = req.body;
+      const isDev = config.nodeEnv === 'development';
+      // ระบุตัวผู้เช่าจาก Token ที่ verify แล้วเท่านั้น เดิมหาจาก tenantId/phone/roomNumber ที่ Client ส่งมาได้
+      // แล้วเขียน lineUserId ของผู้ส่งทับลงไป = ยึดบัญชีคนอื่นได้แค่รู้เบอร์หรือเลขห้อง (phone/roomNumber เหลือไว้ใน Dev)
       const updatedTenant = await tenantService.syncLineProfile({
         lineDisplayName,
         linePictureUrl,
         lineStatusMessage,
-        tenantId,
-        phone,
-        roomNumber,
-        lineUserId: req.lineUserId || req.body.lineUserId,
+        tenantId: req.scope?.tenantId || req.tenantId,
+        phone: isDev ? phone : undefined,
+        roomNumber: isDev ? roomNumber : undefined,
+        lineUserId: req.lineUserId,
         lineUser: req.lineUser,
-        isDevOrMockFallback: process.env.NODE_ENV !== 'production' || config.line.mockMode
+        isDevOrMockFallback: isDev
       });
 
       return res.status(200).json({
@@ -182,7 +188,13 @@ class LiffController {
       const { tenantId, room: queryRoomNumber, roomNumber: queryRoomNumberAlt } = req.query || {};
       const targetRoomNumber = queryRoomNumber || queryRoomNumberAlt;
 
-      const profile = await tenantService.getTenantProfileForLiff({ lineUserId, tenantId, roomNumber: targetRoomNumber });
+      const profile = await tenantService.getTenantProfileForLiff({
+        lineUserId,
+        tenantId: req.scope?.tenantId || tenantId,
+        roomNumber: targetRoomNumber,
+        activeRoomId: req.roomId,
+        activeBuildingId: req.buildingId
+      });
 
       if (!profile) {
         return res.status(200).json({
@@ -232,9 +244,16 @@ class LiffController {
       // และ /api/settings แบบ Public เดิม (ไม่มี req.lineUserId) — ถ้ามี req.lineUserId ที่ verify แล้ว ต้องยึดค่านั้นเป็นหลัก
       // ห้ามให้ roomId/tenantId ที่ Client ส่งมาเอง Override เพื่อไปดูตึก/ห้องของคนอื่น (IDOR)
       const lineUserId = req.lineUserId || req.query.lineUserId;
-      const { tenantId, roomId } = req.lineUserId ? {} : req.query;
+      const targetRoomId = req.roomId;
+      const targetBuildingId = req.buildingId;
+      const { tenantId } = req.lineUserId ? {} : req.query;
 
-      const settings = await tenantService.getBuildingSettingForTenant({ lineUserId, tenantId, roomId });
+      const settings = await tenantService.getBuildingSettingForTenant({
+        lineUserId,
+        tenantId,
+        roomId: targetRoomId,
+        buildingId: targetBuildingId
+      });
 
       if (!settings) {
         return res.status(404).json({
@@ -286,10 +305,15 @@ class LiffController {
   async uploadSlipFromLiff(req, res, next) {
     try {
       const { id } = req.params;
-      const lineUserId = req.lineUserId || req.body?.lineUserId;
+      const lineUserId = req.lineUserId;
 
       if (!req.file) {
         return res.status(400).json({ success: false, message: 'กรุณาแนบไฟล์รูปภาพสลิปโอนเงิน' });
+      }
+
+      const invoiceRoom = await billingService.prisma.invoice.findUnique({ where: { id }, select: { room: { select: { buildingId: true } } } });
+      if (!(await isFeatureEnabled('ENABLE_LINE_PAYMENT', invoiceRoom?.room?.buildingId || null))) {
+        return res.status(403).json({ success: false, message: 'ฟีเจอร์ชำระเงินออนไลน์ถูกปิดใช้งานสำหรับตึกนี้' });
       }
 
       const slipUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
@@ -409,7 +433,9 @@ class LiffController {
     try {
       const { invite, targetRoom } = await tenantService.createRoommateInvite({
         lineUserId: req.lineUserId,
-        tenantId: req.tenantId
+        tenantId: req.tenantId,
+        activeRoomId: req.roomId,
+        activeBuildingId: req.buildingId
       });
 
       return res.status(201).json({
@@ -467,9 +493,15 @@ class LiffController {
         return res.status(200).json({ success: true, data: [] });
       }
 
+      const targetRoomId = req.roomId;
+      const targetBuildingId = req.buildingId;
+
       let roomId = tenant.rooms[0].id;
-      if (req.query.roomId && tenant.rooms.some(r => r.id === req.query.roomId)) {
-        roomId = req.query.roomId;
+      if (targetRoomId && tenant.rooms.some(r => r.id === targetRoomId)) {
+        roomId = targetRoomId;
+      } else if (targetBuildingId) {
+        const roomInBuilding = tenant.rooms.find(r => r.buildingId === targetBuildingId);
+        if (roomInBuilding) roomId = roomInBuilding.id;
       }
       const sixMonthsAgo = new Date();
       sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
@@ -509,7 +541,18 @@ class LiffController {
         return res.status(200).json({ success: true, data: [] });
       }
 
-      const leaseId = tenant.leaseContracts[0].id;
+      const targetRoomId = req.roomId;
+      const targetBuildingId = req.buildingId;
+
+      let activeLease = tenant.leaseContracts[0];
+      if (targetRoomId) {
+        const matched = tenant.leaseContracts.find(l => l.roomId === targetRoomId);
+        if (matched) activeLease = matched;
+      } else if (targetBuildingId) {
+        const matched = tenant.leaseContracts.find(l => l.buildingId === targetBuildingId || l.room?.buildingId === targetBuildingId);
+        if (matched) activeLease = matched;
+      }
+      const leaseId = activeLease.id;
       const inspections = await billingService.prisma.roomInspection.findMany({
         where: { leaseId },
         orderBy: { createdAt: 'desc' }
@@ -574,8 +617,13 @@ class LiffController {
       }
 
       let activeLease = tenant.leaseContracts[0];
-      if (req.query.roomId) {
-        const matched = tenant.leaseContracts.find(l => l.roomId === req.query.roomId);
+      const targetRoomId = req.roomId;
+      const targetBuildingId = req.buildingId;
+      if (targetRoomId) {
+        const matched = tenant.leaseContracts.find(l => l.roomId === targetRoomId);
+        if (matched) activeLease = matched;
+      } else if (targetBuildingId) {
+        const matched = tenant.leaseContracts.find(l => l.buildingId === targetBuildingId || l.room?.buildingId === targetBuildingId);
         if (matched) activeLease = matched;
       }
 
@@ -584,13 +632,8 @@ class LiffController {
       // /liff/contract ตรงๆ ได้อยู่ดี ถ้าเคยเปิดหน้านี้ค้างไว้หรือมีลิงก์เดิม ปุ่มในหน้าโปรไฟล์ที่หายไปช่วยซ่อน
       // ทางเข้าปกติได้แค่จุดเดียว ไม่ได้ปิดกั้น Endpoint จริง)
       const contractBuildingId = activeLease.buildingId || activeLease.room?.buildingId || null;
-      if (contractBuildingId) {
-        const toggle = await billingService.prisma.featureToggle.findFirst({
-          where: { key: 'ENABLE_E_CONTRACT', buildingId: contractBuildingId }
-        });
-        if (toggle && !toggle.isActive) {
-          return res.status(403).json({ success: false, message: 'ฟีเจอร์ดูสัญญาเช่าถูกปิดใช้งานสำหรับตึกนี้' });
-        }
+      if (!(await isFeatureEnabled('ENABLE_E_CONTRACT', contractBuildingId))) {
+        return res.status(403).json({ success: false, message: 'ฟีเจอร์ดูสัญญาเช่าถูกปิดใช้งานสำหรับตึกนี้' });
       }
 
       return res.status(200).json({

@@ -1,4 +1,7 @@
+const { resolveListBuildings } = require('../middlewares/buildingAccessMiddleware');
 const billingService = require('../services/billingService');
+const { roomScopedWhere, hasRoomScope } = require('../utils/roomScope');
+const { isFeatureEnabled } = require('../middlewares/requireFeatureMiddleware');
 const lineService = require('../services/lineService');
 
 class MaintenanceController {
@@ -23,11 +26,14 @@ class MaintenanceController {
           ...(buildingId && { buildingId })
         };
       } else {
-        const targetBuildingId = buildingId || req.params.buildingId;
-        if (targetBuildingId) {
+        const scope = await resolveListBuildings(req.user, buildingId || req.params.buildingId);
+        if (scope.forbidden) {
+          return res.status(403).json({ success: false, message: 'คุณไม่มีสิทธิ์เข้าถึงข้อมูลของอาคาร/ตึกนี้' });
+        }
+        if (scope.ids) {
           where.OR = [
-            { buildingId: targetBuildingId },
-            { room: { buildingId: targetBuildingId } }
+            { buildingId: { in: scope.ids } },
+            { room: { buildingId: { in: scope.ids } } }
           ];
         }
       }
@@ -56,44 +62,13 @@ class MaintenanceController {
    */
   async getMaintenanceRequestsForLiff(req, res, next) {
     try {
-      const lineUserId = req.lineUserId || req.query?.lineUserId;
-      const { roomId: queryRoomId } = req.query || {};
-
-      let tenantRecord = null;
-      if (lineUserId) {
-        tenantRecord = await billingService.prisma.tenant.findUnique({
-          where: { lineUserId },
-          include: {
-            rooms: true,
-            leaseContracts: { where: { status: 'ACTIVE' } }
-          }
-        });
-      }
-
-      if (!tenantRecord) {
+      // เฉพาะใบแจ้งซ่อมของห้องที่เลือกอยู่ (req.roomId ตรวจสิทธิ์แล้วใน scopeTenantRooms) รวมใบงานที่แอดมินเปิดให้ห้องนี้
+      if (!hasRoomScope(req)) {
         return res.status(200).json({ success: true, data: [] });
       }
 
-      const allRoomIds = (tenantRecord.rooms || []).map((r) => r.id);
-      (tenantRecord.leaseContracts || []).forEach((c) => {
-        if (c.roomId && !allRoomIds.includes(c.roomId)) {
-          allRoomIds.push(c.roomId);
-        }
-      });
-
-      const where = {};
-      if (queryRoomId && allRoomIds.includes(queryRoomId)) {
-        where.roomId = queryRoomId;
-      } else {
-        const orConditions = [{ tenantId: tenantRecord.id }];
-        if (allRoomIds.length > 0) {
-          orConditions.push({ roomId: { in: allRoomIds } });
-        }
-        where.OR = orConditions;
-      }
-
       const requests = await billingService.prisma.maintenanceRequest.findMany({
-        where,
+        where: roomScopedWhere(req, { includeUnassigned: true }),
         orderBy: { createdAt: 'desc' },
         include: {
           room: { include: { building: true } },
@@ -160,6 +135,11 @@ class MaintenanceController {
         if (!tenantId && roomObj?.tenantId) {
           tenantId = roomObj.tenantId;
         }
+      }
+
+      // บล็อกเฉพาะคำขอจากลูกบ้านผ่าน LIFF แอดมินยังเปิดใบงานเองได้แม้ปิดฟีเจอร์ฝั่งลูกบ้าน
+      if (req.originalUrl.includes('/liff/') && !(await isFeatureEnabled('ENABLE_MAINTENANCE_REQUEST', buildingId || null))) {
+        return res.status(403).json({ success: false, message: 'ฟีเจอร์แจ้งซ่อมและร้องเรียนถูกปิดใช้งานสำหรับตึกนี้' });
       }
 
       let imageUrl = req.body.photoUrl || req.body.imageUrl || null;

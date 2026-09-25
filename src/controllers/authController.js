@@ -214,8 +214,7 @@ class AuthController {
     try {
       const { email, password } = req.body;
 
-      // ค้นหาหรือบันทึกข้อมูลผู้ใช้ลง PostgreSQL Database
-      const user = await userService.findOrCreateLocalUser(email, password);
+      const user = await userService.verifyLocalUser(email, password);
 
       const accessToken = authService.generateAccessToken(user);
       const refreshToken = authService.generateRefreshToken(user);
@@ -226,28 +225,6 @@ class AuthController {
       return res.status(200).json({
         success: true,
         message: 'เข้าสู่ระบบสำเร็จ (JWT Dual Tokens Issued)',
-        accessToken,
-        user
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  async googleCallback(req, res, next) {
-    try {
-      const user = req.user;
-      if (!user) return res.status(401).json({ success: false, message: 'ยืนยันตัวตนผ่าน Google ไม่สำเร็จ' });
-
-      const accessToken = authService.generateAccessToken(user);
-      const refreshToken = authService.generateRefreshToken(user);
-
-      await authService.saveRefreshToken(user.id, refreshToken);
-      setRefreshTokenCookie(res, refreshToken, req);
-
-      return res.status(200).json({
-        success: true,
-        message: 'เข้าสู่ระบบด้วย Google สำเร็จ',
         accessToken,
         user
       });

@@ -1,5 +1,7 @@
 const billingService = require('../services/billingService');
 const lineService = require('../services/lineService');
+const auditService = require('../services/auditService');
+const { SECRET_MASK } = require('../utils/secrets');
 
 class BuildingController {
   /**
@@ -201,8 +203,8 @@ class BuildingController {
         ...(advanceMonths !== undefined && { advanceMonths: parseInt(advanceMonths, 10) }),
         ...(termsAndConditions !== undefined && { termsAndConditions }),
         ...(lineOaId !== undefined && { lineOaId: lineOaId?.trim() || null }),
-        ...(lineChannelAccessToken !== undefined && { lineChannelAccessToken: lineChannelAccessToken?.trim() || null }),
-        ...(lineChannelSecret !== undefined && { lineChannelSecret: lineChannelSecret?.trim() || null }),
+        ...(lineChannelAccessToken !== undefined && lineChannelAccessToken !== SECRET_MASK && { lineChannelAccessToken: lineChannelAccessToken?.trim() || null }),
+        ...(lineChannelSecret !== undefined && lineChannelSecret !== SECRET_MASK && { lineChannelSecret: lineChannelSecret?.trim() || null }),
         ...(lineLiffId !== undefined && { lineLiffId: lineLiffId?.trim() || null }),
         ...(lineAddFriendUrl !== undefined && { lineAddFriendUrl: lineAddFriendUrl?.trim() || null })
       };
@@ -335,6 +337,75 @@ class BuildingController {
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader('Content-Disposition', `attachment; filename="report-${cycle}.csv"`);
       return res.send('\uFEFF' + csv); // BOM เพื่อ Excel อ่านภาษาไทยถูก
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * ลบอาคาร/ตึก (Delete Building)
+   * เฉพาะ OWNER และ super_admin เท่านั้น
+   */
+  async deleteBuilding(req, res, next) {
+    try {
+      const id = req.params.id || req.params.buildingId;
+      const adminId = req.user?.id;
+
+      const building = await billingService.prisma.building.findUnique({
+        where: { id },
+        include: {
+          _count: {
+            select: { rooms: true }
+          }
+        }
+      });
+
+      if (!building) {
+        return res.status(404).json({
+          success: false,
+          message: 'ไม่พบข้อมูลอาคาร/ตึกที่ต้องการลบ'
+        });
+      }
+
+      // ตรวจสอบว่าเหลือตึกเดียวในระบบหรือไม่ (ห้ามลบตึกสุดท้าย)
+      const totalBuildings = await billingService.prisma.building.count();
+      if (totalBuildings <= 1) {
+        return res.status(400).json({
+          success: false,
+          message: 'ไม่สามารถลบอาคารได้ เนื่องจากระบบต้องมีอาคารอย่างน้อย 1 อาคาร'
+        });
+      }
+
+      // ป้องกันข้อมูลสูญหาย: ห้ามลบหากยังมีห้องพักผูกอยู่
+      if (building._count.rooms > 0) {
+        return res.status(400).json({
+          success: false,
+          message: `ไม่สามารถลบอาคาร "${building.name}" ได้ เนื่องจากยังมีห้องพักผูกอยู่ ${building._count.rooms} ห้อง กรุณาย้ายหรือลบห้องพักทั้งหมดออกก่อนทำการลบอาคาร`
+        });
+      }
+
+      // ลบข้อมูลที่อาจเกี่ยวข้องกับตึกนี้โดยตรงที่ไม่มี DB cascade
+      await billingService.prisma.$transaction(async (tx) => {
+        await tx.maintenanceRequest.deleteMany({ where: { buildingId: id } });
+        await tx.notificationLog.updateMany({ where: { buildingId: id }, data: { buildingId: null } });
+        await tx.building.delete({ where: { id } });
+      });
+
+      // บันทึก AuditLog
+      if (adminId) {
+        await auditService.logAction({
+          adminId,
+          action: 'DELETE',
+          entity: 'BUILDING',
+          entityId: id,
+          oldValues: { name: building.name, address: building.address }
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: `ลบอาคาร ${building.name} เรียบร้อยแล้ว`
+      });
     } catch (error) {
       next(error);
     }

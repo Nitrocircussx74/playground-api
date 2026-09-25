@@ -1,5 +1,7 @@
 const express = require('express');
+const { entityGuard, entityParam, requireBuildingInRequest, resolvers } = require('../middlewares/buildingAccessMiddleware');
 const router = express.Router();
+router.param('tenantId', entityParam(resolvers.tenant));
 const adminController = require('../controllers/adminController');
 const liffController = require('../controllers/liffController');
 const tenantController = require('../controllers/tenantController');
@@ -11,20 +13,20 @@ router.put('/me/password', (req, res, next) => adminController.updatePassword(re
 
 // Tenant CRM & 360 History Profile Endpoints
 router.get('/tenants', requireRole('admin'), (req, res, next) => tenantController.getAllTenants(req, res, next));
-router.post('/tenants/manual', requireRole('admin'), (req, res, next) => tenantController.createManualTenant(req, res, next));
+router.post('/tenants/manual', requireRole('admin'), requireBuildingInRequest, (req, res, next) => tenantController.createManualTenant(req, res, next));
 router.get('/tenants/:tenantId', requireRole('admin'), (req, res, next) => tenantController.getTenantDetail(req, res, next));
 router.patch('/tenants/:tenantId/notes', requireRole('OWNER', 'MANAGER', 'super_admin', 'superadmin', 'admin'), (req, res, next) =>
   tenantController.updateTenantNotes(req, res, next)
 );
 
 // App Access & Security Management (PIN Reset, Unlink LINE, Invite Code)
-router.post('/tenants/:id/reset-pin', requireRole('OWNER', 'MANAGER', 'super_admin', 'superadmin', 'admin'), (req, res, next) =>
+router.post('/tenants/:id/reset-pin', requireRole('OWNER', 'MANAGER', 'super_admin', 'superadmin', 'admin'), entityGuard(resolvers.tenant), (req, res, next) =>
   tenantController.resetPin(req, res, next)
 );
-router.post('/tenants/:id/unlink-line', requireRole('OWNER', 'MANAGER', 'super_admin', 'superadmin', 'admin'), (req, res, next) =>
+router.post('/tenants/:id/unlink-line', requireRole('OWNER', 'MANAGER', 'super_admin', 'superadmin', 'admin'), entityGuard(resolvers.tenant), (req, res, next) =>
   tenantController.unlinkLine(req, res, next)
 );
-router.post('/tenants/:id/generate-invite', requireRole('admin'), (req, res, next) => tenantController.generateInvite(req, res, next));
+router.post('/tenants/:id/generate-invite', requireRole('admin'), entityGuard(resolvers.tenant), (req, res, next) => tenantController.generateInvite(req, res, next));
 
 // Admin User & Permission Management (Restricted to OWNER / super_admin)
 router.get('/room-owners', requireRole('admin'), (req, res, next) => adminController.getRoomOwners(req, res, next));
@@ -44,6 +46,6 @@ router.delete('/users/:id', requireRole('OWNER', 'super_admin', 'superadmin'), (
 // Issue & Complaints Management (เรื่องร้องเรียนและแจ้งซ่อมจากลูกบ้าน)
 const issueController = require('../controllers/issueController');
 router.get('/issues', requireRole('admin'), (req, res, next) => issueController.getAllIssuesForAdmin(req, res, next));
-router.put('/issues/:id', requireRole('admin'), (req, res, next) => issueController.updateIssueByAdmin(req, res, next));
+router.put('/issues/:id', requireRole('admin'), entityGuard(resolvers.issue), (req, res, next) => issueController.updateIssueByAdmin(req, res, next));
 
 module.exports = router;

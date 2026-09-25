@@ -12,11 +12,18 @@ describe('In-App Notification Bell Integration Tests', () => {
 
   beforeAll(async () => {
     const adminUser = await billingService.prisma.user.findFirst({
-      where: { role: { in: ['SUPERADMIN', 'OWNER', 'ADMIN', 'super_admin', 'owner', 'admin'] } }
+      // ต้องเป็นแอดมินสิทธิ์เต็มเท่านั้น: แอดมินระดับ admin เข้าถึงได้เฉพาะตึกที่มีสิทธิ์ และ findFirst ไม่รับประกันว่าจะได้คนไหน
+      where: { role: { in: ['SUPERADMIN', 'OWNER', 'super_admin', 'owner'] } }
     });
     adminToken = authService.generateAccessToken(adminUser);
 
     testBuilding = await billingService.prisma.building.findFirst();
+
+    await billingService.prisma.featureToggle.upsert({
+      where: { key_buildingId: { key: 'ENABLE_VEHICLE_MANAGEMENT', buildingId: testBuilding.id } },
+      update: { isActive: true },
+      create: { key: 'ENABLE_VEHICLE_MANAGEMENT', isActive: true, buildingId: testBuilding.id }
+    });
 
     testTenant = await billingService.prisma.tenant.create({
       data: { firstName: 'ทดสอบ', lastName: 'กระดิ่ง', phone: '0899988301', lineUserId: 'U_TEST_BELL_TENANT_999' }
