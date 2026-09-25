@@ -40,6 +40,26 @@ describe('Auth hardening (Phase 3)', () => {
       expect((await refresh(cookie)).statusCode).toBe(401);
     });
 
+    test('ใช้ Token เก่าซ้ำหลังพ้น grace window: เพิกถอนทั้งตระกูล แต่ตระกูลอื่นของบัญชีเดียวกันไม่กระทบ', async () => {
+      const oldCookie = cookieOf(await loginAdmin(admin.email));
+      const otherDevice = cookieOf(await loginAdmin(admin.email));
+      const rotated = cookieOf(await refresh(oldCookie));
+
+      await prisma.refreshToken.updateMany({ where: { token: oldCookie.split('=')[1] }, data: { usedAt: new Date(Date.now() - 60 * 1000) } });
+      expect((await refresh(oldCookie)).statusCode).toBe(401);
+
+      expect((await refresh(rotated)).statusCode).toBe(401);
+      expect((await refresh(otherDevice)).statusCode).toBe(200);
+    });
+
+    test('ใช้ Token เก่าซ้ำภายใน grace window: ปฏิเสธเฉย ๆ ตระกูลยังใช้ต่อได้', async () => {
+      const oldCookie = cookieOf(await loginAdmin(admin.email));
+      const rotated = cookieOf(await refresh(oldCookie));
+
+      expect((await refresh(oldCookie)).statusCode).toBe(401);
+      expect((await refresh(rotated)).statusCode).toBe(200);
+    });
+
     test('role หลังต่ออายุมาจาก DB ล่าสุด (ถูกลดสิทธิ์แล้วมีผลทันที) และไม่ฝัง role/email ใน Refresh Token', async () => {
       const login = await loginAdmin(admin.email);
       const cookie = cookieOf(login);

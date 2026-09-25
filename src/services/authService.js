@@ -3,6 +3,8 @@ const jwt = require('jsonwebtoken');
 const config = require('../config/env');
 const prisma = require('../config/prisma');
 
+// เปิดหลายแท็บ/รีเฟรชซ้อนกันเป็นเรื่องปกติ: ใช้ Token ที่เพิ่งหมุนซ้ำภายในช่วงนี้ไม่ถือเป็นการขโมย
+const REUSE_GRACE_MS = 10 * 1000;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
@@ -82,11 +84,12 @@ class AuthService {
    * บันทึก Refresh Token ลงใน Database (ผ่าน Prisma RefreshToken model)
    * @param {number|string} userId
    * @param {string} token
+   * @param {string} [familyId] ตระกูลเดิมตอนหมุน Token (ไม่ส่ง = Login ใหม่ DB สร้างตระกูลใหม่ให้)
    */
-  async saveRefreshToken(userId, token) {
+  async saveRefreshToken(userId, token, familyId) {
     // ต้องล้มเหลวให้เห็น: ถ้าเก็บไม่สำเร็จแล้วปล่อยผ่าน ผู้ใช้จะได้ Token ที่ต่ออายุไม่ได้ (rotate ตรวจกับ DB)
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 วัน
-    await prisma.refreshToken.create({ data: { userId, token, expiresAt } });
+    await prisma.refreshToken.create({ data: { userId, token, expiresAt, ...(familyId && { familyId }) } });
   }
 
   /**
@@ -94,15 +97,25 @@ class AuthService {
    * - หาบัญชีด้วย id ใน users ก่อน แล้ว tenants (ห้ามใช้ email: email ผู้เช่าไปตรงกับ email แอดมินแล้วได้ role แอดมิน)
    * - บัญชีถูกลบแล้วต้องต่ออายุไม่ได้ และ DB มีปัญหาต้องล้มเหลว (fail-closed) ไม่ปล่อยผ่าน
    * - ผู้เช่าได้ claims ครบเหมือนตอน Login (tenantId/lineUserId/roomId/buildingId/role) จาก buildTenantUserPayload
-   * ponytail: ยังไม่ตรวจการนำ Token เก่ามาใช้ซ้ำแล้วเพิกถอนทั้งชุด (reuse detection) — ใช้ซ้ำแล้วแค่ถูกปฏิเสธ
+   * - Token ที่หมุนแล้วเก็บแถวไว้ (usedAt) ถ้านำมาใช้ซ้ำหลังพ้น REUSE_GRACE_MS = มีสำเนา Token หลุด -> เพิกถอนทั้งตระกูล
+   *   ภายใน Grace Window (เปิดหลายแท็บ/รีเฟรชซ้อนกัน) ปฏิเสธเฉย ๆ ไม่เพิกถอน
    * @param {string} oldRefreshToken
    */
   async rotateRefreshToken(oldRefreshToken) {
     const decoded = this.verifyRefreshToken(oldRefreshToken);
 
-    // ใช้ Token ครั้งเดียว: ลบสำเร็จ 1 แถว = ผู้เรียกคนนี้ได้สิทธิ์ต่ออายุ (เรียกซ้อนสองครั้งพร้อมกัน ตัวหลังได้ count = 0)
-    const { count } = await prisma.refreshToken.deleteMany({ where: { token: oldRefreshToken, userId: decoded.id } });
+    // ใช้ Token ครั้งเดียว: มาร์ก usedAt สำเร็จ 1 แถว = ผู้เรียกคนนี้ได้สิทธิ์ต่ออายุ (เรียกซ้อนสองครั้งพร้อมกัน ตัวหลังได้ count = 0)
+    const now = new Date();
+    const { count } = await prisma.refreshToken.updateMany({
+      where: { token: oldRefreshToken, userId: decoded.id, usedAt: null },
+      data: { usedAt: now }
+    });
+    const row = await prisma.refreshToken.findUnique({ where: { token: oldRefreshToken } });
     if (count === 0) {
+      if (row?.usedAt && now - row.usedAt > REUSE_GRACE_MS) {
+        await prisma.refreshToken.deleteMany({ where: { familyId: row.familyId } });
+        console.warn(`⚠️ พบการใช้ Refresh Token ซ้ำ เพิกถอนทั้งตระกูลของ user ${decoded.id}`);
+      }
       throw new Error('Refresh Token ไม่ถูกต้องหรือถูกเพิกถอนไปแล้ว');
     }
 
@@ -122,12 +135,13 @@ class AuthService {
     }
 
     if (!userPayload) {
+      await prisma.refreshToken.deleteMany({ where: { familyId: row.familyId } });
       throw new Error('ไม่พบบัญชีผู้ใช้งานนี้ในระบบแล้ว กรุณาเข้าสู่ระบบใหม่');
     }
 
     const newAccessToken = this.generateAccessToken(userPayload);
     const newRefreshToken = this.generateRefreshToken(userPayload);
-    await this.saveRefreshToken(userPayload.id, newRefreshToken);
+    await this.saveRefreshToken(userPayload.id, newRefreshToken, row.familyId);
 
     return {
       accessToken: newAccessToken,
@@ -142,10 +156,18 @@ class AuthService {
    */
   async revokeRefreshToken(token) {
     try {
-      await prisma.refreshToken.deleteMany({ where: { token } });
+      const row = await prisma.refreshToken.findUnique({ where: { token } });
+      if (row) await prisma.refreshToken.deleteMany({ where: { familyId: row.familyId } });
     } catch (error) {
       console.warn('⚠️ ไม่สามารถลบ Refresh Token จาก DB ได้:', error.message);
     }
+  }
+
+  /**
+   * ล้าง Refresh Token ที่หมดอายุ (แถวที่หมุนแล้วไม่ถูกลบตอนใช้ จึงต้องล้างเป็นระยะ)
+   */
+  async purgeExpiredRefreshTokens() {
+    return prisma.refreshToken.deleteMany({ where: { expiresAt: { lt: new Date() } } });
   }
 }
 

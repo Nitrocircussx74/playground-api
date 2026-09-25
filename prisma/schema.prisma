@@ -1077,9 +1077,14 @@ model RefreshToken {
   id        Int      @id @default(autoincrement())
   userId    String   @map("user_id") @db.Uuid
   token     String   @unique
+  /// ตระกูลของ Session เดียวกัน (Login ครั้งหนึ่ง = 1 ตระกูล, Token ที่หมุนต่อมาอยู่ตระกูลเดิม) ใช้เพิกถอนทั้งชุดเมื่อพบการใช้ Token ซ้ำ
+  familyId  String   @default(dbgenerated("gen_random_uuid()")) @map("family_id") @db.Uuid
+  /// เวลาที่ Token นี้ถูกใช้หมุนไปแล้ว (เก็บแถวไว้เพื่อจับการนำ Token เก่ากลับมาใช้)
+  usedAt    DateTime? @map("used_at")
   expiresAt DateTime @map("expires_at")
   createdAt DateTime @default(now()) @map("created_at")
 
+  @@index([familyId])
   @@map("refresh_tokens")
 }
 

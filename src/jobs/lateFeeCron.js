@@ -1,5 +1,6 @@
 const cron = require('node-cron');
 const lateFeeService = require('../services/lateFeeService');
+const authService = require('../services/authService');
 
 let cronTask = null;
 
@@ -34,6 +35,7 @@ function initLateFeeCron() {
     '0 0 * * *',
     async () => {
       await runLateFeeWorker();
+      await authService.purgeExpiredRefreshTokens().catch((err) => console.error('[Cron] purge refresh tokens failed:', err.message));
     },
     {
       scheduled: true,
