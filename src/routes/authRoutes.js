@@ -1,6 +1,5 @@
 const express = require('express');
 const router = express.Router();
-const passport = require('passport');
 const rateLimit = require('express-rate-limit');
 const authController = require('../controllers/authController');
 const authenticateJWT = require('../middlewares/authMiddleware');
@@ -21,25 +20,6 @@ const pinAttemptLimiter = rateLimit({
     message: 'พยายามเข้าสู่ระบบบ่อยเกินไป กรุณาลองใหม่อีกครั้งใน 15 นาที'
   }
 });
-
-/**
- * @route   GET /auth/google
- * @desc    เริ่มต้นกระบวนการยืนยันตัวตนด้วย Google OAuth 2.0
- */
-router.get(
-  '/google',
-  passport.authenticate('google', { scope: ['profile', 'email'], session: false })
-);
-
-/**
- * @route   GET /auth/google/callback
- * @desc    Google OAuth Callback เมื่อผู้ใช้ยืนยันตัวตนสำเร็จ ออก Access Token และ Refresh Token Cookie
- */
-router.get(
-  '/google/callback',
-  passport.authenticate('google', { failureRedirect: '/login', session: false }),
-  authController.googleCallback
-);
 
 /**
  * @route   POST /auth/login

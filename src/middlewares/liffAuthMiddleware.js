@@ -13,7 +13,8 @@ const lineService = require('../services/lineService');
  * @returns {Promise<{ sub: string, aud?: string }>} Payload ที่ verify แล้ว (sub คือ lineUserId ที่เชื่อถือได้)
  */
 async function verifyLineIdToken(idToken) {
-  if (config.nodeEnv === 'test' || config.line.mockMode) {
+  // mockMode ใช้ได้เฉพาะนอก Production (guard ตอน boot ใน config/env.js กันไว้แล้ว อีกชั้นกันกรณีถูกเรียกโดยไม่ผ่าน boot)
+  if (config.nodeEnv === 'test' || (config.line.mockMode && config.nodeEnv !== 'production')) {
     return { sub: idToken, aud: config.line.liffChannelId || 'mock_channel_id' };
   }
 

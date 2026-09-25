@@ -233,28 +233,6 @@ class AuthController {
     }
   }
 
-  async googleCallback(req, res, next) {
-    try {
-      const user = req.user;
-      if (!user) return res.status(401).json({ success: false, message: 'ยืนยันตัวตนผ่าน Google ไม่สำเร็จ' });
-
-      const accessToken = authService.generateAccessToken(user);
-      const refreshToken = authService.generateRefreshToken(user);
-
-      await authService.saveRefreshToken(user.id, refreshToken);
-      setRefreshTokenCookie(res, refreshToken, req);
-
-      return res.status(200).json({
-        success: true,
-        message: 'เข้าสู่ระบบด้วย Google สำเร็จ',
-        accessToken,
-        user
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
-
   async refresh(req, res, next) {
     try {
       const refreshToken = req.cookies.refreshToken;

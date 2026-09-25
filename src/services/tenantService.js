@@ -1,4 +1,5 @@
 const prisma = require('../config/prisma');
+const { assertCanClaimByPhone } = require('../utils/phoneClaim');
 const auditService = require('./auditService');
 const lineService = require('./lineService');
 const authService = require('./authService');
@@ -804,14 +805,8 @@ class TenantService {
       throw error;
     }
 
-    // ป้องกัน Account Takeover: ถ้าบัญชีนี้ผูกกับ LINE คนอื่นไว้แล้ว ห้ามให้ LINE ปัจจุบัน
-    // (ที่แค่รู้เบอร์โทรของเจ้าของบัญชี) มาแย่งผูกทับแทนเจ้าของตัวจริง
-    if (tenant.lineUserId && lineUserId && tenant.lineUserId !== lineUserId) {
-      const error = new Error('บัญชีนี้ผูกกับ LINE อื่นไว้แล้ว กรุณาติดต่อนิติบุคคลประจำหอพักเพื่อยกเลิกการผูกก่อน');
-      error.statusCode = 403;
-      error.code = 'ACCOUNT_ALREADY_LINKED';
-      throw error;
-    }
+    // ป้องกัน Account Takeover: ยึดด้วยเบอร์โทรได้เฉพาะบัญชีที่ยังไม่มีใครใช้ หรือ LINE ที่ผูกไว้แล้วเท่านั้น (ดู utils/phoneClaim.js)
+    await assertCanClaimByPhone(tenant, lineUserId);
 
     // ตรวจสอบว่า lineUserId นี้เคยผูกกับผู้เช่ารายอื่นหรือไม่
     if (lineUserId) {

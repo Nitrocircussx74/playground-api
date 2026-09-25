@@ -5,6 +5,9 @@ const prisma = require('./config/prisma');
 const { initLateFeeCron } = require('./jobs/lateFeeCron');
 const { initLeaseExpiryCron } = require('./jobs/leaseExpiryCron');
 
+// ปฏิเสธการบูตบน Production ถ้า secret/โหมด mock ไม่ปลอดภัย (ดู config/env.js)
+config.assertProductionConfig();
+
 let server;
 
 function startServer() {
@@ -14,7 +17,6 @@ function startServer() {
     console.log(`Environment: ${config.nodeEnv}`);
     console.log(`Health Check: http://localhost:${config.port}/`);
     console.log(`Protected API: http://localhost:${config.port}/api`);
-    console.log(`Google Auth: http://localhost:${config.port}/auth/google`);
     console.log(`=================================`);
 
     // ทดสอบเชื่อมต่อกับ Database ผ่าน Prisma

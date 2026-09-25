@@ -7,7 +7,6 @@ const rateLimit = require('express-rate-limit');
 const path = require('path');
 
 const config = require('./config/env');
-const passport = require('./config/passport');
 const routes = require('./routes');
 const { jsonReplacer } = require('./utils/secrets');
 const { notFoundHandler, errorHandler } = require('./middlewares/errorMiddleware');
@@ -79,8 +78,6 @@ app.use(
     etag: true
   })
 );
-
-app.use(passport.initialize());
 
 app.use('/', routes);
 
