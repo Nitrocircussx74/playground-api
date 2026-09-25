@@ -48,6 +48,7 @@ describe('ปิดสิทธิ์เข้าพักเมื่อจบ�
 
   afterAll(async () => {
     await prisma.leaseContract.deleteMany({ where: { roomId: { in: roomIds } } });
+    await prisma.meterRecord.deleteMany({ where: { roomId: { in: roomIds } } });
     await prisma.moveOutRecord.deleteMany({ where: { lease: { roomId: { in: roomIds } } } }).catch(() => {});
     await prisma.room.deleteMany({ where: { id: { in: roomIds } } });
     await prisma.tenant.deleteMany({ where: { id: { in: tenantIds } } });
