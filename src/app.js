@@ -14,11 +14,14 @@ const { notFoundHandler, errorHandler } = require('./middlewares/errorMiddleware
 
 const app = express();
 
-// Enable trust proxy for Cloudflare Tunnel & reverse proxies to correctly detect HTTPS / Client IP
-app.set('trust proxy', 1);
+// จำนวน Proxy หน้า API ตั้งผ่าน TRUST_PROXY (ดู config/env.js) — ตั้งผิดแล้ว Rate Limit จะเพี้ยน:
+// น้อยเกินไป = ทุกคนใช้ IP เดียวกัน (ล็อกกันทั้งระบบ), มากเกินไป = Client ปลอม X-Forwarded-For หลบ Limit ได้
+app.set('trust proxy', config.trustProxy);
 
 if (config.nodeEnv !== 'test') {
-  app.use(morgan('dev'));
+  // ลิงก์ดาวน์โหลด PDF/QR ของ LIFF แนบ JWT ใน ?token= ต้องไม่ให้ค่านี้ไปอยู่ใน Log
+  morgan.token('safe-url', (req) => req.originalUrl.replace(/([?&](?:token|t)=)[^&]*/g, '$1[redacted]'));
+  app.use(morgan(':method :safe-url :status :response-time ms - :res[content-length]'));
 }
 
 // Disable restrictive Content Security Policy and enable Cross-Origin Access for Development & Cloudflare Tunnels

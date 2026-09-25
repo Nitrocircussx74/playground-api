@@ -556,6 +556,11 @@ class InvoiceController {
         return res.status(404).json({ success: false, message: 'ไม่พบใบแจ้งหนี้ที่ต้องการลบ' });
       }
 
+      // บิลที่ชำระแล้วเป็นหลักฐานทางการเงิน ห้ามลบ (ถ้าบันทึกผิดให้แก้สถานะ/ออกใบใหม่แทน)
+      if (invoice.status === 'paid') {
+        return res.status(409).json({ success: false, message: 'ไม่สามารถลบบิลที่ชำระเงินแล้ว' });
+      }
+
       await billingService.prisma.invoice.delete({ where: { id } });
 
       const auditService = require('../services/auditService');

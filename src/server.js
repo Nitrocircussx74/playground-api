@@ -1,29 +1,9 @@
-const { execSync } = require('child_process');
 const app = require('./app');
 const config = require('./config/env');
 const prisma = require('./config/prisma');
 
 const { initLateFeeCron } = require('./jobs/lateFeeCron');
 const { initLeaseExpiryCron } = require('./jobs/leaseExpiryCron');
-
-function killProcessOnPort(port) {
-  try {
-    if (process.platform === 'win32') {
-      execSync(`for /f "tokens=5" %a in ('netstat -aon ^| findstr :${port}') do taskkill /f /pid %a`, { stdio: 'ignore' });
-    } else {
-      const pids = execSync(`lsof -ti :${port}`, { encoding: 'utf8' })
-        .split('\n')
-        .map((p) => p.trim())
-        .filter((p) => p && p !== String(process.pid) && p !== String(process.ppid));
-
-      if (pids.length > 0) {
-        execSync(`kill -9 ${pids.join(' ')}`, { stdio: 'ignore' });
-      }
-    }
-  } catch {
-    // Process already terminated or not found
-  }
-}
 
 let server;
 
@@ -53,15 +33,13 @@ function startServer() {
   });
 
   server.on('error', (err) => {
-    if (err.code === 'EADDRINUSE') {
-      console.warn(`[WARN] Port ${config.port} is already in use. Killing previous process and restarting...`);
-      killProcessOnPort(config.port);
-      setTimeout(() => {
-        startServer();
-      }, 500);
-    } else {
-      console.error('Server error:', err);
-    }
+    // ไม่ไล่ kill process อื่นที่ถือ Port อยู่ (เดิมสั่ง kill -9 ทุก Environment) — แจ้งแล้วจบ ให้ผู้ดูแลเลือกจัดการเอง
+    console.error(
+      err.code === 'EADDRINUSE'
+        ? `[FATAL] Port ${config.port} ถูกใช้งานอยู่แล้ว กรุณาปิด Process เดิมหรือเปลี่ยน PORT`
+        : `[FATAL] Server error: ${err.message}`
+    );
+    process.exit(1);
   });
 }
 

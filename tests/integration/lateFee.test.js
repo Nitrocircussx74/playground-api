@@ -14,7 +14,7 @@ describe('Automated Late Fee System Integration Tests', () => {
   beforeAll(async () => {
     // 1. Fetch admin user
     const adminUser = await billingService.prisma.user.findFirst({
-      where: { role: { in: ['super_admin', 'admin', 'OWNER'] } }
+      where: { role: { in: ['super_admin', 'OWNER'] } }
     });
     adminToken = authService.generateAccessToken(adminUser);
 

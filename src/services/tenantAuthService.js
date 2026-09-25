@@ -3,6 +3,23 @@ const prisma = require('../config/prisma');
 const authService = require('./authService');
 const { verifyLineIdToken } = require('../middlewares/liffAuthMiddleware');
 const { getPhoneVariants } = require('../utils/normalizePhone');
+const attempts = require('../utils/attemptLimiter');
+
+const LOCKED_RESPONSE = {
+  statusCode: 429,
+  body: { success: false, code: 'TOO_MANY_ATTEMPTS', message: 'กรอกรหัสผิดหลายครั้งเกินไป บัญชีนี้ถูกล็อกชั่วคราว กรุณาลองใหม่อีกครั้งใน 15 นาที' }
+};
+
+/**
+ * เทียบรหัสโดยนับความพยายามผิดต่อบัญชี: คืน true/false ตามผลเทียบ, คืน null เมื่อบัญชีถูกล็อก (ยังไม่เทียบรหัสเลย)
+ */
+async function verifyWithLimit(accountKey, compare) {
+  if (attempts.isLocked(accountKey)) return null;
+  const ok = await compare();
+  if (ok) attempts.clear(accountKey);
+  else attempts.recordFailure(accountKey);
+  return ok;
+}
 
 const TENANT_ROOM_INCLUDE = { rooms: { include: { building: true } } };
 
@@ -181,7 +198,8 @@ class TenantAuthService {
       };
     }
 
-    const isMatch = await bcrypt.compare(String(pin), tenant.pinHash);
+    const isMatch = await verifyWithLimit(tenant.id, () => bcrypt.compare(String(pin), tenant.pinHash));
+    if (isMatch === null) return LOCKED_RESPONSE;
     if (!isMatch) {
       return { statusCode: 401, body: { success: false, code: 'INVALID_PIN', message: 'รหัส PIN 6 หลักไม่ถูกต้อง' } };
     }
@@ -554,7 +572,8 @@ class TenantAuthService {
 
     // หมายเหตุ: ไม่เช็คว่า tenant.lineUserId ตรงกับ lineUserId ปัจจุบันหรือไม่ เพราะ Endpoint นี้มีไว้รองรับ
     // Centralized User Identity (1 ผู้เช่า : หลาย LINE OA ID ต่อตึก) โดยตั้งใจ — ตัวพิสูจน์ตัวตนจริงคือ PIN ด้านล่าง
-    const isMatch = await bcrypt.compare(String(pin), tenant.pinHash);
+    const isMatch = await verifyWithLimit(tenant.id, () => bcrypt.compare(String(pin), tenant.pinHash));
+    if (isMatch === null) return LOCKED_RESPONSE;
     if (!isMatch) {
       return { statusCode: 401, body: { success: false, code: 'INVALID_PIN', message: 'รหัส PIN 6 หลักไม่ถูกต้อง' } };
     }
@@ -622,7 +641,8 @@ class TenantAuthService {
         };
       }
 
-      const isMatch = await bcrypt.compare(password, tenant.passwordHash);
+      const isMatch = await verifyWithLimit(tenant.id, () => bcrypt.compare(password, tenant.passwordHash));
+      if (isMatch === null) return LOCKED_RESPONSE;
       if (!isMatch) {
         return { statusCode: 401, body: { success: false, message: 'เบอร์โทรศัพท์หรือรหัสผ่านไม่ถูกต้อง' } };
       }
@@ -651,6 +671,9 @@ class TenantAuthService {
     });
 
     if (user && user.passwordHash) {
+      const accountKey = `user:${user.id}`;
+      if (attempts.isLocked(accountKey)) return LOCKED_RESPONSE;
+
       let isMatch = false;
       if (user.passwordHash.includes(':')) {
         const [salt, key] = user.passwordHash.split(':');
@@ -660,6 +683,9 @@ class TenantAuthService {
       } else {
         isMatch = await bcrypt.compare(password, user.passwordHash);
       }
+
+      if (isMatch) attempts.clear(accountKey);
+      else attempts.recordFailure(accountKey);
 
       if (isMatch) {
         const accessToken = authService.generateAccessToken(user);
@@ -754,15 +780,17 @@ class TenantAuthService {
     if (tenant) {
       const pinHash = tenant.pinHash || tenant.passwordHash;
       if (pinHash) {
-        isValidPin = await bcrypt.compare(String(pin).trim(), pinHash);
+        isValidPin = await verifyWithLimit(tenant.id, () => bcrypt.compare(String(pin).trim(), pinHash));
       }
     } else {
       // Fallback: ค้นหาในตาราง User
       userAccount = await prisma.user.findFirst({ where: { OR: phoneConditions } });
       if (userAccount && userAccount.passwordHash) {
-        isValidPin = await bcrypt.compare(String(pin).trim(), userAccount.passwordHash);
+        isValidPin = await verifyWithLimit(`user:${userAccount.id}`, () => bcrypt.compare(String(pin).trim(), userAccount.passwordHash));
       }
     }
+
+    if (isValidPin === null) return LOCKED_RESPONSE;
 
     if (!isValidPin) {
       return { statusCode: 401, body: { success: false, message: 'เบอร์โทรศัพท์หรือรหัส PIN ไม่ถูกต้อง' } };

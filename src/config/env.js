@@ -6,6 +6,11 @@ dotenv.config();
 module.exports = {
   port: process.env.PORT || 3000,
   nodeEnv: process.env.NODE_ENV || 'development',
+  // จำนวน Proxy ที่เชื่อถือหน้า API (ใช้หา IP จริงของ Client สำหรับ Rate Limit) — ตั้งให้ตรงกับโครงสร้างจริง:
+  // 0 = ไม่มี Proxy (Client ต่อตรง: กัน Client ปลอม X-Forwarded-For), 1 = Proxy/Tunnel ชั้นเดียว (ค่าเริ่มต้น), 2 = Cloudflare + Nginx
+  trustProxy: Number.isInteger(Number(process.env.TRUST_PROXY)) && process.env.TRUST_PROXY !== '' && process.env.TRUST_PROXY !== undefined
+    ? Number(process.env.TRUST_PROXY)
+    : 1,
   db: {
     host: process.env.DB_HOST || 'localhost',
     port: parseInt(process.env.DB_PORT || '5432', 10),
