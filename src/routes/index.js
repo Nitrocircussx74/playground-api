@@ -44,7 +44,6 @@ router.use('/api/v1/auth', authRoutes);
 router.use('/api/v1/liff', liffRoutes);
 router.use('/api/liff', liffRoutes);
 router.use('/api', feedbackRoutes);
-router.get('/api/settings', (req, res, next) => liffController.getSettingsForTenant(req, res, next));
 
 // Feature Toggles (Public GET for initial app load, Protected PUT for admin)
 router.use('/api/features', featureRoutes);
