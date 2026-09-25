@@ -317,7 +317,7 @@
 
 ### Phase 23 (2026-09-25): Security, Billing & Auth Audit ทั้งระบบ
 
-- **บริบท**: ตรวจ flow ทั้งระบบหา logic ที่ผิด/แปลก แล้วแก้เป็นเฟส (PR รวม `playground-api#5`, `playground-frontend#10`, branch `fix/auth-phase-3`) — เทสต์ backend 372/372 (57 suites), frontend 26/26
+- **บริบท**: ตรวจ flow ทั้งระบบหา logic ที่ผิด/แปลก แล้วแก้เป็นเฟส (PR รวม `playground-api#5`, `playground-frontend#10`, branch `fix/auth-phase-3`) — เทสต์ backend 373/373 (57 suites), frontend 26/26
 - **เฟส 0-1 (สิทธิ์/ความลับ)**: DB เทสต์แยก (`TEST_DATABASE_URL`), ตรวจสิทธิ์รายตึกทุก endpoint, ซ่อน hash/ความลับของตึกจาก `res.json`
 - **เฟส 2 (ยอดเงิน)**: อัตราน้ำไฟจาก `BuildingSetting` เป็นต้นทางเดียว (ไม่มีขั้นต่ำน้ำ hardcode), `dueDate` ตามรอบบิล (`dueDateForCycle`: ถ้าบิลย้อนหลังพ้นกำหนดแล้วให้ครบกำหนดวันนี้)
 - **เฟส 3 (ยืนยันตัวตน)**: Refresh Token Rotation + Reuse Detection (`familyId`/`usedAt`, grace 10 วินาที, race ไม่ลบ cookie), ยึดบัญชีด้วยเบอร์ต้องไม่เปลี่ยน UX ผู้เช่าทั่วไป, production boot guard, ตัด Google login, เปลี่ยนรหัสผ่านแอดมินแล้ว session อื่นหลุด

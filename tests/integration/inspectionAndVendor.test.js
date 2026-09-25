@@ -16,8 +16,9 @@ describe('Room Inspection and Vendor Management Integration Tests', () => {
     adminUser = await prisma.user.findFirst({
       where: { role: { in: ['admin', 'superadmin'] } }
     });
-    testBuilding = await prisma.building.findFirst();
-    testLease = await prisma.leaseContract.findFirst();
+    // findFirst ไม่รับประกันลำดับ (แถวที่ถูกอัปเดตย้ายตำแหน่ง) ตึกที่ให้สิทธิ์ต้องเป็นตึกของสัญญาที่ใช้ทดสอบเสมอ
+    testLease = await prisma.leaseContract.findFirst({ where: { buildingId: { not: null } } });
+    testBuilding = await prisma.building.findUnique({ where: { id: testLease.buildingId } });
 
     adminToken = authService.generateAccessToken(adminUser);
 
