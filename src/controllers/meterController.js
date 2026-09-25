@@ -169,8 +169,7 @@ class MeterController {
       }
 
       const { waterRate, electricRate, dueDateDay } = await billingService.getBillingRates(buildingId);
-      const now = new Date();
-      const dueDate = new Date(now.getFullYear(), now.getMonth() + 1, dueDateDay);
+      const dueDate = billingService.dueDateForCycle(billingCycle, dueDateDay);
       const round2 = billingService.round2;
 
       const { invoices: resultInvoices, skipped } = await billingService.prisma.$transaction(async (tx) => {

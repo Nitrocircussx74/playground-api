@@ -12,11 +12,22 @@ const DEFAULT_COMMON_FEE = 100.0;
 
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
+/**
+ * วันครบกำหนดของรอบบิล "MM-YYYY" = วันที่ dueDateDay ของเดือนถัดจากรอบบิล (ไม่ผูกกับวันที่กดออกบิล)
+ * ถ้าเดือนนั้นสั้นกว่า dueDateDay (เช่น 31 ในเดือนกุมภาพันธ์) ใช้วันสุดท้ายของเดือน
+ */
+const dueDateForCycle = (billingCycle, dueDateDay) => {
+  const [m, y] = String(billingCycle).split('-').map(Number);
+  const lastDay = new Date(y, m + 1, 0).getDate();
+  return new Date(y, m, Math.min(dueDateDay, lastDay));
+};
+
 class BillingService {
   constructor() {
     this.prisma = prisma;
     this.DEFAULT_COMMON_FEE = DEFAULT_COMMON_FEE;
     this.round2 = round2;
+    this.dueDateForCycle = dueDateForCycle;
   }
 
   /**
@@ -157,7 +168,7 @@ class BillingService {
       throw new Error(`Room ${room.roomNumber} has no active tenant assigned`);
     }
 
-    const { waterRate, electricRate } = await this.getBillingRates(room.buildingId);
+    const { waterRate, electricRate, dueDateDay } = await this.getBillingRates(room.buildingId);
 
     let waterTotal = 0;
     let electricTotal = 0;
@@ -206,7 +217,7 @@ class BillingService {
         const repairs = await this.collectRepairCharges(tx, roomId, existingInvoice?.id);
         const finalOtherFee = (Number(otherFee) || 0) + repairs.total;
         const finalOtherFeeNote = [otherFeeNote, repairs.note].filter(Boolean).join(' | ') || null;
-        const finalDueDate = dueDate ? new Date(dueDate) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+        const finalDueDate = dueDate ? new Date(dueDate) : dueDateForCycle(billingCycle, dueDateDay);
 
         let savedInvoice;
 
