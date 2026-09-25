@@ -1,5 +1,6 @@
 const xlsx = require('xlsx');
 const billingService = require('../services/billingService');
+const { formatBillingCycle } = require('../utils/formatBillingCycle');
 
 class MeterImportController {
   /**
@@ -22,28 +23,24 @@ class MeterImportController {
       const rooms = await billingService.prisma.room.findMany({
         where: { buildingId, status: 'occupied' },
         orderBy: { roomNumber: 'asc' },
-        include: {
-          tenant: true,
-          meterRecords: {
-            orderBy: { recordedAt: 'desc' },
-            take: 10
-          }
-        }
+        include: { tenant: true }
       });
 
-      // Construct Excel JSON rows
-      const templateData = rooms.map((room) => {
-        const waterMeter = room.meterRecords.find((m) => m.meterType === 'water');
-        const electricMeter = room.meterRecords.find((m) => m.meterType === 'electric');
-        return {
+      // เลขเดิมนิยามเดียวกับตอนออกบิล (getPreviousReading: ตามรอบบิล + เลข ณ วันเข้าพักของผู้เช่าปัจจุบัน)
+      const cycle = req.query.billingCycle || formatBillingCycle(new Date());
+      const templateData = [];
+      for (const room of rooms) {
+        const water = await billingService.getPreviousReading(billingService.prisma, room.id, 'water', cycle);
+        const electric = await billingService.getPreviousReading(billingService.prisma, room.id, 'electric', cycle);
+        templateData.push({
           'เลขห้องพัก (Room Number)': room.roomNumber,
           'ชื่อผู้เช่า (Tenant Name)': room.tenant ? `${room.tenant.firstName} ${room.tenant.lastName}` : '-',
-          'มิเตอร์น้ำเดิม (Previous Water)': waterMeter ? Number(waterMeter.currentReading) : 0,
+          'มิเตอร์น้ำเดิม (Previous Water)': water.previousReading,
           'มิเตอร์น้ำใหม่ (New Water)': '',
-          'มิเตอร์ไฟเดิม (Previous Electric)': electricMeter ? Number(electricMeter.currentReading) : 0,
+          'มิเตอร์ไฟเดิม (Previous Electric)': electric.previousReading,
           'มิเตอร์ไฟใหม่ (New Electric)': ''
-        };
-      });
+        });
+      }
 
       const worksheet = xlsx.utils.json_to_sheet(templateData);
       const workbook = xlsx.utils.book_new();
@@ -95,14 +92,9 @@ class MeterImportController {
       // Fetch all rooms in this building
       const rooms = await billingService.prisma.room.findMany({
         where: { buildingId },
-        include: {
-          tenant: true,
-          meterRecords: {
-            orderBy: { recordedAt: 'desc' },
-            take: 10
-          }
-        }
+        include: { tenant: true }
       });
+      const cycle = req.body?.billingCycle || req.query.billingCycle || formatBillingCycle(new Date());
 
       const roomsMap = new Map();
       rooms.forEach((r) => roomsMap.set(String(r.roomNumber).trim(), r));
@@ -136,11 +128,8 @@ class MeterImportController {
           errorMessage = `ห้อง ${rawRoomNumber} เป็นห้องว่าง (ไม่มีผู้เช่า)`;
         }
 
-        const waterMeter = room?.meterRecords.find((m) => m.meterType === 'water');
-        const electricMeter = room?.meterRecords.find((m) => m.meterType === 'electric');
-
-        const oldWater = waterMeter ? Number(waterMeter.currentReading) : 0;
-        const oldElectric = electricMeter ? Number(electricMeter.currentReading) : 0;
+        const oldWater = room ? (await billingService.getPreviousReading(billingService.prisma, room.id, 'water', cycle)).previousReading : 0;
+        const oldElectric = room ? (await billingService.getPreviousReading(billingService.prisma, room.id, 'electric', cycle)).previousReading : 0;
 
         const newWater = newWaterRaw !== '' ? Number(newWaterRaw) : NaN;
         const newElectric = newElectricRaw !== '' ? Number(newElectricRaw) : NaN;

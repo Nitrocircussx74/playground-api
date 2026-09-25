@@ -25,6 +25,8 @@ const config = {
     refreshSecret: process.env.JWT_REFRESH_SECRET || 'default_refresh_secret_key',
     refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d'
   },
+  // Base URL สาธารณะของ API สำหรับสร้างลิงก์ไฟล์อัปโหลด (เช่น https://api.example.com) ดู utils/publicUrl.js
+  publicBaseUrl: (process.env.PUBLIC_BASE_URL || '').replace(/\/+$/, ''),
   clientUrl: process.env.CLIENT_URL || 'http://localhost:5173',
   // รายชื่อ Origin ที่อนุญาตให้เรียก API ได้ตอน Production (คั่นด้วย , เช่น "https://myapp.com,https://liff.line.me")
   allowedOrigins: (process.env.ALLOWED_ORIGINS || '')

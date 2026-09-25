@@ -1,4 +1,5 @@
 const billingService = require('../services/billingService');
+const publicUrl = require('../utils/publicUrl');
 const { isFeatureEnabled } = require('../middlewares/requireFeatureMiddleware');
 const tenantService = require('../services/tenantService');
 const tenantAuthService = require('../services/tenantAuthService');
@@ -316,7 +317,7 @@ class LiffController {
         return res.status(403).json({ success: false, message: 'ฟีเจอร์ชำระเงินออนไลน์ถูกปิดใช้งานสำหรับตึกนี้' });
       }
 
-      const slipUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+      const slipUrl = publicUrl(req, req.file.filename);
       const { updatedInvoice, verification } = await billingService.uploadSlipFromLiff({
         id,
         lineUserId,

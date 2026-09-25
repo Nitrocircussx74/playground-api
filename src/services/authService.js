@@ -116,7 +116,9 @@ class AuthService {
         await prisma.refreshToken.deleteMany({ where: { familyId: row.familyId } });
         console.warn(`⚠️ พบการใช้ Refresh Token ซ้ำ เพิกถอนทั้งตระกูลของ user ${decoded.id}`);
       }
-      throw new Error('Refresh Token ไม่ถูกต้องหรือถูกเพิกถอนไปแล้ว');
+      // แพ้ race ภายใน grace window (เปิดหลายแท็บพร้อมกัน) ตระกูลยังดีอยู่: ให้ Controller ไม่ลบ Cookie ที่อีกแท็บเพิ่งได้ไป
+      const lostRace = Boolean(row?.usedAt) && now - row.usedAt <= REUSE_GRACE_MS;
+      throw Object.assign(new Error('Refresh Token ไม่ถูกต้องหรือถูกเพิกถอนไปแล้ว'), lostRace && { code: 'REFRESH_RACE' });
     }
 
     let userPayload = null;

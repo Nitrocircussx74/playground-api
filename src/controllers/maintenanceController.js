@@ -3,6 +3,7 @@ const billingService = require('../services/billingService');
 const { roomScopedWhere, hasRoomScope } = require('../utils/roomScope');
 const { isFeatureEnabled } = require('../middlewares/requireFeatureMiddleware');
 const lineService = require('../services/lineService');
+const publicUrl = require('../utils/publicUrl');
 
 class MaintenanceController {
   /**
@@ -135,9 +136,7 @@ class MaintenanceController {
 
       let imageUrl = req.body.photoUrl || req.body.imageUrl || null;
       if (req.file) {
-        const protocol = req.protocol;
-        const host = req.get('host');
-        imageUrl = `${protocol}://${host}/uploads/${req.file.filename}`;
+        imageUrl = publicUrl(req, req.file.filename);
       }
 
       const newRequest = await billingService.prisma.maintenanceRequest.create({

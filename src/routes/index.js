@@ -47,7 +47,7 @@ router.use('/api', feedbackRoutes);
 router.get('/api/settings', (req, res, next) => liffController.getSettingsForTenant(req, res, next));
 
 // Feature Toggles (Public GET for initial app load, Protected PUT for admin)
-router.get('/api/features', (req, res, next) => featureRoutes.handle(req, res, next));
+router.use('/api/features', featureRoutes);
 router.use('/api/v1/features', featureRoutes);
 
 // Protected RESTful Modules (Plural & Kebab-case API Endpoints)

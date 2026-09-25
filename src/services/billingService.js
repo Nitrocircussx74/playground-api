@@ -16,10 +16,13 @@ const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
  * วันครบกำหนดของรอบบิล "MM-YYYY" = วันที่ dueDateDay ของเดือนถัดจากรอบบิล (ไม่ผูกกับวันที่กดออกบิล)
  * ถ้าเดือนนั้นสั้นกว่า dueDateDay (เช่น 31 ในเดือนกุมภาพันธ์) ใช้วันสุดท้ายของเดือน
  */
-const dueDateForCycle = (billingCycle, dueDateDay) => {
+const dueDateForCycle = (billingCycle, dueDateDay, now = new Date()) => {
   const [m, y] = String(billingCycle).split('-').map(Number);
   const lastDay = new Date(y, m + 1, 0).getDate();
-  return new Date(y, m, Math.min(dueDateDay, lastDay));
+  const due = new Date(y, m, Math.min(dueDateDay, lastDay));
+  // ออกบิลย้อนหลังหลังพ้นวันครบกำหนดของรอบนั้นแล้ว: ครบกำหนดวันนี้ ไม่ใช่ย้อนไปในอดีต (ไม่งั้นโดนค่าปรับย้อนหลังทันทีที่ส่งบิล)
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return due < today ? today : due;
 };
 
 class BillingService {
