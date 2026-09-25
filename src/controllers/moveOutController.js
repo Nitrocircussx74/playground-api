@@ -1,5 +1,6 @@
 const billingService = require('../services/billingService');
 const auditService = require('../services/auditService');
+const { releaseRoomTenancy } = require('../services/tenancyService');
 
 class MoveOutController {
   /**
@@ -109,15 +110,21 @@ class MoveOutController {
 
       // Execute Prisma Transaction
       const [updatedLease, moveOutRecord, updatedRoom] = await billingService.prisma.$transaction(async (tx) => {
-        // 1. Update LeaseContract status = ENDED
-        const lease = await tx.leaseContract.update({
-          where: { id: leaseId },
+        // 1. Update LeaseContract status = ENDED (เงื่อนไข status != ENDED อยู่ในคำสั่งเดียวกัน กันกดซ้ำพร้อมกันแล้วได้ MoveOutRecord สองใบ)
+        const { count } = await tx.leaseContract.updateMany({
+          where: { id: leaseId, status: { not: 'ENDED' } },
           data: {
             status: 'ENDED',
             actualEndDate: new Date(moveOutDate || Date.now()),
             moveOutReason: moveOutReason ? moveOutReason.trim() : null,
             adminNote: adminNote ? adminNote.trim() : existingLease.adminNote
-          },
+          }
+        });
+        if (count === 0) {
+          throw Object.assign(new Error('สัญญาเช่านี้ได้รับการแจ้งย้ายออกไปแล้ว'), { statusCode: 409 });
+        }
+        const lease = await tx.leaseContract.findUnique({
+          where: { id: leaseId },
           include: {
             room: {
               include: {
@@ -182,18 +189,8 @@ class MoveOutController {
           }
         });
 
-        // 4. ปลดผูกบัญชี LINE ของผู้เช่าที่ย้ายออก ป้องกันไม่ให้ยังเข้าใช้งาน LIFF Portal ได้ต่อหลังย้ายออกไปแล้ว
-        await tx.tenant.update({
-          where: { id: lease.tenantId },
-          data: {
-            lineUserId: null,
-            lineDisplayName: null,
-            linePictureUrl: null,
-            lineStatusMessage: null,
-            inviteCode: null,
-            inviteExpiresAt: null
-          }
-        });
+        // 4. ปิดสิทธิ์เข้าพักของทั้งห้อง (ผู้อยู่ร่วม + การผูก LINE) ป้องกันไม่ให้ยังเข้าใช้งาน LIFF Portal ได้ต่อหลังย้ายออกไปแล้ว
+        await releaseRoomTenancy(tx, room, [lease.tenantId, existingLease.room?.tenantId]);
 
         return [lease, record, room];
       });

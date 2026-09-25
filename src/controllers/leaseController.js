@@ -1,6 +1,7 @@
 const { resolveListBuildings } = require('../middlewares/buildingAccessMiddleware');
 const billingService = require('../services/billingService');
 const auditService = require('../services/auditService');
+const { releaseRoomTenancy } = require('../services/tenancyService');
 
 class LeaseController {
   /**
@@ -178,29 +179,33 @@ class LeaseController {
       const endDate = actualEndDate ? new Date(actualEndDate) : new Date();
 
       // Transaction: Update LeaseContract to ENDED & update Room to vacant & tenantId = null
-      const [updatedLease] = await billingService.prisma.$transaction([
-        billingService.prisma.leaseContract.update({
-          where: { id: leaseId },
+      const updatedLease = await billingService.prisma.$transaction(async (tx) => {
+        // เงื่อนไข status != ENDED อยู่ในคำสั่งเดียวกัน กันกดซ้ำพร้อมกัน
+        const { count } = await tx.leaseContract.updateMany({
+          where: { id: leaseId, status: { not: 'ENDED' } },
           data: {
             status: 'ENDED',
             actualEndDate: endDate,
             moveOutReason: moveOutReason ? moveOutReason.trim() : null,
             adminNote: adminNote ? adminNote.trim() : existingLease.adminNote
-          },
-          include: {
-            room: true,
-            tenant: true,
-            building: true
           }
-        }),
-        billingService.prisma.room.update({
+        });
+        if (count === 0) {
+          throw Object.assign(new Error('สัญญาเช่านี้สิ้นสุดลงแล้ว'), { statusCode: 409 });
+        }
+        const room = await tx.room.update({
           where: { id: existingLease.roomId },
           data: {
             status: 'available',
             tenantId: null
           }
-        })
-      ]);
+        });
+        await releaseRoomTenancy(tx, room, [existingLease.tenantId, existingLease.room?.tenantId]);
+        return tx.leaseContract.findUnique({
+          where: { id: leaseId },
+          include: { room: true, tenant: true, building: true }
+        });
+      });
 
       // Audit Log
       await auditService.logAction({

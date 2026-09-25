@@ -5,6 +5,10 @@ const lineService = require('../services/lineService');
 const PDFDocument = require('pdfkit');
 const { setupThaiFonts } = require('../utils/pdfHelper');
 
+// room_owner/investor ผ่าน entityParam ไปโดยไม่ถูกตรวจตึก (ถูกจำกัดด้วย ownerId ใน Controller) จึงต้องเช็คเจ้าของห้องเองทุก Endpoint ที่รับ :id
+const isForeignRoomOwner = (req, invoice) =>
+  ['room_owner', 'investor'].includes((req.user?.role || '').toLowerCase()) && invoice.room?.ownerId !== req.user.id;
+
 class InvoiceController {
   async getInvoices(req, res, next) {
     try {
@@ -256,6 +260,10 @@ class InvoiceController {
         return res.status(404).json({ success: false, message: 'Invoice not found' });
       }
 
+      if (isForeignRoomOwner(req, invoice)) {
+        return res.status(403).json({ success: false, message: 'ปฏิเสธการเข้าถึง: ห้องนี้ไม่ได้อยู่ในความดูแลของคุณ' });
+      }
+
       // Check tenant access permission (IDOR protection)
       if (req.user?.role === 'tenant' || req.user?.role === 'TENANT' || (lineUserId && !req.user)) {
         let isAuthorized = false;
@@ -407,6 +415,10 @@ class InvoiceController {
 
       if (!invoice) {
         return res.status(404).json({ success: false, message: 'Invoice not found' });
+      }
+
+      if (isForeignRoomOwner(req, invoice)) {
+        return res.status(403).json({ success: false, message: 'ปฏิเสธการเข้าถึง: ห้องนี้ไม่ได้อยู่ในความดูแลของคุณ' });
       }
 
       // Check tenant access permission (IDOR protection)

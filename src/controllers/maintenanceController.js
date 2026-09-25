@@ -91,7 +91,7 @@ class MaintenanceController {
    */
   async createMaintenanceRequest(req, res, next) {
     try {
-      const { title, description, roomId, lineUserId, technicianName, repairCost, payer } = req.body;
+      const { title, description } = req.body;
 
       if (!title || !description) {
         return res.status(400).json({
@@ -100,6 +100,12 @@ class MaintenanceController {
         });
       }
 
+      // req.scope มีเฉพาะ Route ฝั่งลูกบ้าน (LIFF, ผ่าน scopeTenantRooms): ตัวตน/ห้อง/ตึกมาจาก Token ที่ตรวจแล้วเท่านั้น
+      // ไม่เชื่อ roomId/tenantId/buildingId ใน Body และลูกบ้านกำหนดผู้จ่าย/ค่าซ่อม/ช่างเองไม่ได้ (ค่าซ่อมจะถูกรวมเข้าบิลของห้องนั้น)
+      // Route แอดมิน (requireRole + requireBuildingInRequest) ต้องระบุห้องเสมอ เดิม fallback ไปห้องแรกที่มีคนอยู่ในระบบ
+      const isTenantFlow = Boolean(req.scope);
+      const { technicianName, repairCost, payer } = isTenantFlow ? {} : req.body;
+
       if (payer !== undefined && !['MANAGEMENT', 'TENANT'].includes(payer)) {
         return res.status(400).json({
           success: false,
@@ -107,35 +113,20 @@ class MaintenanceController {
         });
       }
 
-      let targetRoomId = roomId;
-      let tenantId = req.body.tenantId || null;
-      let buildingId = req.body.buildingId || null;
-
-      if (lineUserId) {
-        const tenant = await billingService.prisma.tenant.findUnique({
-          where: { lineUserId },
-          include: { rooms: true }
-        });
-        if (tenant) {
-          tenantId = tenant.id;
-          if (!targetRoomId && tenant.rooms?.length > 0) {
-            targetRoomId = tenant.rooms[0].id;
-          }
-        }
-      }
-
+      const targetRoomId = isTenantFlow ? req.roomId : req.body.roomId;
       if (!targetRoomId) {
-        const firstRoom = await billingService.prisma.room.findFirst({ where: { status: 'occupied' } });
-        targetRoomId = firstRoom?.id;
+        return res.status(400).json({
+          success: false,
+          message: isTenantFlow ? 'ยังไม่พบห้องพักที่ผูกกับบัญชีนี้' : 'กรุณาระบุ roomId'
+        });
       }
 
-      if (targetRoomId && !buildingId) {
-        const roomObj = await billingService.prisma.room.findUnique({ where: { id: targetRoomId } });
-        buildingId = roomObj?.buildingId;
-        if (!tenantId && roomObj?.tenantId) {
-          tenantId = roomObj.tenantId;
-        }
+      const roomObj = await billingService.prisma.room.findUnique({ where: { id: targetRoomId } });
+      if (!roomObj) {
+        return res.status(404).json({ success: false, message: 'ไม่พบห้องพักที่ระบุ' });
       }
+      const buildingId = roomObj.buildingId;
+      const tenantId = isTenantFlow ? req.scope.tenantId : req.body.tenantId || roomObj.tenantId || null;
 
       // บล็อกเฉพาะคำขอจากลูกบ้านผ่าน LIFF แอดมินยังเปิดใบงานเองได้แม้ปิดฟีเจอร์ฝั่งลูกบ้าน
       if (req.originalUrl.includes('/liff/') && !(await isFeatureEnabled('ENABLE_MAINTENANCE_REQUEST', buildingId || null))) {

@@ -14,7 +14,7 @@ router.post('/', requireRole('admin'), requireBuildingInRequest, (req, res, next
 router.post('/import', requireRole('admin'), requireBuildingInRequest, (req, res, next) => roomController.importRooms(req, res, next));
 router.post('/:id/invites', requireRole('admin'), (req, res, next) => roomController.createRoomInvite(req, res, next));
 router.post('/:id/residents', requireRole('admin'), (req, res, next) => roomController.addRoomResident(req, res, next));
-router.put('/:id', requireRole('admin'), (req, res, next) => roomController.updateRoom(req, res, next));
+router.put('/:id', requireRole('admin'), requireBuildingInRequest, (req, res, next) => roomController.updateRoom(req, res, next));
 router.delete('/:id/invites/:inviteId', requireRole('admin'), (req, res, next) => roomController.revokeRoomInvite(req, res, next));
 router.delete('/:id', requireRole('admin'), (req, res, next) => roomController.deleteRoom(req, res, next));
 router.delete('/:id/residents/:tenantId', requireRole('admin'), (req, res, next) => roomController.removeRoomResident(req, res, next));
