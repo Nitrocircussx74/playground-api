@@ -110,7 +110,7 @@ describe('Security & RBAC Protection Integration Tests', () => {
 
     test('Tenant พยายามดูสัญญาเช่าทั้งหมด ต้องถูกปฏิเสธ 403 Forbidden', async () => {
       const response = await request(app)
-        .get('/api/v1/leases')
+        .get('/api/admin/leases')
         .set('Authorization', `Bearer ${tenantToken}`);
 
       expect(response.statusCode).toBe(403);
