@@ -249,9 +249,11 @@ class AuthController {
         accessToken: result.accessToken
       });
     } catch (error) {
-      const cookieOpts = getCookieOptions(req);
-      delete cookieOpts.maxAge;
-      res.clearCookie('refreshToken', cookieOpts);
+      if (error.code !== 'REFRESH_RACE') {
+        const cookieOpts = getCookieOptions(req);
+        delete cookieOpts.maxAge;
+        res.clearCookie('refreshToken', cookieOpts);
+      }
       return res.status(401).json({ success: false, message: error.message || 'Refresh Token ไม่ถูกต้องหรือหมดอายุ' });
     }
   }

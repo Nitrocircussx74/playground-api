@@ -1,6 +1,8 @@
 const { resolveListBuildings } = require('../middlewares/buildingAccessMiddleware');
 const billingService = require('../services/billingService');
 const auditService = require('../services/auditService');
+const parseOptionalReading = require('../utils/parseOptionalReading');
+const { releaseRoomTenancy } = require('../services/tenancyService');
 
 class LeaseController {
   /**
@@ -94,6 +96,8 @@ class LeaseController {
     try {
       const { roomId } = req.params;
       const { tenantId, startDate, expectedEndDate, depositAmount, adminNote } = req.body;
+      const initialWaterReading = parseOptionalReading(req.body.initialWaterReading, 'น้ำ');
+      const initialElectricReading = parseOptionalReading(req.body.initialElectricReading, 'ไฟ');
 
       if (!tenantId || !startDate || !expectedEndDate) {
         return res.status(400).json({
@@ -117,6 +121,8 @@ class LeaseController {
             startDate: new Date(startDate),
             expectedEndDate: new Date(expectedEndDate),
             depositAmount: depositAmount ? Number(depositAmount) : 0,
+            initialWaterReading,
+            initialElectricReading,
             status: 'ACTIVE',
             adminNote: adminNote || null
           },
@@ -178,29 +184,33 @@ class LeaseController {
       const endDate = actualEndDate ? new Date(actualEndDate) : new Date();
 
       // Transaction: Update LeaseContract to ENDED & update Room to vacant & tenantId = null
-      const [updatedLease] = await billingService.prisma.$transaction([
-        billingService.prisma.leaseContract.update({
-          where: { id: leaseId },
+      const updatedLease = await billingService.prisma.$transaction(async (tx) => {
+        // เงื่อนไข status != ENDED อยู่ในคำสั่งเดียวกัน กันกดซ้ำพร้อมกัน
+        const { count } = await tx.leaseContract.updateMany({
+          where: { id: leaseId, status: { not: 'ENDED' } },
           data: {
             status: 'ENDED',
             actualEndDate: endDate,
             moveOutReason: moveOutReason ? moveOutReason.trim() : null,
             adminNote: adminNote ? adminNote.trim() : existingLease.adminNote
-          },
-          include: {
-            room: true,
-            tenant: true,
-            building: true
           }
-        }),
-        billingService.prisma.room.update({
+        });
+        if (count === 0) {
+          throw Object.assign(new Error('สัญญาเช่านี้สิ้นสุดลงแล้ว'), { statusCode: 409 });
+        }
+        const room = await tx.room.update({
           where: { id: existingLease.roomId },
           data: {
             status: 'available',
             tenantId: null
           }
-        })
-      ]);
+        });
+        await releaseRoomTenancy(tx, room, [existingLease.tenantId, existingLease.room?.tenantId]);
+        return tx.leaseContract.findUnique({
+          where: { id: leaseId },
+          include: { room: true, tenant: true, building: true }
+        });
+      });
 
       // Audit Log
       await auditService.logAction({
@@ -217,6 +227,49 @@ class LeaseController {
         message: `แจ้งย้ายออกผู้เช่าห้อง ${existingLease.room?.roomNumber || ''} เรียบร้อยแล้ว (คืนห้องว่างแล้ว)`,
         data: updatedLease
       });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * จดเลขมิเตอร์น้ำ/ไฟ ณ วันเข้าพักทีหลัง (PATCH /api/admin/leases/:leaseId/initial-readings)
+   * สำหรับสัญญาที่แอดมินไม่ได้อยู่ตอนสร้าง เช่น ผู้เช่าลงทะเบียนเองผ่าน Invite Code ในกรณี LIFF
+   * บิลรอบแรกของสัญญานี้จะคิดหน่วยจากเลขนี้ (ดู billingService.getPreviousReading)
+   */
+  async updateInitialReadings(req, res, next) {
+    try {
+      const { leaseId } = req.params;
+      const initialWaterReading = parseOptionalReading(req.body.initialWaterReading, 'น้ำ');
+      const initialElectricReading = parseOptionalReading(req.body.initialElectricReading, 'ไฟ');
+      if (initialWaterReading === null && initialElectricReading === null) {
+        return res.status(400).json({ success: false, message: 'กรุณาระบุเลขมิเตอร์น้ำหรือไฟอย่างน้อยหนึ่งค่า' });
+      }
+
+      const lease = await billingService.prisma.leaseContract.findUnique({ where: { id: leaseId } });
+      if (!lease) {
+        return res.status(404).json({ success: false, message: 'ไม่พบสัญญาเช่าที่ระบุ' });
+      }
+      if (lease.status !== 'ACTIVE') {
+        return res.status(400).json({ success: false, message: 'แก้เลขมิเตอร์ได้เฉพาะสัญญาที่ยังพักอยู่' });
+      }
+
+      const data = {
+        ...(initialWaterReading !== null && { initialWaterReading }),
+        ...(initialElectricReading !== null && { initialElectricReading })
+      };
+      const updated = await billingService.prisma.leaseContract.update({ where: { id: leaseId }, data });
+
+      await auditService.logAction({
+        adminId: req.user?.id,
+        action: 'UPDATE',
+        entity: 'LEASE_CONTRACT',
+        entityId: leaseId,
+        oldValues: { initialWaterReading: lease.initialWaterReading, initialElectricReading: lease.initialElectricReading },
+        newValues: { initialWaterReading: updated.initialWaterReading, initialElectricReading: updated.initialElectricReading }
+      });
+
+      return res.status(200).json({ success: true, message: 'บันทึกเลขมิเตอร์วันเข้าพักเรียบร้อยแล้ว', data: updated });
     } catch (error) {
       next(error);
     }

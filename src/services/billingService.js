@@ -16,10 +16,13 @@ const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
  * วันครบกำหนดของรอบบิล "MM-YYYY" = วันที่ dueDateDay ของเดือนถัดจากรอบบิล (ไม่ผูกกับวันที่กดออกบิล)
  * ถ้าเดือนนั้นสั้นกว่า dueDateDay (เช่น 31 ในเดือนกุมภาพันธ์) ใช้วันสุดท้ายของเดือน
  */
-const dueDateForCycle = (billingCycle, dueDateDay) => {
+const dueDateForCycle = (billingCycle, dueDateDay, now = new Date()) => {
   const [m, y] = String(billingCycle).split('-').map(Number);
   const lastDay = new Date(y, m + 1, 0).getDate();
-  return new Date(y, m, Math.min(dueDateDay, lastDay));
+  const due = new Date(y, m, Math.min(dueDateDay, lastDay));
+  // ออกบิลย้อนหลังหลังพ้นวันครบกำหนดของรอบนั้นแล้ว: ครบกำหนดวันนี้ ไม่ใช่ย้อนไปในอดีต (ไม่งั้นโดนค่าปรับย้อนหลังทันทีที่ส่งบิล)
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return due < today ? today : due;
 };
 
 class BillingService {
@@ -96,6 +99,14 @@ class BillingService {
       },
       orderBy: { recordedAt: 'desc' }
     });
+
+    // มิเตอร์จริงไม่รีเซ็ตเมื่อเปลี่ยนผู้เช่า: ถ้า record ล่าสุดเป็นของช่วงก่อนสัญญาปัจจุบันเริ่ม (ผู้เช่าเก่า/ช่วงห้องว่าง)
+    // ให้เริ่มนับจากเลขที่จดไว้ ณ วันที่ผู้เช่าใหม่เข้าพัก (ถ้าจดไว้) ไม่งั้นผู้เช่าใหม่ถูกคิดหน่วยของคนก่อน
+    const lease = await db.leaseContract.findFirst({ where: { roomId, status: 'ACTIVE' }, orderBy: { startDate: 'desc' } });
+    const initial = meterType === 'water' ? lease?.initialWaterReading : lease?.initialElectricReading;
+    if (initial != null && (!previous || previous.recordedAt <= lease.startDate)) {
+      return { previousReading: Number(initial), thisCycle };
+    }
     return { previousReading: previous ? Number(previous.currentReading) : 0, thisCycle };
   }
 

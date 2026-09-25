@@ -16,6 +16,12 @@ async function verifyPassword(password, storedPasswordHash) {
   return await bcrypt.compare(password, storedPasswordHash);
 }
 
+// Role ที่กำหนดผ่าน API นี้ได้ (พิมพ์ผิดแล้วได้ Role ที่ไม่มีอยู่จริง = บัญชีที่เข้าอะไรไม่ได้เลยและตรวจย้อนยาก)
+const ASSIGNABLE_ROLES = ['SUPER_ADMIN', 'SUPERADMIN', 'OWNER', 'MANAGER', 'ADMIN', 'ROOM_OWNER', 'INVESTOR'];
+// Role ที่เข้าถึงได้เฉพาะตึกใน UserBuildingPermission (owner/super_admin เห็นทุกตึกไม่ต้องมีแถวสิทธิ์)
+const BUILDING_SCOPED_ROLES = ['MANAGER', 'ADMIN'];
+const MIN_PASSWORD_LENGTH = 6;
+
 class AdminController {
   /**
    * GET /api/admin/me
@@ -97,6 +103,14 @@ class AdminController {
       await billingService.prisma.user.update({
         where: { id: userId },
         data: { passwordHash: newPasswordHash }
+      });
+
+      // เปลี่ยนรหัสผ่านแล้ว session อื่นของบัญชีนี้ (เช่น เครื่องที่ถูกขโมย Token) ต้องหลุด เก็บเฉพาะ session ที่กำลังใช้งานอยู่
+      const current = req.cookies?.refreshToken
+        ? await billingService.prisma.refreshToken.findUnique({ where: { token: req.cookies.refreshToken } })
+        : null;
+      await billingService.prisma.refreshToken.deleteMany({
+        where: { userId, ...(current && { familyId: { not: current.familyId } }) }
       });
 
       return res.status(200).json({
@@ -198,8 +212,14 @@ class AdminController {
         });
       }
 
-      const passwordHash = await hashPassword(password);
       const userRole = (role || 'MANAGER').toUpperCase();
+      if (!ASSIGNABLE_ROLES.includes(userRole)) {
+        return res.status(400).json({ success: false, message: `role ต้องเป็นหนึ่งใน ${ASSIGNABLE_ROLES.join(', ')}` });
+      }
+      if (String(password).length < MIN_PASSWORD_LENGTH) {
+        return res.status(400).json({ success: false, message: `รหัสผ่านต้องมีความยาวอย่างน้อย ${MIN_PASSWORD_LENGTH} ตัวอักษร` });
+      }
+      const passwordHash = await hashPassword(password);
 
       const newUser = await billingService.prisma.user.create({
         data: {
@@ -211,8 +231,8 @@ class AdminController {
         }
       });
 
-      // Map building permissions if role is MANAGER and buildingIds provided
-      if (userRole === 'MANAGER' && Array.isArray(buildingIds) && buildingIds.length > 0) {
+      // Map building permissions if role is building-scoped (MANAGER/ADMIN) and buildingIds provided
+      if (BUILDING_SCOPED_ROLES.includes(userRole) && Array.isArray(buildingIds) && buildingIds.length > 0) {
         const permissionsData = buildingIds.map((bId) => ({
           userId: newUser.id,
           buildingId: bId
@@ -265,32 +285,32 @@ class AdminController {
       }
 
       const newRole = (role || user.role).toUpperCase();
+      if (!ASSIGNABLE_ROLES.includes(newRole)) {
+        return res.status(400).json({ success: false, message: `role ต้องเป็นหนึ่งใน ${ASSIGNABLE_ROLES.join(', ')}` });
+      }
 
-      // 1. Update basic fields & role
-      await billingService.prisma.user.update({
-        where: { id },
-        data: {
-          role: newRole,
-          ...(name && { name: name.trim() }),
-          ...(phone !== undefined && { phone: phone ? phone.trim() : null })
+      // Transaction เดียว: ลบสิทธิ์เก่าแล้วสร้างใหม่ล้มกลางคันต้องไม่ทิ้งผู้ใช้ไว้โดยไม่มีสิทธิ์ตึกเลย
+      await billingService.prisma.$transaction(async (tx) => {
+        // 1. Update basic fields & role
+        await tx.user.update({
+          where: { id },
+          data: {
+            role: newRole,
+            ...(name && { name: name.trim() }),
+            ...(phone !== undefined && { phone: phone ? phone.trim() : null })
+          }
+        });
+
+        // 2. Clear old building permissions
+        await tx.userBuildingPermission.deleteMany({ where: { userId: id } });
+
+        // 3. Re-create permissions if building-scoped role (MANAGER/ADMIN)
+        if (BUILDING_SCOPED_ROLES.includes(newRole) && Array.isArray(buildingIds) && buildingIds.length > 0) {
+          await tx.userBuildingPermission.createMany({
+            data: buildingIds.map((bId) => ({ userId: id, buildingId: bId }))
+          });
         }
       });
-
-      // 2. Clear old building permissions
-      await billingService.prisma.userBuildingPermission.deleteMany({
-        where: { userId: id }
-      });
-
-      // 3. Re-create permissions if MANAGER
-      if (newRole === 'MANAGER' && Array.isArray(buildingIds) && buildingIds.length > 0) {
-        const permissionsData = buildingIds.map((bId) => ({
-          userId: id,
-          buildingId: bId
-        }));
-        await billingService.prisma.userBuildingPermission.createMany({
-          data: permissionsData
-        });
-      }
 
       const updatedUser = await billingService.prisma.user.findUnique({
         where: { id },

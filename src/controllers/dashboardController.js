@@ -3,6 +3,7 @@ const billingService = require('../services/billingService');
 const lineService = require('../services/lineService');
 const { setupThaiFonts } = require('../utils/pdfHelper');
 const { formatBillingCycle } = require('../utils/formatBillingCycle');
+const csvCell = require('../utils/csvCell');
 
 class DashboardController {
   /**
@@ -404,6 +405,8 @@ class DashboardController {
         'Water Fee (THB)',
         'Electricity Fee (THB)',
         'Common Fee (THB)',
+        'Other Fee (THB)',
+        'Late Fee (THB)',
         'Grand Total (THB)',
         'Status',
         'Due Date'
@@ -413,22 +416,23 @@ class DashboardController {
 
       invoices.forEach((inv) => {
         const roomNum = inv.room ? inv.room.roomNumber : 'N/A';
-        const nameStr = inv.tenant ? `${inv.tenant.firstName} ${inv.tenant.lastName}`.replace(/"/g, '""') : '';
-        const tenantName = inv.tenant ? `"${nameStr}"` : 'N/A';
+        const tenantName = inv.tenant ? csvCell(`${inv.tenant.firstName} ${inv.tenant.lastName}`) : 'N/A';
         const dueDate = inv.dueDate ? new Date(inv.dueDate).toISOString().split('T')[0] : '';
         
         const row = [
-          `"${inv.invoiceNumber}"`,
-          `"${roomNum}"`,
+          csvCell(inv.invoiceNumber),
+          csvCell(roomNum),
           tenantName,
-          `"${inv.billingCycle}"`,
+          csvCell(inv.billingCycle),
           Number(inv.roomPrice).toFixed(2),
           Number(inv.waterTotal).toFixed(2),
           Number(inv.electricTotal).toFixed(2),
           Number(inv.commonFee).toFixed(2),
+          Number(inv.otherFee).toFixed(2),
+          Number(inv.lateFeeCharge).toFixed(2),
           Number(inv.grandTotal).toFixed(2),
-          `"${inv.status}"`,
-          `"${dueDate}"`
+          csvCell(inv.status),
+          csvCell(dueDate)
         ];
         csv += row.join(',') + '\n';
       });

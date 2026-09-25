@@ -1,4 +1,5 @@
 const billingService = require('../services/billingService');
+const csvCell = require('../utils/csvCell');
 const lineService = require('../services/lineService');
 const auditService = require('../services/auditService');
 const { SECRET_MASK } = require('../utils/secrets');
@@ -315,12 +316,12 @@ class BuildingController {
         const name = inv.tenant ? `${inv.tenant.firstName} ${inv.tenant.lastName}` : '-';
         const phone = inv.tenant?.phone || '';
         const due = inv.dueDate ? new Date(inv.dueDate).toLocaleDateString('th-TH') : '';
-        const escape = (v) => `"${String(v).replace(/"/g, '""')}"`;
+        const escape = csvCell;
         return [
           escape(inv.room?.roomNumber || ''),
           inv.room?.floor || '',
           escape(name),
-          phone,
+          escape(phone),
           Number(inv.roomPrice || 0),
           Number(inv.waterTotal || 0),
           Number(inv.electricTotal || 0),

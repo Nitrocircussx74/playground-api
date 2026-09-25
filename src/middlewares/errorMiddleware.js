@@ -18,9 +18,13 @@ const errorHandler = (err, req, res, next) => {
   // ส่งต่อด้วย next(error) โดยไม่ได้ res.status() เองก่อน — แก้ให้ยึด err.statusCode เป็นหลัก
   const statusCode = err.statusCode || err.status || (res.statusCode === 200 ? 500 : res.statusCode);
 
+  // 5xx ห้ามส่ง err.message ออกไป (Prisma error มีชื่อตาราง/คำสั่ง/path ไฟล์บนเครื่อง) ยกเว้นตอน dev
+  const expose = statusCode < 500 || config.nodeEnv === 'development';
+  if (statusCode >= 500 && config.nodeEnv !== 'test') console.error(err);
+
   res.status(statusCode).json({
     success: false,
-    message: err.message || 'เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์ (Internal Server Error)',
+    message: (expose && err.message) || 'เกิดข้อผิดพลาดภายในเซิร์ฟเวอร์ (Internal Server Error)',
     ...(err.code && { code: err.code }),
     ...(err.data !== undefined && { data: err.data }),
     stack: config.nodeEnv === 'development' ? err.stack : undefined

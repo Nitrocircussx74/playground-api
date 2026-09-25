@@ -5,6 +5,12 @@ const lineService = require('../services/lineService');
 const PDFDocument = require('pdfkit');
 const { setupThaiFonts } = require('../utils/pdfHelper');
 
+const INVOICE_STATUSES = ['draft', 'pending', 'reviewing', 'paid', 'overdue', 'unpaid'];
+
+// room_owner/investor ผ่าน entityParam ไปโดยไม่ถูกตรวจตึก (ถูกจำกัดด้วย ownerId ใน Controller) จึงต้องเช็คเจ้าของห้องเองทุก Endpoint ที่รับ :id
+const isForeignRoomOwner = (req, invoice) =>
+  ['room_owner', 'investor'].includes((req.user?.role || '').toLowerCase()) && invoice.room?.ownerId !== req.user.id;
+
 class InvoiceController {
   async getInvoices(req, res, next) {
     try {
@@ -115,7 +121,10 @@ class InvoiceController {
       });
 
       if (invoice.tenant?.lineUserId) {
-        await lineService.pushInvoiceNotification(invoice.tenant.lineUserId, invoice);
+        // บิลสร้างสำเร็จแล้ว ส่ง LINE ไม่สำเร็จต้องไม่ทำให้ตอบ 400 (แอดมินจะกดสร้างซ้ำ)
+        await lineService.pushInvoiceNotification(invoice.tenant.lineUserId, invoice).catch((err) => {
+          console.warn('⚠️ ไม่สามารถส่ง LINE แจ้งบิลใหม่ได้:', err.message);
+        });
       }
 
       return res.status(201).json({
@@ -124,6 +133,8 @@ class InvoiceController {
         data: invoice
       });
     } catch (error) {
+      // Error ของ DB (Prisma) ไม่ใช่ความผิดของ Request และมีรายละเอียดภายใน ให้ Error Handler จัดการเป็น 500
+      if (error.name?.startsWith('PrismaClient')) return next(error);
       return res.status(400).json({
         success: false,
         message: error.message
@@ -167,6 +178,8 @@ class InvoiceController {
         data: invoice
       });
     } catch (error) {
+      // Error ของ DB (Prisma) ไม่ใช่ความผิดของ Request และมีรายละเอียดภายใน ให้ Error Handler จัดการเป็น 500
+      if (error.name?.startsWith('PrismaClient')) return next(error);
       return res.status(400).json({
         success: false,
         message: error.message
@@ -178,6 +191,10 @@ class InvoiceController {
     try {
       const { id } = req.params;
       const { status, rejectionReason, adminNote } = req.body;
+
+      if (!INVOICE_STATUSES.includes(status)) {
+        return res.status(400).json({ success: false, message: `status ต้องเป็นหนึ่งใน ${INVOICE_STATUSES.join(', ')}` });
+      }
 
       const invoice = await billingService.prisma.invoice.findUnique({
         where: { id },
@@ -205,6 +222,15 @@ class InvoiceController {
         where: { id },
         data: updateData,
         include: { room: true, tenant: true }
+      });
+
+      await require('../services/auditService').logAction({
+        adminId: req.user?.id,
+        action: 'UPDATE',
+        entity: 'INVOICE',
+        entityId: id,
+        oldValues: { status: invoice.status, paidAt: invoice.paidAt },
+        newValues: { status: updatedInvoice.status, paidAt: updatedInvoice.paidAt }
       });
 
       // ส่ง LINE Push Notification แจ้งเตือนลูกบ้านเมื่อบิลเปลี่ยนเป็นชำระแล้ว (paid)
@@ -256,6 +282,10 @@ class InvoiceController {
         return res.status(404).json({ success: false, message: 'Invoice not found' });
       }
 
+      if (isForeignRoomOwner(req, invoice)) {
+        return res.status(403).json({ success: false, message: 'ปฏิเสธการเข้าถึง: ห้องนี้ไม่ได้อยู่ในความดูแลของคุณ' });
+      }
+
       // Check tenant access permission (IDOR protection)
       if (req.user?.role === 'tenant' || req.user?.role === 'TENANT' || (lineUserId && !req.user)) {
         let isAuthorized = false;
@@ -291,7 +321,7 @@ class InvoiceController {
 
       doc.fontSize(20).font(fonts.bold).fillColor('#4338ca').text(`ใบแจ้งหนี้ค่าเช่าพัก / INVOICE`, { align: 'center' });
       doc.moveDown(0.3);
-      doc.fontSize(11).font(fonts.regular).fillColor('#475569').text(`${buildingName} | โทร: 02-123-4567 | TAX ID: 0105558000123`, { align: 'center' });
+      doc.fontSize(11).font(fonts.regular).fillColor('#475569').text(buildingName, { align: 'center' });
       doc.moveDown(0.8);
 
       doc.moveTo(40, doc.y).lineTo(555, doc.y).strokeColor('#4338ca').lineWidth(1.5).stroke();
@@ -409,6 +439,10 @@ class InvoiceController {
         return res.status(404).json({ success: false, message: 'Invoice not found' });
       }
 
+      if (isForeignRoomOwner(req, invoice)) {
+        return res.status(403).json({ success: false, message: 'ปฏิเสธการเข้าถึง: ห้องนี้ไม่ได้อยู่ในความดูแลของคุณ' });
+      }
+
       // Check tenant access permission (IDOR protection)
       if (req.user?.role === 'tenant' || req.user?.role === 'TENANT' || (lineUserId && !req.user)) {
         let isAuthorized = false;
@@ -447,7 +481,7 @@ class InvoiceController {
       // Official E-Receipt Header
       doc.fontSize(22).font(fonts.bold).fillColor('#16a34a').text('ใบเสร็จรับเงิน / OFFICIAL RECEIPT', { align: 'center' });
       doc.moveDown(0.3);
-      doc.fontSize(10).font(fonts.regular).fillColor('#475569').text(`${buildingName} | โทร: 02-123-4567 | เลขประจำตัวผู้เสียภาษี: 0105558000123`, { align: 'center' });
+      doc.fontSize(10).font(fonts.regular).fillColor('#475569').text(buildingName, { align: 'center' });
       doc.moveDown(0.8);
 
       doc.moveTo(40, doc.y).lineTo(555, doc.y).strokeColor('#16a34a').lineWidth(2).stroke();
@@ -772,13 +806,14 @@ class InvoiceController {
    */
   async processLateFees(req, res, next) {
     try {
-      const { buildingId, targetDate } = req.body || {};
+      // ไม่รับ targetDate จาก Client: ส่งวันที่อนาคตมาแล้วค่าปรับ/สถานะ overdue จะถูกเขียนลงบิลจริงถาวร
+      const { buildingId } = req.body || {};
       const scope = await resolveListBuildings(req.user, buildingId);
       if (scope.forbidden) {
         return res.status(403).json({ success: false, message: 'คุณไม่มีสิทธิ์เข้าถึงข้อมูลของอาคาร/ตึกนี้' });
       }
       const lateFeeService = require('../services/lateFeeService');
-      const result = await lateFeeService.processLateFees({ buildingIds: scope.ids, targetDate });
+      const result = await lateFeeService.processLateFees({ buildingIds: scope.ids });
 
       return res.status(200).json({
         success: true,

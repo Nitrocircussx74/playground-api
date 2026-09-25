@@ -202,15 +202,17 @@ class MeterController {
           const currentWater = Number(currentWaterReading);
           const currentElectric = Number(currentElectricReading);
 
-          if (currentWater < water.previousReading || currentElectric < electric.previousReading) {
+          // isReset: มิเตอร์ถูกเปลี่ยน/วนกลับ 0 (เหมือน POST /meter-records) หน่วยที่ใช้ = เลขปัจจุบัน ไม่ทำให้ทั้งตึก rollback
+          const reset = item.isReset === true;
+          if (!reset && (currentWater < water.previousReading || currentElectric < electric.previousReading)) {
             readingErrors.push(
               `ห้อง ${room.roomNumber}: เลขมิเตอร์ปัจจุบันต่ำกว่าเลขก่อนหน้า (น้ำ ${water.previousReading}, ไฟ ${electric.previousReading})`
             );
             continue;
           }
 
-          const waterUnits = currentWater - water.previousReading;
-          const electricUnits = currentElectric - electric.previousReading;
+          const waterUnits = reset ? currentWater : currentWater - water.previousReading;
+          const electricUnits = reset ? currentElectric : currentElectric - electric.previousReading;
           const waterTotal = billingService.calculateWaterFee(waterUnits, waterRate);
           const electricTotal = billingService.calculateElectricFee(electricUnits, electricRate);
 
@@ -230,7 +232,9 @@ class MeterController {
           extraFeeNote = [extraFeeNote, repairs.note].filter(Boolean).join(' | ') || null;
 
           const lateFee = Number(existingInvoice?.lateFeeCharge) || 0;
-          const grandTotal = round2(roomPrice + waterTotal + electricTotal + commonFee + extraFee + lateFee);
+          // ยกเว้นค่าส่วนกลางรายห้อง (เหมือน waiveCommonFee ของการออกบิลทีละห้อง)
+          const roomCommonFee = item.waiveCommonFee === true ? 0 : commonFee;
+          const grandTotal = round2(roomPrice + waterTotal + electricTotal + roomCommonFee + extraFee + lateFee);
 
           // หนึ่งรอบ = หนึ่ง record ต่อห้อง/ชนิดมิเตอร์ (มีอยู่แล้วให้แก้ค่า ไม่เพิ่มแถวใหม่)
           for (const [meterType, reading, current, units] of [
@@ -249,7 +253,7 @@ class MeterController {
             roomPrice,
             waterTotal,
             electricTotal,
-            commonFee,
+            commonFee: roomCommonFee,
             otherFee: extraFee,
             otherFeeNote: extraFeeNote,
             grandTotal,

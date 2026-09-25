@@ -1,4 +1,5 @@
 const billingService = require('../services/billingService');
+const publicUrl = require('../utils/publicUrl');
 const { isFeatureEnabled } = require('../middlewares/requireFeatureMiddleware');
 const tenantService = require('../services/tenantService');
 const tenantAuthService = require('../services/tenantAuthService');
@@ -240,13 +241,12 @@ class LiffController {
    */
   async getSettingsForTenant(req, res, next) {
     try {
-      // Endpoint นี้ถูกเรียกจาก 2 เส้นทาง: /api/v1/liff/settings (ผ่าน liffAuthMiddleware มี req.lineUserId ที่ verify แล้ว)
-      // และ /api/settings แบบ Public เดิม (ไม่มี req.lineUserId) — ถ้ามี req.lineUserId ที่ verify แล้ว ต้องยึดค่านั้นเป็นหลัก
-      // ห้ามให้ roomId/tenantId ที่ Client ส่งมาเอง Override เพื่อไปดูตึก/ห้องของคนอื่น (IDOR)
-      const lineUserId = req.lineUserId || req.query.lineUserId;
+      // เรียกได้เฉพาะ /api/v1/liff/settings (ผ่าน liffAuthMiddleware): ตัวตนมาจาก LINE ID Token/JWT ที่ verify แล้วเท่านั้น
+      // ไม่รับ lineUserId/tenantId จาก query (เดิมมี /api/settings แบบ Public ที่ใครรู้ tenantId ก็ดึงข้อมูลตึกได้ ถูกถอดออกแล้ว)
+      const lineUserId = req.lineUserId;
+      const tenantId = req.tenantId;
       const targetRoomId = req.roomId;
       const targetBuildingId = req.buildingId;
-      const { tenantId } = req.lineUserId ? {} : req.query;
 
       const settings = await tenantService.getBuildingSettingForTenant({
         lineUserId,
@@ -316,7 +316,7 @@ class LiffController {
         return res.status(403).json({ success: false, message: 'ฟีเจอร์ชำระเงินออนไลน์ถูกปิดใช้งานสำหรับตึกนี้' });
       }
 
-      const slipUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+      const slipUrl = publicUrl(req, req.file.filename);
       const { updatedInvoice, verification } = await billingService.uploadSlipFromLiff({
         id,
         lineUserId,

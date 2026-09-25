@@ -1000,6 +1000,10 @@ model LeaseContract {
   /// จำนวนเงินประกัน/มัดจำ (Decimal)
   depositAmount Decimal @default(0.00) @map("deposit_amount") @db.Decimal(10, 2)
 
+  /// เลขมิเตอร์น้ำ/ไฟ ณ วันที่ผู้เช่าเข้าพัก (มิเตอร์จริงไม่รีเซ็ต: บิลรอบแรกของสัญญานี้คิดหน่วยจากเลขนี้ ไม่ใช่เลขของผู้เช่าคนก่อน) null = ไม่ได้จด
+  initialWaterReading    Decimal? @map("initial_water_reading") @db.Decimal(10, 2)
+  initialElectricReading Decimal? @map("initial_electric_reading") @db.Decimal(10, 2)
+
   /// สถานะสัญญา (ACTIVE = กำลังเช่าอยู่, ENDED = สิ้นสุดสัญญา/ย้ายออกแล้ว, CANCELLED = ยกเลิกสัญญา)
   status String @default("ACTIVE")
 
@@ -1077,9 +1081,14 @@ model RefreshToken {
   id        Int      @id @default(autoincrement())
   userId    String   @map("user_id") @db.Uuid
   token     String   @unique
+  /// ตระกูลของ Session เดียวกัน (Login ครั้งหนึ่ง = 1 ตระกูล, Token ที่หมุนต่อมาอยู่ตระกูลเดิม) ใช้เพิกถอนทั้งชุดเมื่อพบการใช้ Token ซ้ำ
+  familyId  String   @default(dbgenerated("gen_random_uuid()")) @map("family_id") @db.Uuid
+  /// เวลาที่ Token นี้ถูกใช้หมุนไปแล้ว (เก็บแถวไว้เพื่อจับการนำ Token เก่ากลับมาใช้)
+  usedAt    DateTime? @map("used_at")
   expiresAt DateTime @map("expires_at")
   createdAt DateTime @default(now()) @map("created_at")
 
+  @@index([familyId])
   @@map("refresh_tokens")
 }
 

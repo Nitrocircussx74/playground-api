@@ -5,6 +5,7 @@ const lineService = require('./lineService');
 const authService = require('./authService');
 const { getPhoneVariants } = require('../utils/normalizePhone');
 const pickActiveRoom = require('../utils/pickActiveRoom');
+const parseOptionalReading = require('../utils/parseOptionalReading');
 
 const ROOM_WITH_BUILDING_INCLUDE = { rooms: { include: { building: true } } };
 
@@ -255,6 +256,8 @@ class TenantService {
       depositAmount,
       adminNote
     } = data;
+    const initialWaterReading = parseOptionalReading(data.initialWaterReading, 'น้ำ');
+    const initialElectricReading = parseOptionalReading(data.initialElectricReading, 'ไฟ');
 
     return await prisma.$transaction(async (tx) => {
       // 1. ตรวจสอบว่ามีผู้เช่าเบอร์โทรนี้อยู่ในระบบแล้วหรือไม่ (ถ้ามีให้อัปเดต ถ้าไม่มีให้สร้างใหม่)
@@ -337,6 +340,8 @@ class TenantService {
             startDate: leaseStartDate,
             expectedEndDate: leaseEndDate,
             depositAmount: depositAmount ? Number(depositAmount) : 0,
+            initialWaterReading,
+            initialElectricReading,
             status: 'ACTIVE',
             adminNote: adminNote || 'Walk-in / ไม่ใช้ LINE (เพิ่มโดยผู้ดูแล)'
           },

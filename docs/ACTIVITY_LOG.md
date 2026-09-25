@@ -313,3 +313,19 @@
   - รัน `PORT=9090 yarn test` ผ่านครบ **282/282 tests** (42 test suites)
   - ทดสอบสดผ่าน live API port 3000 สำเร็จทั้งสร้าง, เรียกดู, และยกเลิกรหัสเชิญ
 
+---
+
+### Phase 23 (2026-09-25): Security, Billing & Auth Audit ทั้งระบบ
+
+- **บริบท**: ตรวจ flow ทั้งระบบหา logic ที่ผิด/แปลก แล้วแก้เป็นเฟส (PR รวม `playground-api#5`, `playground-frontend#10`, branch `fix/auth-phase-3`) — เทสต์ backend 373/373 (57 suites), frontend 26/26
+- **เฟส 0-1 (สิทธิ์/ความลับ)**: DB เทสต์แยก (`TEST_DATABASE_URL`), ตรวจสิทธิ์รายตึกทุก endpoint, ซ่อน hash/ความลับของตึกจาก `res.json`
+- **เฟส 2 (ยอดเงิน)**: อัตราน้ำไฟจาก `BuildingSetting` เป็นต้นทางเดียว (ไม่มีขั้นต่ำน้ำ hardcode), `dueDate` ตามรอบบิล (`dueDateForCycle`: ถ้าบิลย้อนหลังพ้นกำหนดแล้วให้ครบกำหนดวันนี้)
+- **เฟส 3 (ยืนยันตัวตน)**: Refresh Token Rotation + Reuse Detection (`familyId`/`usedAt`, grace 10 วินาที, race ไม่ลบ cookie), ยึดบัญชีด้วยเบอร์ต้องไม่เปลี่ยน UX ผู้เช่าทั่วไป, production boot guard, ตัด Google login, เปลี่ยนรหัสผ่านแอดมินแล้ว session อื่นหลุด
+- **เฟส 4 (ops)**: lockout รายบัญชี, `TRUST_PROXY` ตั้งค่าได้, startup ปลอดภัยขึ้น
+- **Audit ความเสี่ยงสูง**: อัปโหลด `.html` ถูกเสิร์ฟเป็น `text/html` (แก้: นามสกุลจาก MIME), `room_owner` โหลด PDF บิลห้องอื่นได้, MANAGER เขียนมิเตอร์/ย้ายห้องข้ามตึกได้ (เพิ่ม `requireBuildingInRequest`), ลูกบ้านสร้างใบแจ้งซ่อมในห้องอื่นได้ (LIFF ใช้ตัวตน/ห้องที่ตรวจแล้ว, `POST /maintenance-requests` เหลือเฉพาะแอดมิน), จบสัญญาไม่ตัดสิทธิ์ผู้อยู่ร่วม/LINE (`services/tenancyService.js`)
+- **ย้ายออก**: อัตราน้ำไฟจาก `BuildingSetting`, ตรวจ input, บิลค้างถูกตัดจ่ายด้วยมัดจำเมื่อมัดจำพอ, กดซ้ำพร้อมกันได้ 409/400, เลขมิเตอร์ตอนย้ายออกเป็น `MeterRecord` ชุดเดิมรอบ `MM-YYYY`, ผู้เช่าใหม่เริ่มนับจาก `LeaseContract.initialWaterReading/initialElectricReading` (ฟอร์มเช็กอินมีช่องกรอก)
+- **ระดับกลาง**: error 5xx ไม่ส่งข้อความภายใน, URL ไฟล์ใช้ `PUBLIC_BASE_URL`, whitelist สถานะบิล + audit log, `process-late-fees` ไม่รับ `targetDate`, PDF เอาเบอร์/TAX ID ปลอมออก, CSV กัน formula injection, whitelist role แอดมิน, ออกบิลทั้งตึกรองรับ `isReset`/`waiveCommonFee`, ถอด `/api/settings` แบบไม่ล็อกอิน, แก้ path API หน้าโพล/พัสดุ/ทะเบียนรถใน frontend และเอาปุ่มอัปโหลดสลิปฝั่งแอดมินออก
+- **Dependencies**: อัปเดต multer/morgan/qs/express, เอา passport ออก, `xlsx` ย้ายไป 0.20.3 จาก SheetJS CDN (`npm audit --omit=dev` = 0)
+- **ก่อน deploy**: `prisma db push` กับ `playground_db` (คอลัมน์ `RefreshToken.familyId/usedAt`, `LeaseContract.initialWaterReading/initialElectricReading`), ตั้ง `PUBLIC_BASE_URL`, แก้ `docker-compose.yml` (JWT secret จริง, `TRUST_PROXY`, พอร์ต/รหัสผ่าน DB)
+- **การตัดสินใจหลัง audit**: (1) สถานะห้องหลังจบสัญญาแยกตามวัตถุประสงค์เดิม — `process-move-out` (ย้ายออกจริง มีคิดมิเตอร์/มัดจำ) → `maintenance` เพื่อรอตรวจสภาพ/ทำความสะอาด ส่วน `terminate` (ยกเลิกสัญญา เช่น สร้างผิด/ไม่ได้เข้าพักจริง) → `available` ไม่ปรับโค้ด (2) สัญญาที่ไม่ได้จดเลขมิเตอร์วันเข้าพักตอนสร้าง (เช่น ผู้เช่าลงทะเบียนเองผ่าน Invite Code) ให้แอดมินจดทีหลังผ่านหน้าสัญญาเช่า: `PATCH /api/admin/leases/:leaseId/initial-readings` (เฉพาะสัญญา ACTIVE, มี audit log) และหน้า `LeasesView` แสดงเตือนสัญญาที่ยังไม่มีเลข
+
