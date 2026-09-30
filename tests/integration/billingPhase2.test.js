@@ -193,4 +193,20 @@ describe('Billing engine (Phase 2)', () => {
       .rejects.toMatchObject({ statusCode: 409 });
     expect((await invoiceOf(roomA)).status).toBe('paid');
   });
+
+  test('แอดมินปฏิเสธสลิป (reviewing -> pending) ต้องเคลียร์ slipUrl และบันทึกเหตุผลลง adminNote', async () => {
+    const inv = await invoiceOf(roomA);
+    await prisma.invoice.update({ where: { id: inv.id }, data: { status: 'reviewing', slipUrl: 'http://x/slip.png' } });
+
+    const res = await request(app)
+      .patch(`/api/v1/invoices/${inv.id}/status`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ status: 'pending', rejectionReason: 'ยอดเงินไม่ตรง' });
+
+    expect(res.statusCode).toBe(200);
+    const after = await invoiceOf(roomA);
+    expect(after.status).toBe('pending');
+    expect(after.slipUrl).toBeNull();
+    expect(after.adminNote).toBe('ยอดเงินไม่ตรง');
+  });
 });
