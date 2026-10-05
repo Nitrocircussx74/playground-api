@@ -43,6 +43,20 @@ class AnnouncementController {
   }
 
   /**
+   * ตึกที่ต้องใช้ตรวจสิทธิ์จริง: ปกติคือ buildingId/targetId ที่ Client ส่งมา (ความหมายคือ "ตึก" อยู่แล้ว)
+   * ยกเว้น targetType ROOM ที่ targetId หมายถึง "ห้อง" ไม่ใช่ตึก — ต้องเปิดห้องนั้นหาตึกจริงมาตรวจเอง
+   * ห้ามเชื่อ buildingId ที่ Client ส่งแยกมาต่างหาก เพราะ Manager ของตึก A จะส่ง buildingId เป็นตึก A
+   * (ผ่านสิทธิ์) แต่ targetId เป็นห้องของตึก B แล้วให้ข้อความไปตกที่ผู้เช่าตึก B จริง (เคยพิสูจน์ได้จริง)
+   */
+  async _resolveTargetBuildingId(normTargetType, { buildingId, targetId }) {
+    if (normTargetType === 'ROOM' && targetId) {
+      const room = await billingService.prisma.room.findUnique({ where: { id: String(targetId) }, select: { buildingId: true } });
+      return room?.buildingId || null;
+    }
+    return buildingId || targetId || null;
+  }
+
+  /**
    * Helper function ในการคัดกรอง lineUserId ของผู้เช่าตาม Target (ALL, BUILDING, FLOOR, ROOM)
    */
   async _getTargetUserIds({ targetType, targetBuildingId, targetValue }) {
@@ -137,7 +151,7 @@ class AnnouncementController {
       const normTargetType = String(targetType).toUpperCase();
       let finalTargetValue = targetValue || (normTargetType === 'FLOOR' ? String(floor) : targetId) || null;
 
-      const scope = await this._resolveAllowedBuildingId(req, buildingId || targetId || null);
+      const scope = await this._resolveAllowedBuildingId(req, await this._resolveTargetBuildingId(normTargetType, { buildingId, targetId }));
       if (scope.error) {
         return res.status(scope.error.statusCode).json({ success: false, message: scope.error.message });
       }
@@ -210,7 +224,7 @@ class AnnouncementController {
       const normTargetType = String(targetType || 'ALL').toUpperCase();
       const finalTargetValue = targetValue || (normTargetType === 'FLOOR' ? String(floor) : targetId) || null;
 
-      const scope = await this._resolveAllowedBuildingId(req, buildingId || targetId || null);
+      const scope = await this._resolveAllowedBuildingId(req, await this._resolveTargetBuildingId(normTargetType, { buildingId, targetId }));
       if (scope.error) {
         return res.status(scope.error.statusCode).json({ success: false, message: scope.error.message });
       }
