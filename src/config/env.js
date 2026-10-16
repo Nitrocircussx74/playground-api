@@ -16,7 +16,7 @@ const config = {
     port: parseInt(process.env.DB_PORT || '5432', 10),
     user: process.env.DB_USER || 'postgres',
     password: process.env.DB_PASSWORD || 'postgres',
-    name: process.env.DB_NAME || 'playground_db',
+    name: process.env.DB_NAME || 'horspace_local_db',
     ssl: process.env.DB_SSL === 'true'
   },
   jwt: {
