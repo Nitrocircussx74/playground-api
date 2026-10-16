@@ -24,13 +24,13 @@ router.get('/invites/verify/:code', (req, res, next) => liffController.verifyInv
 router.get('/building-info', (req, res, next) => liffController.getBuildingPublicInfo(req, res, next));
 
 // จำกัดจำนวนครั้งการลอง PIN/เบอร์โทรต่อ IP เพื่อป้องกัน Brute Force (ใช้ค่าเดียวกับ linkAccountLimiter ด้านล่าง)
-// ปิดใน Test Env เพื่อไม่ให้ Integration Test ที่ยิงซ้ำๆ ติด 429 เอง
+// ปิดใน Test/Development Env เพื่อไม่ให้ Integration Test หรือ dev ที่ยิงซ้ำๆ ติด 429 เอง — เปิดเฉพาะ production
 const pinAttemptLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 8,
   standardHeaders: true,
   legacyHeaders: false,
-  skip: () => config.nodeEnv === 'test',
+  skip: () => config.nodeEnv !== 'production',
   message: {
     success: false,
     message: 'พยายามเข้าสู่ระบบบ่อยเกินไป กรุณาลองใหม่อีกครั้งใน 15 นาที'
@@ -54,11 +54,13 @@ router.post('/profile/change-pin', (req, res, next) => authController.changePin(
 router.post('/change-pin', (req, res, next) => authController.changePin(req, res, next));
 
 // จำกัดจำนวนครั้งการลองผูกบัญชี เพื่อป้องกัน Brute Force เดา phoneLast4 (10,000 ค่า) เมื่อรู้ inviteCode แล้ว
+// ปิดใน Test/Development Env เช่นเดียวกับ pinAttemptLimiter ด้านบน — เปิดเฉพาะ production
 const linkAccountLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 8,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: () => config.nodeEnv !== 'production',
   message: {
     success: false,
     message: 'พยายามผูกบัญชีบ่อยเกินไป กรุณาลองใหม่อีกครั้งใน 15 นาที'

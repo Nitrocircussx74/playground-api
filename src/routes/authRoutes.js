@@ -8,13 +8,13 @@ const { loginSchema } = require('../validators/authValidator');
 const config = require('../config/env');
 
 // จำกัดจำนวนครั้งการลอง PIN ต่อ IP เพื่อป้องกัน Brute Force รหัส PIN 6 หลัก (เหมือน linkAccountLimiter ใน liffRoutes.js)
-// ปิดใน Test Env เพื่อไม่ให้ Integration Test ที่ยิงซ้ำๆ ติด 429 เอง
+// ปิดใน Test/Development Env เพื่อไม่ให้ Integration Test หรือ dev ที่ยิงซ้ำๆ (เช่น reload บ่อยๆ) ติด 429 เอง — เปิดเฉพาะ production
 const pinAttemptLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 8,
   standardHeaders: true,
   legacyHeaders: false,
-  skip: () => config.nodeEnv === 'test',
+  skip: () => config.nodeEnv !== 'production',
   message: {
     success: false,
     message: 'พยายามเข้าสู่ระบบบ่อยเกินไป กรุณาลองใหม่อีกครั้งใน 15 นาที'
