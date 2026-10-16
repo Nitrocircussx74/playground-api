@@ -25,6 +25,8 @@ function startServer() {
       console.log('Database connected via Prisma');
     } catch (err) {
       console.error('Database connection error:', err.message);
+      // ปล่อยให้ตายแล้วให้ docker restart: always เกิดใหม่ ดีกว่า serve ต่อแบบ DB ตาย (500 ทุก request เงียบๆ)
+      process.exit(1);
     }
 
     // เริ่มต้นทำงาน Background Worker (Late Fee Cron Job)
