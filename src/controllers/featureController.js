@@ -1,4 +1,5 @@
 const billingService = require('../services/billingService');
+const authService = require('../services/authService');
 
 const STANDARD_FEATURE_METADATA = {
   ENABLE_MAINTENANCE_REQUEST: {
@@ -45,6 +46,11 @@ const STANDARD_FEATURE_METADATA = {
     title: 'โหวต & แบบสำรวจความเห็น',
     category: 'LINE LIFF (ลูกบ้าน)',
     description: 'เปิดให้ลูกบ้านร่วมโหวตหรือแสดงความเห็นในโพลที่นิติบุคคล/ผู้ดูแลสร้างขึ้น ผ่าน LINE'
+  },
+  ENABLE_E_CONTRACT: {
+    title: 'สัญญาเช่าห้องพัก (E-Contract)',
+    category: 'LINE LIFF (ลูกบ้าน)',
+    description: 'เปิดให้ลูกบ้านดูรายละเอียดสัญญาเช่าและดาวน์โหลดเอกสารสัญญา PDF ผ่าน LINE ได้'
   }
 };
 
@@ -54,7 +60,50 @@ class FeatureController {
    */
   async getFeatures(req, res, next) {
     try {
-      const { buildingId } = req.query;
+      let buildingId = req.query?.buildingId || req.query?.building_id || req.headers?.['x-building-id'];
+
+      // 0. Auto-resolve buildingId if not explicitly provided
+      if (!buildingId) {
+        // A. From req.user (JWT Authenticated)
+        if (req.user?.buildingId) {
+          buildingId = req.user.buildingId;
+        }
+
+        // B. From Authorization Bearer Token (if present)
+        if (!buildingId && req.headers?.authorization?.startsWith('Bearer ')) {
+          try {
+            const token = req.headers.authorization.split(' ')[1];
+            const decoded = authService.verifyAccessToken(token);
+            if (decoded?.buildingId) {
+              buildingId = decoded.buildingId;
+            } else if (decoded?.tenantId || decoded?.id) {
+              const tenant = await billingService.prisma.tenant.findUnique({
+                where: { id: decoded.tenantId || decoded.id },
+                include: {
+                  rooms: { select: { buildingId: true } },
+                  roomResidents: { where: { status: 'ACTIVE' }, include: { room: { select: { buildingId: true } } } }
+                }
+              });
+              buildingId = tenant?.rooms?.[0]?.buildingId || tenant?.roomResidents?.[0]?.room?.buildingId || null;
+            }
+          } catch (_) {}
+        }
+
+        // C. From LINE identity headers or query
+        const lineUserId = req.lineUserId || req.headers?.['x-line-user-id'] || req.query?.lineUserId;
+        if (!buildingId && lineUserId) {
+          try {
+            const tenant = await billingService.prisma.tenant.findUnique({
+              where: { lineUserId },
+              include: {
+                rooms: { select: { buildingId: true } },
+                roomResidents: { where: { status: 'ACTIVE' }, include: { room: { select: { buildingId: true } } } }
+              }
+            });
+            buildingId = tenant?.rooms?.[0]?.buildingId || tenant?.roomResidents?.[0]?.room?.buildingId || null;
+          } catch (_) {}
+        }
+      }
 
       // ดึงข้อมูลทั้งหมดที่เกี่ยวข้อง (ทั้งค่าเริ่มต้นส่วนกลาง และค่าเฉพาะตึก)
       const allRecords = await billingService.prisma.featureToggle.findMany({
@@ -81,17 +130,19 @@ class FeatureController {
         featureMap[key] = true;
       });
 
-      // 2. นำค่า Global Default (buildingId = null) ใน Database มาทับ
+      // 2. นำค่า Global Default (buildingId = null) ใน Database มาทับ — เฉพาะ Key ที่ยังอยู่ใน
+      // STANDARD_FEATURE_METADATA เท่านั้น กัน Key เก่าที่เลิกใช้แล้ว (เช่น Rename ไปแล้ว) แต่ยังมี Row
+      // ค้างอยู่ในตาราง โผล่มาเป็นการ์ดที่ไม่มี Title/คำอธิบายจริง (โชว์แค่ Raw Key เป็นชื่อ)
       allRecords
-        .filter((r) => !r.buildingId)
+        .filter((r) => !r.buildingId && STANDARD_FEATURE_METADATA[r.key])
         .forEach((r) => {
-          const meta = STANDARD_FEATURE_METADATA[r.key] || {};
+          const meta = STANDARD_FEATURE_METADATA[r.key];
           uniqueFeaturesMap.set(r.key, {
             id: r.id,
             key: r.key,
-            title: meta.title || r.key,
-            category: meta.category || 'ระบบทั่วไป',
-            description: meta.description || r.description || `ฟีเจอร์ ${r.key}`,
+            title: meta.title,
+            category: meta.category,
+            description: meta.description,
             isActive: r.isActive,
             buildingId: null,
             isBuildingOverride: false
@@ -99,18 +150,18 @@ class FeatureController {
           featureMap[r.key] = r.isActive;
         });
 
-      // 3. หากเลือกอาคาร (buildingId) ให้นำค่าเฉพาะอาคารนั้นมาทับ
+      // 3. หากเลือกอาคาร (buildingId) ให้นำค่าเฉพาะอาคารนั้นมาทับ (กรอง Key เก่าทิ้งเหมือนข้อ 2)
       if (buildingId) {
         allRecords
-          .filter((r) => r.buildingId === buildingId)
+          .filter((r) => r.buildingId === buildingId && STANDARD_FEATURE_METADATA[r.key])
           .forEach((r) => {
-            const meta = STANDARD_FEATURE_METADATA[r.key] || {};
+            const meta = STANDARD_FEATURE_METADATA[r.key];
             uniqueFeaturesMap.set(r.key, {
               id: r.id,
               key: r.key,
-              title: meta.title || r.key,
-              category: meta.category || 'ระบบทั่วไป',
-              description: meta.description || r.description || `ฟีเจอร์ ${r.key}`,
+              title: meta.title,
+              category: meta.category,
+              description: meta.description,
               isActive: r.isActive,
               buildingId: buildingId,
               isBuildingOverride: true
@@ -149,7 +200,12 @@ class FeatureController {
         });
       }
 
-      const meta = STANDARD_FEATURE_METADATA[key] || {};
+      // รับเฉพาะ Key ที่ระบบรองรับ กันแอดมินสร้าง Toggle ขยะที่ไม่มีหน้าไหนใน LIFF ใช้จริง
+      if (!STANDARD_FEATURE_METADATA[key]) {
+        return res.status(400).json({ success: false, message: `ไม่รู้จักฟีเจอร์ ${key}` });
+      }
+
+      const meta = STANDARD_FEATURE_METADATA[key];
       const targetBuildingId = buildingId || req.query.buildingId || null;
       const description = meta.description || req.body.description || `ฟีเจอร์ ${key}`;
 

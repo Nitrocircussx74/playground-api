@@ -12,7 +12,8 @@ describe('Multi-Building Architecture Integration Tests', () => {
 
   beforeAll(async () => {
     const superAdmin = await billingService.prisma.user.findFirst({
-      where: { role: { in: ['SUPERADMIN', 'OWNER', 'ADMIN', 'super_admin', 'owner', 'admin'] } }
+      // ต้องเป็นแอดมินสิทธิ์เต็มเท่านั้น: แอดมินระดับ admin เข้าถึงได้เฉพาะตึกที่มีสิทธิ์ และ findFirst ไม่รับประกันว่าจะได้คนไหน
+      where: { role: { in: ['SUPERADMIN', 'OWNER', 'super_admin', 'owner'] } }
     });
     adminToken = authService.generateAccessToken(superAdmin);
 
@@ -117,10 +118,16 @@ describe('Multi-Building Architecture Integration Tests', () => {
     });
   });
 
-  describe('LIFF Contextual Settings Endpoint (/api/settings & /api/v1/liff/settings)', () => {
-    test('GET /api/settings - ค้นหาตึกของลูกบ้านตาม lineUserId แล้วส่ง BuildingSetting ของตึกนั้น', async () => {
+  describe('LIFF Contextual Settings Endpoint (/api/v1/liff/settings)', () => {
+    test('GET /api/settings แบบไม่ล็อกอิน (ระบุตัวตนด้วย query) ถูกถอดออกแล้ว: ต้องไม่ได้ข้อมูลตึก (404)', async () => {
+      const response = await request(app).get('/api/settings?lineUserId=U_BUILDING_TEST_001');
+      expect(response.statusCode).toBe(404);
+    });
+
+    test('GET /api/v1/liff/settings - ตรวจตัวตนด้วย LINE ID Token แล้วส่ง BuildingSetting ของตึกลูกบ้านคนนั้น', async () => {
       const response = await request(app)
-        .get(`/api/settings?lineUserId=U_BUILDING_TEST_001`);
+        .get('/api/v1/liff/settings')
+        .set('X-Line-Id-Token', 'U_BUILDING_TEST_001');
 
       expect(response.statusCode).toBe(200);
       expect(response.body.success).toBe(true);

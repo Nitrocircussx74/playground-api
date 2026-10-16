@@ -1,7 +1,9 @@
+const { resolveListBuildings } = require('../middlewares/buildingAccessMiddleware');
 const billingService = require('../services/billingService');
 const lineService = require('../services/lineService');
 const { setupThaiFonts } = require('../utils/pdfHelper');
 const { formatBillingCycle } = require('../utils/formatBillingCycle');
+const csvCell = require('../utils/csvCell');
 
 class DashboardController {
   /**
@@ -13,10 +15,26 @@ class DashboardController {
       const userRole = (req.user?.role || '').toLowerCase();
       const userId = req.user?.id;
       const isRoomOwner = ['room_owner', 'investor'].includes(userRole);
+      const isSuperAdmin = ['super_admin', 'superadmin', 'owner'].includes(userRole);
+
+      let allowedBuildingIds = null;
+      if (!isSuperAdmin && !isRoomOwner && userId) {
+        const permissions = await billingService.prisma.userBuildingPermission.findMany({
+          where: { userId },
+          select: { buildingId: true }
+        });
+        allowedBuildingIds = permissions.map((p) => p.buildingId);
+      }
+
+      const buildingScope = buildingId
+        ? { buildingId }
+        : allowedBuildingIds
+        ? { buildingId: { in: allowedBuildingIds } }
+        : {};
 
       // 1. Occupancy Rate (คำนวณอัตราการครองห้องด้วย Prisma groupBy)
       const roomWhere = {
-        ...(buildingId && { buildingId }),
+        ...buildingScope,
         ...(isRoomOwner && userId && { ownerId: userId })
       };
       const roomStats = await billingService.prisma.room.groupBy({
@@ -48,7 +66,7 @@ class DashboardController {
       const prevCycle = formatBillingCycle(prevDate);
 
       const roomScope = {
-        ...(buildingId && { buildingId }),
+        ...buildingScope,
         ...(isRoomOwner && userId && { ownerId: userId })
       };
 
@@ -114,25 +132,45 @@ class DashboardController {
         where: {
           status: 'ACTIVE',
           expectedEndDate: { gte: now, lte: in30Days },
-          ...(buildingId && { buildingId }),
+          ...buildingScope,
           ...(isRoomOwner && userId && { room: { ownerId: userId } })
         },
         orderBy: { expectedEndDate: 'asc' },
         include: { room: true, tenant: true, building: true }
       });
 
-      // 5. Pending Maintenance Requests Count
-      const pendingMaintenanceCount = await billingService.prisma.maintenanceRequest.count({
+      // 5. Pending Slips for Review
+      const pendingSlips = await billingService.prisma.invoice.findMany({
+        where: {
+          status: 'reviewing',
+          ...(Object.keys(roomScope).length > 0 && { room: roomScope })
+        },
+        orderBy: { updatedAt: 'desc' },
+        include: { room: true, tenant: true }
+      });
+      const pendingSlipsCount = pendingSlips.length;
+
+      // 6. Pending Maintenance Requests List & Count
+      const pendingMaintenanceRequests = await billingService.prisma.maintenanceRequest.findMany({
         where: {
           status: { in: ['pending', 'in_progress'] },
           ...(Object.keys(roomScope).length > 0 && { room: roomScope })
-        }
+        },
+        orderBy: { createdAt: 'desc' },
+        include: { room: true, tenant: true, building: true }
       });
+      const pendingMaintenanceCount = pendingMaintenanceRequests.length;
 
-      // 6. Building Breakdown (สำหรับ Consolidated All Buildings Mode)
+      // 7. Building Breakdown (สำหรับ Consolidated All Buildings Mode)
       let buildingBreakdown = [];
       if (!buildingId) {
+        const buildingWhere = {};
+        if (allowedBuildingIds) {
+          buildingWhere.id = { in: allowedBuildingIds };
+        }
+
         const buildings = await billingService.prisma.building.findMany({
+          where: buildingWhere,
           include: {
             rooms: {
               where: isRoomOwner && userId ? { ownerId: userId } : {}
@@ -157,18 +195,18 @@ class DashboardController {
                     ...(isRoomOwner && userId && { ownerId: userId })
                   }
                 },
-              _sum: { grandTotal: true }
-            });
+                _sum: { grandTotal: true }
+              });
 
-            return {
-              id: b.id,
-              name: b.name,
-              totalRooms: bTotalRooms,
-              occupiedRooms: bOccupied,
-              occupancyRate: bRate,
-              currentRevenue: Number(bRev._sum.grandTotal || 0)
-            };
-          })
+              return {
+                id: b.id,
+                name: b.name,
+                totalRooms: bTotalRooms,
+                occupiedRooms: bOccupied,
+                occupancyRate: bRate,
+                currentRevenue: Number(bRev._sum.grandTotal || 0)
+              };
+            })
         );
       }
 
@@ -204,6 +242,9 @@ class DashboardController {
           },
           expiringLeases,
           expiringLeasesCount: expiringLeases.length,
+          pendingSlips,
+          pendingSlipsCount,
+          pendingMaintenanceRequests,
           pendingMaintenanceCount
         }
       });
@@ -217,9 +258,14 @@ class DashboardController {
    */
   async remindDebtors(req, res, next) {
     try {
+      const scope = await resolveListBuildings(req.user, req.body?.buildingId || req.query?.buildingId);
+      if (scope.forbidden) {
+        return res.status(403).json({ success: false, message: 'คุณไม่มีสิทธิ์เข้าถึงข้อมูลของอาคาร/ตึกนี้' });
+      }
       const debtors = await billingService.prisma.invoice.findMany({
         where: {
-          status: { in: ['pending', 'overdue'] }
+          status: { in: ['pending', 'overdue'] },
+          ...(scope.ids && { room: { buildingId: { in: scope.ids } } })
         },
         include: { room: true, tenant: true }
       });
@@ -258,6 +304,22 @@ class DashboardController {
       const userRole = (req.user?.role || '').toLowerCase();
       const userId = req.user?.id;
       const isRoomOwner = ['room_owner', 'investor'].includes(userRole);
+      const isSuperAdmin = ['super_admin', 'superadmin', 'owner'].includes(userRole);
+
+      let allowedBuildingIds = null;
+      if (!isSuperAdmin && !isRoomOwner && userId) {
+        const permissions = await billingService.prisma.userBuildingPermission.findMany({
+          where: { userId },
+          select: { buildingId: true }
+        });
+        allowedBuildingIds = permissions.map((p) => p.buildingId);
+      }
+
+      const buildingScope = buildingId
+        ? { buildingId }
+        : allowedBuildingIds
+        ? { buildingId: { in: allowedBuildingIds } }
+        : {};
 
       const now = new Date();
       const trends = [];
@@ -271,7 +333,7 @@ class DashboardController {
             status: 'paid',
             billingCycle: cycle,
             room: {
-              ...(buildingId && { buildingId }),
+              ...buildingScope,
               ...(isRoomOwner && userId && { ownerId: userId })
             }
           },
@@ -343,6 +405,8 @@ class DashboardController {
         'Water Fee (THB)',
         'Electricity Fee (THB)',
         'Common Fee (THB)',
+        'Other Fee (THB)',
+        'Late Fee (THB)',
         'Grand Total (THB)',
         'Status',
         'Due Date'
@@ -352,22 +416,23 @@ class DashboardController {
 
       invoices.forEach((inv) => {
         const roomNum = inv.room ? inv.room.roomNumber : 'N/A';
-        const nameStr = inv.tenant ? `${inv.tenant.firstName} ${inv.tenant.lastName}`.replace(/"/g, '""') : '';
-        const tenantName = inv.tenant ? `"${nameStr}"` : 'N/A';
+        const tenantName = inv.tenant ? csvCell(`${inv.tenant.firstName} ${inv.tenant.lastName}`) : 'N/A';
         const dueDate = inv.dueDate ? new Date(inv.dueDate).toISOString().split('T')[0] : '';
         
         const row = [
-          `"${inv.invoiceNumber}"`,
-          `"${roomNum}"`,
+          csvCell(inv.invoiceNumber),
+          csvCell(roomNum),
           tenantName,
-          `"${inv.billingCycle}"`,
+          csvCell(inv.billingCycle),
           Number(inv.roomPrice).toFixed(2),
           Number(inv.waterTotal).toFixed(2),
           Number(inv.electricTotal).toFixed(2),
           Number(inv.commonFee).toFixed(2),
+          Number(inv.otherFee).toFixed(2),
+          Number(inv.lateFeeCharge).toFixed(2),
           Number(inv.grandTotal).toFixed(2),
-          `"${inv.status}"`,
-          `"${dueDate}"`
+          csvCell(inv.status),
+          csvCell(dueDate)
         ];
         csv += row.join(',') + '\n';
       });

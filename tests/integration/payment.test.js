@@ -9,7 +9,7 @@ describe('PromptPay Payment & Slip Upload Integration Tests', () => {
   let testRoom;
   let testTenant;
   let testInvoice;
-  const testLineUserId = 'U_test_payment_tenant';
+  const testLineUserId = `U_test_payment_${Date.now()}`;
   // PNG File Signature (89 50 4E 47 0D 0A 1A 0A) เพื่อให้ผ่าน Magic Bytes Validation ของ uploadMiddleware
   const fakePngBuffer = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x00]);
 
@@ -19,8 +19,8 @@ describe('PromptPay Payment & Slip Upload Integration Tests', () => {
       data: {
         firstName: 'ทดสอบ',
         lastName: 'การชำระเงิน',
-        phone: '0891112233',
-        idCard: '1100200300999',
+        phone: `089${Math.floor(1000000 + Math.random() * 9000000)}`,
+        idCard: `110020${Math.floor(1000000 + Math.random() * 9000000)}`,
         lineUserId: testLineUserId
       }
     });
@@ -28,7 +28,7 @@ describe('PromptPay Payment & Slip Upload Integration Tests', () => {
     // 2. Create Room
     testRoom = await billingService.prisma.room.create({
       data: {
-        roomNumber: 'PAY999',
+        roomNumber: `PAY${Math.floor(100 + Math.random() * 899)}`,
         floor: 9,
         price: 4000,
         status: 'occupied',

@@ -1,44 +1,40 @@
+/**
+ * รัน Cloudflare Named Tunnel (horspace-dev) สำหรับ API
+ * - api.horspace.com → API (port 3000)
+ * - config อยู่ที่ ~/.cloudflared/config.yml
+ */
 const { spawn } = require('child_process');
 
-const port = process.argv[2] || process.env.PORT || 3000;
-console.log(`\x1b[36m[Tunnel]\x1b[0m Starting Cloudflare Tunnel for http://localhost:${port}...`);
+console.log(`\x1b[36m[Tunnel]\x1b[0m Starting Cloudflare Named Tunnel (horspace-dev)...`);
 
-const cloudflared = spawn('cloudflared', ['tunnel', '--url', `http://localhost:${port}`]);
+const tunnel = spawn('cloudflared', ['tunnel', 'run', 'horspace-dev'], {
+  stdio: ['ignore', 'pipe', 'pipe'],
+});
 
-let activeUrl = null;
-
-function handleData(data) {
-  const text = data.toString();
-  const match = text.match(/https:\/\/[a-zA-Z0-9-]+\.trycloudflare\.com/);
-  
-  if (match) {
-    const url = match[0];
-    if (url !== activeUrl) {
-      activeUrl = url;
-      console.log('\n\x1b[1m\x1b[32m' + '═'.repeat(65) + '\x1b[0m');
-      console.log(`\x1b[1m\x1b[32m  🚀 API Cloudflare Tunnel Active!\x1b[0m`);
-      console.log(`\x1b[1m\x1b[33m  🌐 HTTPS Public URL:\x1b[0m \x1b[1m\x1b[36m\x1b[4m${url}\x1b[0m`);
-      console.log(`\x1b[1m\x1b[35m  🎯 Forwarding to:\x1b[0m   http://localhost:${port}`);
-      console.log('\x1b[1m\x1b[32m' + '═'.repeat(65) + '\x1b[0m\n');
-    }
+tunnel.stdout.on('data', (d) => process.stdout.write(`\x1b[36m[Tunnel]\x1b[0m ${d}`));
+tunnel.stderr.on('data', (d) => {
+  const text = d.toString();
+  // กรอง INFO spam ปกติออก แสดงเฉพาะ INF Registered (connected) และ ERR
+  if (text.includes('Registered tunnel connection')) {
+    console.log('\n\x1b[1m\x1b[32m' + '═'.repeat(60) + '\x1b[0m');
+    console.log('\x1b[1m\x1b[32m  Tunnel Active!\x1b[0m');
+    console.log('\x1b[1m\x1b[33m  app.horspace.com\x1b[0m → Vite dev server');
+    console.log('\x1b[1m\x1b[33m  api.horspace.com\x1b[0m → API :3000');
+    console.log('\x1b[1m\x1b[32m' + '═'.repeat(60) + '\x1b[0m\n');
+  } else if (text.includes('ERR') || text.includes('error')) {
+    process.stderr.write(`\x1b[31m[Tunnel]\x1b[0m ${text}`);
   }
-}
+});
 
-cloudflared.stdout.on('data', handleData);
-cloudflared.stderr.on('data', handleData);
-
-cloudflared.on('close', (code) => {
+tunnel.on('close', (code) => {
   if (code !== 0 && code !== null) {
-    console.error(`\x1b[31m[Tunnel] Cloudflared exited with code ${code}\x1b[0m`);
+    console.error(`\x1b[31m[Tunnel] exited with code ${code}\x1b[0m`);
   }
 });
 
-process.on('SIGINT', () => {
-  cloudflared.kill('SIGINT');
-  process.exit();
-});
-
-process.on('SIGTERM', () => {
-  cloudflared.kill('SIGTERM');
-  process.exit();
-});
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  process.on(sig, () => {
+    tunnel.kill(sig);
+    process.exit();
+  });
+}

@@ -107,6 +107,7 @@ class LateFeeService {
    * ค้นหาและอัปเดตบิลค้างชำระทั้งหมดในระบบ (Automated Batch Processing)
    * @param {Object} [options]
    * @param {string} [options.buildingId] - ระบุตึก (ถ้าต้องการ)
+   * @param {string[]} [options.buildingIds] - จำกัดหลายตึก (ใช้แทน buildingId)
    * @param {Date|string} [options.targetDate=new Date()] - วันที่ประมวลผล
    * @returns {Promise<Object>} สรุปผลการประมวลผล
    */
@@ -118,7 +119,10 @@ class LateFeeService {
       status: { in: ['pending', 'overdue'] }
     };
 
-    if (buildingId) {
+    // buildingIds = จำกัดหลายตึก (เช่น ตึกที่แอดมินคนนั้นมีสิทธิ์), buildingId = ตึกเดียว, ไม่ส่งทั้งคู่ = ทุกตึก (Cron)
+    if (options.buildingIds) {
+      whereClause.room = { buildingId: { in: options.buildingIds } };
+    } else if (buildingId) {
       whereClause.room = { buildingId };
     }
 

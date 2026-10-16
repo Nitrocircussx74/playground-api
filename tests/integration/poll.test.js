@@ -12,7 +12,8 @@ describe('Voting/Polls Integration Tests', () => {
 
   beforeAll(async () => {
     const adminUser = await billingService.prisma.user.findFirst({
-      where: { role: { in: ['SUPERADMIN', 'OWNER', 'ADMIN', 'super_admin', 'owner', 'admin'] } }
+      // ต้องเป็นแอดมินสิทธิ์เต็มเท่านั้น: แอดมินระดับ admin เข้าถึงได้เฉพาะตึกที่มีสิทธิ์ และ findFirst ไม่รับประกันว่าจะได้คนไหน
+      where: { role: { in: ['SUPERADMIN', 'OWNER', 'super_admin', 'owner'] } }
     });
     adminToken = authService.generateAccessToken(adminUser);
 
@@ -52,10 +53,10 @@ describe('Voting/Polls Integration Tests', () => {
     }
   });
 
-  describe('POST /api/admin/buildings/:buildingId/polls', () => {
+  describe('POST /api/v1/buildings/:buildingId/polls', () => {
     test('แอดมินควรสร้างโพลใหม่สำเร็จ (201 Created)', async () => {
       const response = await request(app)
-        .post(`/api/admin/buildings/${testBuilding.id}/polls`)
+        .post(`/api/v1/buildings/${testBuilding.id}/polls`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ question: 'เห็นด้วยกับการปรับปรุงสระว่ายน้ำหรือไม่?', options: ['เห็นด้วย', 'ไม่เห็นด้วย'] });
 
@@ -68,7 +69,7 @@ describe('Voting/Polls Integration Tests', () => {
 
     test('กรณีระบุ options น้อยกว่า 2 ตัวเลือก ต้องตอบกลับ HTTP 400', async () => {
       const response = await request(app)
-        .post(`/api/admin/buildings/${testBuilding.id}/polls`)
+        .post(`/api/v1/buildings/${testBuilding.id}/polls`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ question: 'คำถามไม่สมบูรณ์', options: ['ตัวเลือกเดียว'] });
 
@@ -113,10 +114,10 @@ describe('Voting/Polls Integration Tests', () => {
     });
   });
 
-  describe('GET /api/admin/polls/:id/results', () => {
+  describe('GET /api/v1/polls/:id/results', () => {
     test('แอดมินควรเห็นผลโหวตตรงกับจำนวนที่โหวตจริง (200 OK)', async () => {
       const response = await request(app)
-        .get(`/api/admin/polls/${createdPollId}/results`)
+        .get(`/api/v1/polls/${createdPollId}/results`)
         .set('Authorization', `Bearer ${adminToken}`);
 
       expect(response.statusCode).toBe(200);
@@ -126,10 +127,10 @@ describe('Voting/Polls Integration Tests', () => {
     });
   });
 
-  describe('PATCH /api/admin/polls/:id (ปิดโพล)', () => {
+  describe('PATCH /api/v1/polls/:id (ปิดโพล)', () => {
     test('แอดมินปิดโพลแล้ว ลูกบ้านคนอื่นต้องโหวตไม่ได้ (400)', async () => {
       const closeResponse = await request(app)
-        .patch(`/api/admin/polls/${createdPollId}`)
+        .patch(`/api/v1/polls/${createdPollId}`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ isActive: false });
       expect(closeResponse.statusCode).toBe(200);

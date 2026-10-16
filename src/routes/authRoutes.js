@@ -1,6 +1,5 @@
 const express = require('express');
 const router = express.Router();
-const passport = require('passport');
 const rateLimit = require('express-rate-limit');
 const authController = require('../controllers/authController');
 const authenticateJWT = require('../middlewares/authMiddleware');
@@ -9,13 +8,13 @@ const { loginSchema } = require('../validators/authValidator');
 const config = require('../config/env');
 
 // จำกัดจำนวนครั้งการลอง PIN ต่อ IP เพื่อป้องกัน Brute Force รหัส PIN 6 หลัก (เหมือน linkAccountLimiter ใน liffRoutes.js)
-// ปิดใน Test Env เพื่อไม่ให้ Integration Test ที่ยิงซ้ำๆ ติด 429 เอง
+// ปิดใน Test/Development Env เพื่อไม่ให้ Integration Test หรือ dev ที่ยิงซ้ำๆ (เช่น reload บ่อยๆ) ติด 429 เอง — เปิดเฉพาะ production
 const pinAttemptLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 8,
   standardHeaders: true,
   legacyHeaders: false,
-  skip: () => config.nodeEnv === 'test',
+  skip: () => config.nodeEnv !== 'production',
   message: {
     success: false,
     message: 'พยายามเข้าสู่ระบบบ่อยเกินไป กรุณาลองใหม่อีกครั้งใน 15 นาที'
@@ -23,29 +22,10 @@ const pinAttemptLimiter = rateLimit({
 });
 
 /**
- * @route   GET /auth/google
- * @desc    เริ่มต้นกระบวนการยืนยันตัวตนด้วย Google OAuth 2.0
- */
-router.get(
-  '/google',
-  passport.authenticate('google', { scope: ['profile', 'email'], session: false })
-);
-
-/**
- * @route   GET /auth/google/callback
- * @desc    Google OAuth Callback เมื่อผู้ใช้ยืนยันตัวตนสำเร็จ ออก Access Token และ Refresh Token Cookie
- */
-router.get(
-  '/google/callback',
-  passport.authenticate('google', { failureRedirect: '/login', session: false }),
-  authController.googleCallback
-);
-
-/**
  * @route   POST /auth/login
  * @desc    เข้าสู่ระบบ (Zod Validation) -> ส่งคืน Access Token ใน Body และฝัง Refresh Token ใน HttpOnly Cookie
  */
-router.post('/login', validate(loginSchema), authController.login);
+router.post('/login', pinAttemptLimiter, validate(loginSchema), authController.login);
 
 /**
  * @route   POST /auth/login/line

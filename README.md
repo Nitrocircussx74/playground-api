@@ -70,6 +70,7 @@
   - Rate Limiter เฉพาะทาง (8 ครั้ง/15 นาทีต่อ IP) ป้องกัน Brute Force บนทุก Endpoint ที่เกี่ยวกับ PIN/การผูกบัญชี LINE
   - Room Owner: กำหนดเจ้าของห้อง (`User`) แยกจากผู้เช่า พร้อม Scoped Access Control
   - Notification Log: บันทึกประวัติการส่งแจ้งเตือน LINE/SMS ทุกช่องทางพร้อมสถานะสำเร็จ/ล้มเหลว
+  - 🔔 กระดิ่งแจ้งเตือนในระบบ (In-App Notification Bell): แอดมินเห็นทันทีในกระดิ่งเมื่อลูกบ้านแจ้งซ่อมใหม่/แนบสลิปรอตรวจสอบ/ขอจองพื้นที่/ขอจดทะเบียนรถ/ลงทะเบียนใหม่ — ไม่ต้องเข้าไปไล่ดูเองอีกต่อไป
   - Smart Entry Gateway Router (`checkTenantStatus`) ผูก LINE ID เข้ากับ Tenant อัตโนมัติเฉพาะบัญชีที่ยังไม่เคยผูก LINE มาก่อนเท่านั้น กัน Account Takeover ผ่านการเดา Tenant ID
   - Business Logic ทั้งหมดอยู่ใน Service Layer (`src/services/`) — Controller ไม่แตะ Prisma โดยตรง (Layered Architecture ตาม `CLAUDE.md`)
 
@@ -98,12 +99,20 @@
   - ตรวจสอบรายการพัสดุที่รอรับ พร้อมรูปถ่ายกล่องพัสดุและเลข Tracking
 - **📢 ข่าวสาร & ประกาศ (LIFF Announcements)**:
   - อ่านข่าวสารและประกาศย้อนหลังของหอพัก
+- **🔔 กระดิ่งแจ้งเตือนในแอป (LIFF Notification Bell)**:
+  - ดูประวัติแจ้งเตือนที่ระบบเคยส่งหาตนเอง (บิล, พัสดุ, แจ้งซ่อม, จองพื้นที่, รถ, โพล) พร้อมสถานะอ่านแล้ว/ยังไม่อ่าน
 - **📅 จองพื้นที่ส่วนกลาง (LIFF Facility Booking)** — สำหรับคอนโด/หมู่บ้าน:
   - เลือกพื้นที่ส่วนกลางและช่วงเวลาที่ต้องการจองด้วยตนเอง ยกเลิกได้
 - **🚗 ยานพาหนะ/ผู้มาเยือน (LIFF Vehicle & Visitor)** — สำหรับคอนโด/หมู่บ้าน:
   - ลงทะเบียนทะเบียนรถ (รออนุมัติ) และแจ้งแขกมาเยือนล่วงหน้า
 - **🗳️ โหวต & แบบสำรวจ (LIFF Voting/Polls)** — สำหรับคอนโด/หมู่บ้าน:
   - ร่วมโหวตโพลที่นิติบุคคล/ผู้ดูแลสร้างขึ้น
+
+### 🏛️ 3. ระบบ Mobile Portal สำหรับเจ้าของตึก/ผู้บริหารอาคาร (LIFF Building Owner Dashboard)
+- **Executive Snapshot**: การ์ดสรุปตัวเลขสำคัญ — ยอดรายรับ/ยอดรับชำระ/ยอดค้าง, Occupancy Rate, Counter Badges (สลิปรอตรวจ, แจ้งซ่อมรออนุมัติ)
+- **Quick Approvals**: อนุมัติ/ปฏิเสธสลิปโอนเงินพร้อมแจ้ง Tenant ผ่าน LINE, จัดการงานแจ้งซ่อมด่วน, ดูรายการสัญญาเช่าใกล้หมดอายุ (30 วัน)
+- **Multi-Building Switcher**: สำหรับเจ้าของที่มีสิทธิ์หลายอาคาร สลับดูข้อมูลแต่ละตึกหรือภาพรวมทุกตึก
+- **Dual-Role Mode Switcher**: เจ้าของที่พักในตึกตนเองสามารถสลับ Owner ↔ Tenant View โดยไม่ต้องออกจากระบบ
 
 ---
 
@@ -125,7 +134,7 @@ playground-api/
 │   ├── validators/           # Zod Validation Schemas
 │   ├── app.js
 │   └── server.js
-├── tests/                    # API Integration & Unit Tests (224/224 Passed)
+├── tests/                    # API Integration & Unit Tests (373/373 Passed)
 └── package.json
 ```
 
@@ -137,7 +146,7 @@ playground-api/
 # 1. ติดตั้ง Dependencies
 yarn install
 
-# 2. ตั้งค่าไฟล์ .env
+# 2. ตั้งค่าไฟล์ .env (ตั้ง TEST_DATABASE_URL สำหรับเทสต์, PUBLIC_BASE_URL และ TRUST_PROXY สำหรับ Production)
 cp .env.example .env
 
 # 3. อัปเดต Database Schema & Seed Data ด้วย Prisma

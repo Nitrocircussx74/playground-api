@@ -1,5 +1,9 @@
+const { resolveListBuildings } = require('../middlewares/buildingAccessMiddleware');
 const billingService = require('../services/billingService');
+const { roomScopedWhere, hasRoomScope } = require('../utils/roomScope');
+const { isFeatureEnabled } = require('../middlewares/requireFeatureMiddleware');
 const lineService = require('../services/lineService');
+const publicUrl = require('../utils/publicUrl');
 
 class MaintenanceController {
   /**
@@ -15,17 +19,22 @@ class MaintenanceController {
       if (status) where.status = status;
       if (roomId) where.roomId = roomId;
 
-      if (['room_owner', 'investor'].includes(userRole) && userId) {
+      if (userRole === 'tenant') {
+        where.tenantId = req.user?.tenantId || req.user?.id || 'none';
+      } else if (['room_owner', 'investor'].includes(userRole) && userId) {
         where.room = {
           ownerId: userId,
           ...(buildingId && { buildingId })
         };
       } else {
-        const targetBuildingId = buildingId || req.params.buildingId;
-        if (targetBuildingId) {
+        const scope = await resolveListBuildings(req.user, buildingId || req.params.buildingId);
+        if (scope.forbidden) {
+          return res.status(403).json({ success: false, message: 'คุณไม่มีสิทธิ์เข้าถึงข้อมูลของอาคาร/ตึกนี้' });
+        }
+        if (scope.ids) {
           where.OR = [
-            { buildingId: targetBuildingId },
-            { room: { buildingId: targetBuildingId } }
+            { buildingId: { in: scope.ids } },
+            { room: { buildingId: { in: scope.ids } } }
           ];
         }
       }
@@ -54,44 +63,13 @@ class MaintenanceController {
    */
   async getMaintenanceRequestsForLiff(req, res, next) {
     try {
-      const lineUserId = req.lineUserId || req.query?.lineUserId;
-      const { roomId: queryRoomId } = req.query || {};
-
-      let tenantRecord = null;
-      if (lineUserId) {
-        tenantRecord = await billingService.prisma.tenant.findUnique({
-          where: { lineUserId },
-          include: {
-            rooms: true,
-            leaseContracts: { where: { status: 'ACTIVE' } }
-          }
-        });
-      }
-
-      if (!tenantRecord) {
+      // เฉพาะใบแจ้งซ่อมของห้องที่เลือกอยู่ (req.roomId ตรวจสิทธิ์แล้วใน scopeTenantRooms) รวมใบงานที่แอดมินเปิดให้ห้องนี้
+      if (!hasRoomScope(req)) {
         return res.status(200).json({ success: true, data: [] });
       }
 
-      const allRoomIds = (tenantRecord.rooms || []).map((r) => r.id);
-      (tenantRecord.leaseContracts || []).forEach((c) => {
-        if (c.roomId && !allRoomIds.includes(c.roomId)) {
-          allRoomIds.push(c.roomId);
-        }
-      });
-
-      const where = {};
-      if (queryRoomId && allRoomIds.includes(queryRoomId)) {
-        where.roomId = queryRoomId;
-      } else {
-        const orConditions = [{ tenantId: tenantRecord.id }];
-        if (allRoomIds.length > 0) {
-          orConditions.push({ roomId: { in: allRoomIds } });
-        }
-        where.OR = orConditions;
-      }
-
       const requests = await billingService.prisma.maintenanceRequest.findMany({
-        where,
+        where: roomScopedWhere(req, { includeUnassigned: true }),
         orderBy: { createdAt: 'desc' },
         include: {
           room: { include: { building: true } },
@@ -114,7 +92,7 @@ class MaintenanceController {
    */
   async createMaintenanceRequest(req, res, next) {
     try {
-      const { title, description, roomId, lineUserId, technicianName, repairCost, payer } = req.body;
+      const { title, description } = req.body;
 
       if (!title || !description) {
         return res.status(400).json({
@@ -123,6 +101,12 @@ class MaintenanceController {
         });
       }
 
+      // req.scope มีเฉพาะ Route ฝั่งลูกบ้าน (LIFF, ผ่าน scopeTenantRooms): ตัวตน/ห้อง/ตึกมาจาก Token ที่ตรวจแล้วเท่านั้น
+      // ไม่เชื่อ roomId/tenantId/buildingId ใน Body และลูกบ้านกำหนดผู้จ่าย/ค่าซ่อม/ช่างเองไม่ได้ (ค่าซ่อมจะถูกรวมเข้าบิลของห้องนั้น)
+      // Route แอดมิน (requireRole + requireBuildingInRequest) ต้องระบุห้องเสมอ เดิม fallback ไปห้องแรกที่มีคนอยู่ในระบบ
+      const isTenantFlow = Boolean(req.scope);
+      const { technicianName, repairCost, payer } = isTenantFlow ? {} : req.body;
+
       if (payer !== undefined && !['MANAGEMENT', 'TENANT'].includes(payer)) {
         return res.status(400).json({
           success: false,
@@ -130,41 +114,29 @@ class MaintenanceController {
         });
       }
 
-      let targetRoomId = roomId;
-      let tenantId = req.body.tenantId || null;
-      let buildingId = req.body.buildingId || null;
-
-      if (lineUserId) {
-        const tenant = await billingService.prisma.tenant.findUnique({
-          where: { lineUserId },
-          include: { rooms: true }
-        });
-        if (tenant) {
-          tenantId = tenant.id;
-          if (!targetRoomId && tenant.rooms?.length > 0) {
-            targetRoomId = tenant.rooms[0].id;
-          }
-        }
-      }
-
+      const targetRoomId = isTenantFlow ? req.roomId : req.body.roomId;
       if (!targetRoomId) {
-        const firstRoom = await billingService.prisma.room.findFirst({ where: { status: 'occupied' } });
-        targetRoomId = firstRoom?.id;
+        return res.status(400).json({
+          success: false,
+          message: isTenantFlow ? 'ยังไม่พบห้องพักที่ผูกกับบัญชีนี้' : 'กรุณาระบุ roomId'
+        });
       }
 
-      if (targetRoomId && !buildingId) {
-        const roomObj = await billingService.prisma.room.findUnique({ where: { id: targetRoomId } });
-        buildingId = roomObj?.buildingId;
-        if (!tenantId && roomObj?.tenantId) {
-          tenantId = roomObj.tenantId;
-        }
+      const roomObj = await billingService.prisma.room.findUnique({ where: { id: targetRoomId } });
+      if (!roomObj) {
+        return res.status(404).json({ success: false, message: 'ไม่พบห้องพักที่ระบุ' });
+      }
+      const buildingId = roomObj.buildingId;
+      const tenantId = isTenantFlow ? req.scope.tenantId : req.body.tenantId || roomObj.tenantId || null;
+
+      // บล็อกเฉพาะคำขอจากลูกบ้านผ่าน LIFF แอดมินยังเปิดใบงานเองได้แม้ปิดฟีเจอร์ฝั่งลูกบ้าน
+      if (req.originalUrl.includes('/liff/') && !(await isFeatureEnabled('ENABLE_MAINTENANCE_REQUEST', buildingId || null))) {
+        return res.status(403).json({ success: false, message: 'ฟีเจอร์แจ้งซ่อมและร้องเรียนถูกปิดใช้งานสำหรับตึกนี้' });
       }
 
       let imageUrl = req.body.photoUrl || req.body.imageUrl || null;
       if (req.file) {
-        const protocol = req.protocol;
-        const host = req.get('host');
-        imageUrl = `${protocol}://${host}/uploads/${req.file.filename}`;
+        imageUrl = publicUrl(req, req.file.filename);
       }
 
       const newRequest = await billingService.prisma.maintenanceRequest.create({
@@ -187,6 +159,15 @@ class MaintenanceController {
           building: true
         }
       });
+
+      // 🔔 บันทึกแจ้งเตือน In-App ให้แอดมินเห็นในกระดิ่ง (ไม่ส่ง LINE เพราะแอดมินไม่ได้ผูก lineUserId)
+      lineService.logDelivery({
+        buildingId,
+        tenantId,
+        roomId: targetRoomId,
+        notificationType: 'MAINTENANCE_NEW',
+        messagePreview: `แจ้งซ่อมใหม่: ${title}${newRequest.room?.roomNumber ? ` (ห้อง ${newRequest.room.roomNumber})` : ''}`
+      }).catch(() => {});
 
       return res.status(201).json({
         success: true,
@@ -276,6 +257,34 @@ class MaintenanceController {
         success: true,
         message: `อัปเดตสถานะแจ้งซ่อมเป็น ${updatedRequest.status} เรียบร้อยแล้ว`,
         data: updatedRequest
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * ดึงรายละเอียดรายการแจ้งซ่อมตาม ID (GET /api/v1/maintenance-requests/:id & GET /api/liff/issues/:id)
+   */
+  async getMaintenanceRequestById(req, res, next) {
+    try {
+      const { id } = req.params;
+      const request = await billingService.prisma.maintenanceRequest.findUnique({
+        where: { id },
+        include: {
+          room: true,
+          tenant: true,
+          building: true
+        }
+      });
+
+      if (!request) {
+        return res.status(404).json({ success: false, message: 'Maintenance request not found' });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: request
       });
     } catch (error) {
       next(error);

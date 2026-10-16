@@ -103,6 +103,8 @@ model Building {
   vehicles            Vehicle[]
   visitors            Visitor[]
   polls               Poll[]
+  inspections         RoomInspection[]
+  vendors             Vendor[]
 
   @@map("buildings")
 }
@@ -161,7 +163,7 @@ model BuildingSetting {
   termsAndConditions String? @map("terms_and_conditions") @db.Text
 
   // 5. LINE Official Account & LIFF Settings (การตั้งค่า LINE OA ประจำตึก)
-  /// LINE OA Basic ID หรือ Handle (เช่น @horhub_a)
+  /// LINE OA Basic ID หรือ Handle (เช่น @horspace_a)
   lineOaId               String? @map("line_oa_id")
   /// LINE Messaging API Channel Access Token ประจำตึก (Long-lived Token)
   lineChannelAccessToken String? @map("line_channel_access_token") @db.Text
@@ -169,7 +171,7 @@ model BuildingSetting {
   lineChannelSecret      String? @map("line_channel_secret")
   /// LINE LIFF ID ประจำตึก (เช่น 200xxxxxxx-xxxxxxx)
   lineLiffId             String? @map("line_liff_id")
-  /// ลิงก์กดเพิ่มเพื่อน LINE OA (Add Friend URL เช่น https://line.me/R/ti/p/@horhub)
+  /// ลิงก์กดเพิ่มเพื่อน LINE OA (Add Friend URL เช่น https://line.me/R/ti/p/@horspace)
   lineAddFriendUrl       String? @map("line_add_friend_url")
 
   /// วันเวลาที่สร้างเรคคอร์ด
@@ -998,6 +1000,10 @@ model LeaseContract {
   /// จำนวนเงินประกัน/มัดจำ (Decimal)
   depositAmount Decimal @default(0.00) @map("deposit_amount") @db.Decimal(10, 2)
 
+  /// เลขมิเตอร์น้ำ/ไฟ ณ วันที่ผู้เช่าเข้าพัก (มิเตอร์จริงไม่รีเซ็ต: บิลรอบแรกของสัญญานี้คิดหน่วยจากเลขนี้ ไม่ใช่เลขของผู้เช่าคนก่อน) null = ไม่ได้จด
+  initialWaterReading    Decimal? @map("initial_water_reading") @db.Decimal(10, 2)
+  initialElectricReading Decimal? @map("initial_electric_reading") @db.Decimal(10, 2)
+
   /// สถานะสัญญา (ACTIVE = กำลังเช่าอยู่, ENDED = สิ้นสุดสัญญา/ย้ายออกแล้ว, CANCELLED = ยกเลิกสัญญา)
   status String @default("ACTIVE")
 
@@ -1014,6 +1020,7 @@ model LeaseContract {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   moveOutRecord MoveOutRecord?
+  inspections   RoomInspection[]
 
   @@map("lease_contracts")
 }
@@ -1074,9 +1081,14 @@ model RefreshToken {
   id        Int      @id @default(autoincrement())
   userId    String   @map("user_id") @db.Uuid
   token     String   @unique
+  /// ตระกูลของ Session เดียวกัน (Login ครั้งหนึ่ง = 1 ตระกูล, Token ที่หมุนต่อมาอยู่ตระกูลเดิม) ใช้เพิกถอนทั้งชุดเมื่อพบการใช้ Token ซ้ำ
+  familyId  String   @default(dbgenerated("gen_random_uuid()")) @map("family_id") @db.Uuid
+  /// เวลาที่ Token นี้ถูกใช้หมุนไปแล้ว (เก็บแถวไว้เพื่อจับการนำ Token เก่ากลับมาใช้)
+  usedAt    DateTime? @map("used_at")
   expiresAt DateTime @map("expires_at")
   createdAt DateTime @default(now()) @map("created_at")
 
+  @@index([familyId])
   @@map("refresh_tokens")
 }
 
@@ -1157,7 +1169,108 @@ model NotificationLog {
   /// วันเวลาที่ส่งข้อความ
   sentAt DateTime @default(now()) @map("sent_at")
 
+  /// วันเวลาที่ถูกอ่าน ใช้เป็น In-App Notification Bell (Admin CMS / Tenant LIFF) — null = ยังไม่อ่าน
+  /// หมายเหตุ: ต่อตึก/ต่อผู้เช่า ไม่ใช่ต่อแอดมินแต่ละคน แอดมินหลายคนในตึกเดียวกันเห็นสถานะอ่านร่วมกัน (เหมือน shared inbox)
+  readAt DateTime? @map("read_at")
+
   @@index([buildingId, sentAt])
   @@index([buildingId, status])
+  @@index([buildingId, notificationType, readAt])
+  @@index([tenantId, readAt])
   @@map("notification_logs")
 }
+
+/// ตารางความคิดเห็นและรายงานปัญหาถึงทีมผู้พัฒนา (Developer & Product Feedback)
+model DeveloperFeedback {
+  /// รหัสอ้างอิง Feedback (PK, UUID)
+  id String @id @default(uuid()) @db.Uuid
+
+  /// ประเภทแพลตฟอร์มที่ส่ง (CMS_ADMIN, TENANT_LIFF, TENANT_WEB)
+  platform String @default("CMS_ADMIN")
+
+  /// หมวดหมู่ (BUG, FEATURE_REQUEST, UI_UX, GENERAL)
+  category String @default("GENERAL")
+
+  /// หัวข้อ / สรุปสั้นๆ
+  title String?
+
+  /// รายละเอียดข้อเสนอแนะหรือปัญหาที่พบ
+  content String @db.Text
+
+  /// คะแนนความพึงพอใจ (1 - 5 ดาว, Nullable)
+  rating Int?
+
+  /// รายการลิงก์รูปภาพประกอบ (JSON Array เช่น ["/uploads/feedback-1.png"])
+  imageUrls Json? @default("[]") @map("image_urls")
+
+  /// หน้าที่เกิดเรื่องหรือกำลังใช้งานอยู่ (Current Route/URL)
+  currentRoute String? @map("current_route")
+
+  /// ข้อมูลทางเทคนิคแวดล้อม (JSON: { browser, os, screenResolution, userAgent, appVersion })
+  deviceContext Json? @map("device_context")
+
+  /// รหัสผู้ส่ง (User ID หรือ Tenant ID, Nullable)
+  senderId String? @map("sender_id") @db.Uuid
+
+  /// ชื่อผู้ส่ง
+  senderName String? @map("sender_name")
+
+  /// บทบาทผู้ส่ง (OWNER, MANAGER, SUPERADMIN, TENANT, GUEST)
+  senderRole String? @map("sender_role")
+
+  /// เบอร์โทรศัพท์ผู้ส่ง (สำหรับติดต่อกลับ)
+  senderPhone String? @map("sender_phone")
+
+  /// รหัสตึก/อาคารที่เกี่ยวข้อง (Nullable)
+  buildingId String? @map("building_id") @db.Uuid
+
+  /// สถานะการพิจารณา (NEW, IN_REVIEW, PLANNED, RESOLVED, DISCARDED)
+  status String @default("NEW")
+
+  /// โน้ตภายในของทีมพัฒนา (Developer Internal Notes)
+  devNotes String? @map("dev_notes") @db.Text
+
+  /// วันเวลาที่ส่ง
+  createdAt DateTime @default(now()) @map("created_at")
+
+  /// วันเวลาที่อัปเดตล่าสุด
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([platform, category])
+  @@index([status, createdAt])
+  @@map("developer_feedbacks")
+}
+
+/// ตารางบันทึกการตรวจสภาพห้องก่อนเข้าอยู่ / หลังย้ายออก (Move-in / Move-out Inspection)
+model RoomInspection {
+  id         String        @id @default(uuid()) @db.Uuid
+  leaseId    String        @map("lease_id") @db.Uuid
+  lease      LeaseContract @relation(fields: [leaseId], references: [id], onDelete: Cascade)
+  buildingId String        @map("building_id") @db.Uuid
+  building   Building      @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  type       String        @default("MOVE_IN") // MOVE_IN | MOVE_OUT
+  items      Json          // [{ label, condition, note }]
+  photoUrls  Json?         @map("photo_urls") // string[]
+  adminNote  String?       @map("admin_note") @db.Text
+  createdAt  DateTime      @default(now()) @map("created_at")
+  updatedAt  DateTime      @updatedAt @map("updated_at")
+
+  @@map("room_inspections")
+}
+
+/// ตารางรายชื่อช่างและผู้รับเหมาประจำอาคาร (Vendor & Contractor Directory)
+model Vendor {
+  id         String   @id @default(uuid()) @db.Uuid
+  buildingId String   @map("building_id") @db.Uuid
+  building   Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  name       String
+  category   String   // ช่างไฟ, ช่างประปา, ช่างแอร์, ทำความสะอาด, อื่นๆ
+  phone      String?
+  lineId     String?  @map("line_id")
+  note       String?  @db.Text
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("vendors")
+}
+

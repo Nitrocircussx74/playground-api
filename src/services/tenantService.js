@@ -1,8 +1,11 @@
 const prisma = require('../config/prisma');
+const { assertCanClaimByPhone } = require('../utils/phoneClaim');
 const auditService = require('./auditService');
 const lineService = require('./lineService');
 const authService = require('./authService');
 const { getPhoneVariants } = require('../utils/normalizePhone');
+const pickActiveRoom = require('../utils/pickActiveRoom');
+const parseOptionalReading = require('../utils/parseOptionalReading');
 
 const ROOM_WITH_BUILDING_INCLUDE = { rooms: { include: { building: true } } };
 
@@ -253,6 +256,8 @@ class TenantService {
       depositAmount,
       adminNote
     } = data;
+    const initialWaterReading = parseOptionalReading(data.initialWaterReading, 'น้ำ');
+    const initialElectricReading = parseOptionalReading(data.initialElectricReading, 'ไฟ');
 
     return await prisma.$transaction(async (tx) => {
       // 1. ตรวจสอบว่ามีผู้เช่าเบอร์โทรนี้อยู่ในระบบแล้วหรือไม่ (ถ้ามีให้อัปเดต ถ้าไม่มีให้สร้างใหม่)
@@ -335,6 +340,8 @@ class TenantService {
             startDate: leaseStartDate,
             expectedEndDate: leaseEndDate,
             depositAmount: depositAmount ? Number(depositAmount) : 0,
+            initialWaterReading,
+            initialElectricReading,
             status: 'ACTIVE',
             adminNote: adminNote || 'Walk-in / ไม่ใช้ LINE (เพิ่มโดยผู้ดูแล)'
           },
@@ -803,14 +810,8 @@ class TenantService {
       throw error;
     }
 
-    // ป้องกัน Account Takeover: ถ้าบัญชีนี้ผูกกับ LINE คนอื่นไว้แล้ว ห้ามให้ LINE ปัจจุบัน
-    // (ที่แค่รู้เบอร์โทรของเจ้าของบัญชี) มาแย่งผูกทับแทนเจ้าของตัวจริง
-    if (tenant.lineUserId && lineUserId && tenant.lineUserId !== lineUserId) {
-      const error = new Error('บัญชีนี้ผูกกับ LINE อื่นไว้แล้ว กรุณาติดต่อนิติบุคคลประจำหอพักเพื่อยกเลิกการผูกก่อน');
-      error.statusCode = 403;
-      error.code = 'ACCOUNT_ALREADY_LINKED';
-      throw error;
-    }
+    // ป้องกัน Account Takeover: ยึดด้วยเบอร์โทรได้เฉพาะบัญชีที่ยังไม่มีใครใช้ หรือ LINE ที่ผูกไว้แล้วเท่านั้น (ดู utils/phoneClaim.js)
+    await assertCanClaimByPhone(tenant, lineUserId);
 
     // ตรวจสอบว่า lineUserId นี้เคยผูกกับผู้เช่ารายอื่นหรือไม่
     if (lineUserId) {
@@ -1050,7 +1051,7 @@ class TenantService {
   /**
    * ดึงข้อมูลโปรไฟล์ผู้เช่าสำหรับ LIFF App (รองรับ Multi-Room Tenancy)
    */
-  async getTenantProfileForLiff({ lineUserId, tenantId, roomNumber }) {
+  async getTenantProfileForLiff({ lineUserId, tenantId, roomNumber, activeRoomId, activeBuildingId }) {
     const tenantInclude = {
       rooms: {
         include: {
@@ -1117,7 +1118,9 @@ class TenantService {
           status: r.status,
           unitType: r.unitType,
           buildingId: r.buildingId,
+          building_id: r.buildingId,
           buildingName: r.building?.name || 'อาคารหลัก',
+          building_name: r.building?.name || 'อาคารหลัก',
           themeColor: r.building?.themeColor || '#0E7490',
           theme_color: r.building?.themeColor || '#0E7490',
           logoUrl: r.building?.logoUrl || null,
@@ -1140,7 +1143,9 @@ class TenantService {
             status: rr.room.status,
             unitType: rr.room.unitType,
             buildingId: rr.room.buildingId,
+            building_id: rr.room.buildingId,
             buildingName: rr.room.building?.name || 'อาคารหลัก',
+            building_name: rr.room.building?.name || 'อาคารหลัก',
             themeColor: rr.room.building?.themeColor || '#0E7490',
             theme_color: rr.room.building?.themeColor || '#0E7490',
             logoUrl: rr.room.building?.logoUrl || null,
@@ -1164,7 +1169,9 @@ class TenantService {
             status: c.room.status,
             unitType: c.room.unitType,
             buildingId: c.room.buildingId,
+            building_id: c.room.buildingId,
             buildingName: c.room.building?.name || 'อาคารหลัก',
+            building_name: c.room.building?.name || 'อาคารหลัก',
             themeColor: c.room.building?.themeColor || '#0E7490',
             theme_color: c.room.building?.themeColor || '#0E7490',
             logoUrl: c.room.building?.logoUrl || null,
@@ -1176,8 +1183,10 @@ class TenantService {
 
     const roomsList = Array.from(roomsMap.values());
     const roomNumbers = roomsList.map((r) => r.roomNumber).join(', ') || '-';
-    const primaryRoomNumber = roomsList.length > 0 ? roomsList[0].roomNumber : '-';
-    const primaryRoom = roomsList.length > 0 ? roomsList[0] : null;
+    // ห้อง/ตึกที่ผู้เช่ากำลังเลือกอยู่ (X-Room-Id / X-Building-Id) มาก่อน ไม่งั้นธีมและ buildingId (ที่ LiffLayout
+    // ใช้ดึง Feature Toggle) จะเด้งกลับเป็นของห้องแรกเสมอหลังสลับห้องข้ามตึก
+    const primaryRoom = pickActiveRoom(roomsList, { roomId: activeRoomId, buildingId: activeBuildingId });
+    const primaryRoomNumber = primaryRoom?.roomNumber || '-';
     const primaryThemeColor = primaryRoom?.themeColor || '#0E7490';
     const primaryLogoUrl = primaryRoom?.logoUrl || null;
     const primaryBuildingName = primaryRoom?.buildingName || 'อาคารหลัก';
@@ -1218,6 +1227,27 @@ class TenantService {
       });
     }
 
+    // ตรวจสอบสิทธิ์ Owner / Admin เพิ่มเติมกรณีผู้ใช้เป็นทั้งลูกบ้านและเจ้าของตึก (Dual-Role)
+    const availableRoles = ['tenant'];
+    let isOwner = false;
+
+    if (tenant.phone) {
+      try {
+        const phoneVariants = getPhoneVariants(tenant.phone);
+        const adminUser = await prisma.user.findFirst({
+          where: {
+            phone: { in: phoneVariants }
+          }
+        });
+        if (adminUser && ['owner', 'admin', 'super_admin', 'superadmin', 'manager'].includes(adminUser.role?.toLowerCase())) {
+          availableRoles.push('owner');
+          isOwner = true;
+        }
+      } catch (roleErr) {
+        console.warn('Could not resolve admin roles in getTenantProfileForLiff:', roleErr?.message);
+      }
+    }
+
     return {
       id: tenant.id,
       firstName: tenant.firstName,
@@ -1241,6 +1271,9 @@ class TenantService {
       logo_url: primaryLogoUrl,
       residentRole,
       isPrimaryTenant,
+      isOwner,
+      availableRoles,
+      role: isOwner ? 'owner' : 'tenant',
       roommates
     };
   }
@@ -1283,57 +1316,60 @@ class TenantService {
   /**
    * ดึงการตั้งค่า QR Code และบัญชีชำระเงินเฉพาะตึกที่ลูกบ้านสังกัดอยู่ (Tenant -> Room -> Building -> BuildingSetting)
    */
-  async getBuildingSettingForTenant({ lineUserId, tenantId, roomId }) {
+  async getBuildingSettingForTenant({ lineUserId, tenantId, roomId, buildingId }) {
     let targetRoom = null;
 
-    if (roomId) {
+    if (lineUserId || tenantId) {
+      const where = lineUserId ? { lineUserId } : { id: tenantId };
+      const tenant = await prisma.tenant.findUnique({
+        where,
+        include: { rooms: { include: { building: { include: { setting: true } } } } }
+      });
+      if (tenant && tenant.rooms.length > 0) {
+        if (roomId) {
+          targetRoom = tenant.rooms.find((r) => r.id === roomId);
+        }
+        if (!targetRoom && buildingId) {
+          targetRoom = tenant.rooms.find((r) => r.buildingId === buildingId);
+        }
+        if (!targetRoom) {
+          targetRoom = tenant.rooms[0];
+        }
+      }
+    }
+
+    if (!targetRoom && roomId) {
       targetRoom = await prisma.room.findUnique({ where: { id: roomId }, include: { building: { include: { setting: true } } } });
     }
 
-    if (!targetRoom && lineUserId) {
-      const tenant = await prisma.tenant.findUnique({
-        where: { lineUserId },
-        include: { rooms: { include: { building: { include: { setting: true } } } } }
-      });
-      if (tenant && tenant.rooms.length > 0) {
-        targetRoom = tenant.rooms[0];
-      }
+    let targetBuilding = targetRoom?.building;
+    if (!targetBuilding && buildingId) {
+      targetBuilding = await prisma.building.findUnique({ where: { id: buildingId }, include: { setting: true } });
     }
 
-    if (!targetRoom && tenantId) {
-      const tenant = await prisma.tenant.findUnique({
-        where: { id: tenantId },
-        include: { rooms: { include: { building: { include: { setting: true } } } } }
-      });
-      if (tenant && tenant.rooms.length > 0) {
-        targetRoom = tenant.rooms[0];
-      }
-    }
-
-    const hadIdentity = Boolean(roomId || lineUserId || tenantId);
+    const hadIdentity = Boolean(roomId || buildingId || lineUserId || tenantId);
 
     // Fallback: ดึงตึกแรกในระบบ เฉพาะกรณีไม่มีข้อมูลระบุตัวตนมาเลย (เช่น Public/Dev call)
     // ถ้ามีการระบุตัวตนมาแล้วแต่ resolve ไม่เจอ ห้ามเดาโดยเด็ดขาด ไม่งั้นลูกบ้านอาจได้ QR
     // PromptPay ของอีกตึกหนึ่งไปโอนเงินผิดบัญชี
-    if (!targetRoom && !hadIdentity) {
+    if (!targetRoom && !targetBuilding && !hadIdentity) {
       targetRoom = await prisma.room.findFirst({ include: { building: { include: { setting: true } } } });
+      targetBuilding = targetRoom?.building;
     }
 
-    if (!targetRoom && hadIdentity) {
+    if (!targetRoom && !targetBuilding && hadIdentity) {
       return null;
     }
 
-    let buildingSetting = targetRoom?.building?.setting;
-    if (!buildingSetting) {
-      buildingSetting = await prisma.buildingSetting.findFirst();
-    }
-
-    const buildingThemeColor = targetRoom?.building?.themeColor || '#0E7490';
-    const buildingLogoUrl = targetRoom?.building?.logoUrl || null;
+    const buildingSetting = targetBuilding?.setting || targetRoom?.building?.setting || await prisma.buildingSetting.findFirst();
+    const buildingThemeColor = targetBuilding?.themeColor || targetRoom?.building?.themeColor || '#0E7490';
+    const buildingLogoUrl = targetBuilding?.logoUrl || targetRoom?.building?.logoUrl || null;
+    const resolvedBuildingName = targetBuilding?.name || targetRoom?.building?.name || 'หอพักหลัก';
+    const resolvedBuildingId = targetBuilding?.id || targetRoom?.building?.id || null;
 
     return {
-      buildingId: targetRoom?.building?.id || null,
-      buildingName: targetRoom?.building?.name || 'หอพักหลัก',
+      buildingId: resolvedBuildingId,
+      buildingName: resolvedBuildingName,
       themeColor: buildingThemeColor,
       theme_color: buildingThemeColor,
       logoUrl: buildingLogoUrl,
@@ -1511,6 +1547,15 @@ class TenantService {
       lineService.sendWelcomeFlexMessage(lineUserId, result.tenant).catch(() => {});
     }
 
+    // 🔔 แจ้งเตือน In-App ให้แอดมินเห็นลูกบ้านใหม่ที่เพิ่งลงทะเบียนในกระดิ่ง
+    lineService.logDelivery({
+      buildingId: invite.room.buildingId || null,
+      tenantId: result.tenant.id,
+      roomId: invite.roomId,
+      notificationType: 'TENANT_ONBOARDED',
+      messagePreview: `ลูกบ้านใหม่ลงทะเบียนสำเร็จ: ${result.tenant.firstName} ${result.tenant.lastName} (ห้อง ${invite.room.roomNumber})`
+    }).catch(() => {});
+
     return { ...result, isCoResident };
   }
 
@@ -1526,6 +1571,19 @@ class TenantService {
     });
 
     if (!invite) {
+      // ระบบมี Invite Code 2 ชุดคู่ขนานกันที่หน้าตาเหมือนกัน: RoomInvite.code (ลูกบ้านใหม่เอี่ยม, เช็คด้านบน)
+      // กับ Tenant.inviteCode (ลูกบ้านเดิมที่มีข้อมูลอยู่แล้ว แค่ยังไม่ผูก LINE — ใช้คู่กับ phoneLast4 ที่หน้า
+      // /liff/onboarding) เดิมถ้าพิมพ์รหัสแบบหลังผิดหน้า (/liff/register) จะได้แค่ "ไม่พบรหัสเชิญ" เฉยๆ
+      // เช็คสำรองตรงนี้เพื่อบอก Frontend ให้พาไปหน้าที่ถูกต้องแทน
+      const tenantWithCode = await prisma.tenant.findFirst({ where: { inviteCode: normalizedCode } });
+      if (tenantWithCode && (!tenantWithCode.inviteExpiresAt || new Date() <= new Date(tenantWithCode.inviteExpiresAt))) {
+        const redirectError = new Error('รหัสเชิญนี้เป็นรหัสสำหรับผู้เช่าเดิม กรุณาใช้หน้าผูกบัญชี LINE แทน');
+        redirectError.statusCode = 409;
+        redirectError.code = 'TENANT_LINK_CODE';
+        redirectError.data = { redirectTo: '/liff/onboarding' };
+        throw redirectError;
+      }
+
       const error = new Error('ไม่พบรหัสเชิญ (Invite Code) นี้ในระบบ');
       error.statusCode = 404;
       throw error;
@@ -1556,7 +1614,7 @@ class TenantService {
   /**
    * สร้างรหัสเชิญรูมเมทสำหรับผู้เช่าหลัก (Create Roommate Invite)
    */
-  async createRoommateInvite({ lineUserId, tenantId }) {
+  async createRoommateInvite({ lineUserId, tenantId, activeRoomId, activeBuildingId }) {
     const tenant = await prisma.tenant.findFirst({
       where: lineUserId ? { lineUserId } : { id: tenantId },
       include: { rooms: true, roomResidents: { where: { status: 'ACTIVE' }, include: { room: true } } }
@@ -1569,7 +1627,8 @@ class TenantService {
     }
 
     // ตรวจสอบว่าผู้เช่ามีห้องพักหรือไม่
-    const targetRoom = tenant.rooms?.[0] || tenant.roomResidents?.[0]?.room;
+    const ownRooms = [...(tenant.rooms || []), ...(tenant.roomResidents || []).map((rr) => rr.room).filter(Boolean)];
+    const targetRoom = pickActiveRoom(ownRooms, { roomId: activeRoomId, buildingId: activeBuildingId });
     if (!targetRoom) {
       const error = new Error('ไม่พบห้องพักที่ผูกกับบัญชีนี้');
       error.statusCode = 400;

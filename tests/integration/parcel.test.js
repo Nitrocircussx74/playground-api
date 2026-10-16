@@ -12,7 +12,8 @@ describe('Smart Parcel Management Integration Tests', () => {
 
   beforeAll(async () => {
     const adminUser = await billingService.prisma.user.findFirst({
-      where: { role: { in: ['SUPERADMIN', 'OWNER', 'ADMIN', 'super_admin', 'owner', 'admin'] } }
+      // ต้องเป็นแอดมินสิทธิ์เต็มเท่านั้น: แอดมินระดับ admin เข้าถึงได้เฉพาะตึกที่มีสิทธิ์ และ findFirst ไม่รับประกันว่าจะได้คนไหน
+      where: { role: { in: ['SUPERADMIN', 'OWNER', 'super_admin', 'owner'] } }
     });
     adminToken = authService.generateAccessToken(adminUser);
 
@@ -51,10 +52,10 @@ describe('Smart Parcel Management Integration Tests', () => {
     }
   });
 
-  describe('POST /api/admin/buildings/:buildingId/parcels', () => {
+  describe('POST /api/v1/buildings/:buildingId/parcels', () => {
     test('ควรบันทึกพัสดุเข้าใหม่สำเร็จ และส่ง LINE Push Notification (201 Created)', async () => {
       const response = await request(app)
-        .post(`/api/admin/buildings/${testBuilding.id}/parcels`)
+        .post(`/api/v1/buildings/${testBuilding.id}/parcels`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({
           roomId: testRoom.id,
@@ -74,7 +75,7 @@ describe('Smart Parcel Management Integration Tests', () => {
 
     test('กรณีระบุ roomId หรือ courier ไม่ครบถ้วน ต้องตอบกลับ HTTP 400 Bad Request', async () => {
       const response = await request(app)
-        .post(`/api/admin/buildings/${testBuilding.id}/parcels`)
+        .post(`/api/v1/buildings/${testBuilding.id}/parcels`)
         .set('Authorization', `Bearer ${adminToken}`)
         .send({
           roomId: '',
@@ -86,10 +87,10 @@ describe('Smart Parcel Management Integration Tests', () => {
     });
   });
 
-  describe('GET /api/admin/buildings/:buildingId/parcels', () => {
+  describe('GET /api/v1/buildings/:buildingId/parcels', () => {
     test('ควรดึงรายการพัสดุประจำตึกสำเร็จ (200 OK)', async () => {
       const response = await request(app)
-        .get(`/api/admin/buildings/${testBuilding.id}/parcels`)
+        .get(`/api/v1/buildings/${testBuilding.id}/parcels`)
         .set('Authorization', `Bearer ${adminToken}`);
 
       expect(response.statusCode).toBe(200);
@@ -99,10 +100,10 @@ describe('Smart Parcel Management Integration Tests', () => {
     });
   });
 
-  describe('PATCH /api/admin/parcels/:id/pickup', () => {
+  describe('PATCH /api/v1/parcels/:id/pickup', () => {
     test('ควรอัปเดตสถานะพัสดุเป็น PICKED_UP สำเร็จ (200 OK)', async () => {
       const response = await request(app)
-        .patch(`/api/admin/parcels/${createdParcelId}/pickup`)
+        .patch(`/api/v1/parcels/${createdParcelId}/pickup`)
         .set('Authorization', `Bearer ${adminToken}`);
 
       expect(response.statusCode).toBe(200);

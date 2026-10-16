@@ -3,6 +3,60 @@ const lineService = require('../services/lineService');
 
 class AnnouncementController {
   /**
+   * จำกัด buildingId ที่แอดมินคนนี้บรอดแคสต์ได้ ตามสิทธิ์จริงใน UserBuildingPermission
+   * (Pattern เดียวกับ dashboardController.getSummary) กัน Admin/Manager ของตึกหนึ่งยิงประกาศ
+   * ข้ามไปตึกอื่น หรือยิงหา "ทุกตึกในระบบ" โดยไม่ตั้งใจ (เดิมไม่มีการเช็คเลย + Fallback เดา
+   * ตึกแรกในระบบเวลาไม่ระบุ buildingId มา)
+   * @returns {Promise<{ buildingId: string|null, error?: { statusCode: number, message: string } }>}
+   *   buildingId: null หมายถึง Super Admin ตั้งใจบรอดแคสต์แบบ ALL จริง ๆ (ไม่ Scope ตึก)
+   */
+  async _resolveAllowedBuildingId(req, requestedBuildingId) {
+    const userRole = (req.user?.role || '').toLowerCase();
+    const isHighAdmin = ['super_admin', 'superadmin', 'owner'].includes(userRole);
+
+    if (isHighAdmin) {
+      return { buildingId: requestedBuildingId || null };
+    }
+
+    const permissions = await billingService.prisma.userBuildingPermission.findMany({
+      where: { userId: req.user?.id },
+      select: { buildingId: true }
+    });
+    const allowedBuildingIds = permissions.map((p) => p.buildingId);
+
+    if (allowedBuildingIds.length === 0) {
+      return { buildingId: null, error: { statusCode: 403, message: 'คุณไม่มีสิทธิ์ตึกใดเลย ไม่สามารถส่งประกาศได้' } };
+    }
+
+    if (requestedBuildingId) {
+      if (!allowedBuildingIds.includes(requestedBuildingId)) {
+        return { buildingId: null, error: { statusCode: 403, message: 'คุณไม่มีสิทธิ์ส่งประกาศไปยังตึกนี้' } };
+      }
+      return { buildingId: requestedBuildingId };
+    }
+
+    if (allowedBuildingIds.length === 1) {
+      return { buildingId: allowedBuildingIds[0] };
+    }
+
+    return { buildingId: null, error: { statusCode: 400, message: 'คุณมีสิทธิ์มากกว่า 1 ตึก กรุณาระบุตึกที่ต้องการส่งประกาศ' } };
+  }
+
+  /**
+   * ตึกที่ต้องใช้ตรวจสิทธิ์จริง: ปกติคือ buildingId/targetId ที่ Client ส่งมา (ความหมายคือ "ตึก" อยู่แล้ว)
+   * ยกเว้น targetType ROOM ที่ targetId หมายถึง "ห้อง" ไม่ใช่ตึก — ต้องเปิดห้องนั้นหาตึกจริงมาตรวจเอง
+   * ห้ามเชื่อ buildingId ที่ Client ส่งแยกมาต่างหาก เพราะ Manager ของตึก A จะส่ง buildingId เป็นตึก A
+   * (ผ่านสิทธิ์) แต่ targetId เป็นห้องของตึก B แล้วให้ข้อความไปตกที่ผู้เช่าตึก B จริง (เคยพิสูจน์ได้จริง)
+   */
+  async _resolveTargetBuildingId(normTargetType, { buildingId, targetId }) {
+    if (normTargetType === 'ROOM' && targetId) {
+      const room = await billingService.prisma.room.findUnique({ where: { id: String(targetId) }, select: { buildingId: true } });
+      return room?.buildingId || null;
+    }
+    return buildingId || targetId || null;
+  }
+
+  /**
    * Helper function ในการคัดกรอง lineUserId ของผู้เช่าตาม Target (ALL, BUILDING, FLOOR, ROOM)
    */
   async _getTargetUserIds({ targetType, targetBuildingId, targetValue }) {
@@ -14,9 +68,13 @@ class AnnouncementController {
           lineUserId: { not: null },
           rooms: targetBuildingId ? { some: { buildingId: targetBuildingId } } : undefined
         },
-        select: { lineUserId: true }
+        select: { id: true, lineUserId: true, rooms: { select: { buildingId: true } } }
       });
-      return tenants.map((t) => t.lineUserId).filter(Boolean);
+      return tenants.filter(t => t.lineUserId).map(t => ({
+        id: t.id,
+        lineUserId: t.lineUserId,
+        buildingId: t.rooms[0]?.buildingId || null
+      }));
     }
 
     if (normTarget === 'BUILDING') {
@@ -27,9 +85,13 @@ class AnnouncementController {
             some: { buildingId: targetBuildingId }
           }
         },
-        select: { lineUserId: true }
+        select: { id: true, lineUserId: true, rooms: { select: { buildingId: true } } }
       });
-      return tenants.map((t) => t.lineUserId).filter(Boolean);
+      return tenants.filter(t => t.lineUserId).map(t => ({
+        id: t.id,
+        lineUserId: t.lineUserId,
+        buildingId: targetBuildingId || t.rooms[0]?.buildingId || null
+      }));
     }
 
     if (normTarget === 'FLOOR') {
@@ -44,9 +106,13 @@ class AnnouncementController {
             }
           }
         },
-        select: { lineUserId: true }
+        select: { id: true, lineUserId: true, rooms: { select: { buildingId: true } } }
       });
-      return tenants.map((t) => t.lineUserId).filter(Boolean);
+      return tenants.filter(t => t.lineUserId).map(t => ({
+        id: t.id,
+        lineUserId: t.lineUserId,
+        buildingId: targetBuildingId || t.rooms[0]?.buildingId || null
+      }));
     }
 
     if (normTarget === 'ROOM') {
@@ -55,7 +121,11 @@ class AnnouncementController {
         include: { tenant: true }
       });
       if (room?.tenant?.lineUserId) {
-        return [room.tenant.lineUserId];
+        return [{
+          id: room.tenant.id,
+          lineUserId: room.tenant.lineUserId,
+          buildingId: room.buildingId
+        }];
       }
     }
 
@@ -79,16 +149,16 @@ class AnnouncementController {
 
       const imgUrl = imageUrl || image || null;
       const normTargetType = String(targetType).toUpperCase();
-      let targetBuildingId = buildingId || targetId || null;
       let finalTargetValue = targetValue || (normTargetType === 'FLOOR' ? String(floor) : targetId) || null;
 
-      // If buildingId not provided for BUILDING/FLOOR, fallback to first building in system
-      if (!targetBuildingId && normTargetType !== 'ALL') {
-        const firstBuilding = await billingService.prisma.building.findFirst();
-        if (firstBuilding) {
-          targetBuildingId = firstBuilding.id;
-        }
+      const scope = await this._resolveAllowedBuildingId(req, await this._resolveTargetBuildingId(normTargetType, { buildingId, targetId }));
+      if (scope.error) {
+        return res.status(scope.error.statusCode).json({ success: false, message: scope.error.message });
       }
+      if (!scope.buildingId && normTargetType !== 'ALL') {
+        return res.status(400).json({ success: false, message: 'กรุณาระบุตึกที่ต้องการส่งประกาศ' });
+      }
+      const targetBuildingId = scope.buildingId;
 
       // 1. บันทึกข้อมูลประกาศลง Database พร้อมผูก buildingId และ imageUrl
       const announcement = await billingService.prisma.announcement.create({
@@ -106,15 +176,30 @@ class AnnouncementController {
         }
       });
 
-      // 2. ค้นหาเป้าหมายผู้เช่าเพื่อดึง lineUserId
-      const userIds = await this._getTargetUserIds({
+      // 2. ค้นหาเป้าหมายผู้เช่า
+      const targets = await this._getTargetUserIds({
         targetType: normTargetType,
         targetBuildingId,
         targetValue: finalTargetValue
       });
+      
+      const userIds = targets.map(t => t.lineUserId);
 
       // 3. ส่ง LINE Broadcast / Multicast (Array Chunking 500 UIDs)
       const recipientCount = await lineService.sendAnnouncementBroadcast(userIds, announcement);
+
+      // 4. บันทึกลง NotificationLog เพื่อให้ไปโผล่ในกระดิ่งแจ้งเตือนลูกบ้าน (Tenant Notification Bell)
+      if (targets.length > 0) {
+        await billingService.prisma.notificationLog.createMany({
+          data: targets.map(t => ({
+            tenantId: t.id,
+            buildingId: t.buildingId || targetBuildingId,
+            notificationType: 'ANNOUNCEMENT',
+            messagePreview: title,
+            status: 'SUCCESS'
+          }))
+        });
+      }
 
       return res.status(201).json({
         success: true,
@@ -137,10 +222,18 @@ class AnnouncementController {
     try {
       const { targetType, buildingId, floor, targetId, targetValue } = req.query;
       const normTargetType = String(targetType || 'ALL').toUpperCase();
-      const targetBuildingId = buildingId || targetId || null;
       const finalTargetValue = targetValue || (normTargetType === 'FLOOR' ? String(floor) : targetId) || null;
 
-      const userIds = await this._getTargetUserIds({
+      const scope = await this._resolveAllowedBuildingId(req, await this._resolveTargetBuildingId(normTargetType, { buildingId, targetId }));
+      if (scope.error) {
+        return res.status(scope.error.statusCode).json({ success: false, message: scope.error.message });
+      }
+      if (!scope.buildingId && normTargetType !== 'ALL') {
+        return res.status(400).json({ success: false, message: 'กรุณาระบุตึกที่ต้องการส่งประกาศ' });
+      }
+      const targetBuildingId = scope.buildingId;
+
+      const targets = await this._getTargetUserIds({
         targetType: normTargetType,
         targetBuildingId,
         targetValue: finalTargetValue
@@ -148,7 +241,7 @@ class AnnouncementController {
 
       return res.status(200).json({
         success: true,
-        recipientCount: userIds.length
+        recipientCount: targets.length
       });
     } catch (error) {
       next(error);
@@ -206,29 +299,42 @@ class AnnouncementController {
         });
       }
 
+      const targetRoomId = req.roomId;
+      const targetBuildingId = req.buildingId;
+
       let tenantRoom = null;
       if (tenant?.rooms?.length > 0) {
-        tenantRoom = tenant.rooms[0];
+        if (targetRoomId) {
+          tenantRoom = tenant.rooms.find((r) => r.id === targetRoomId);
+        }
+        if (!tenantRoom && targetBuildingId) {
+          tenantRoom = tenant.rooms.find((r) => r.buildingId === targetBuildingId);
+        }
+        if (!tenantRoom) {
+          tenantRoom = tenant.rooms[0];
+        }
       }
+
+      const effectiveBuildingId = tenantRoom?.buildingId || targetBuildingId || null;
 
       let whereCondition = {
         OR: [
-          { targetType: 'ALL' },
-          { targetType: 'all' }
+          { targetType: { in: ['ALL', 'all'] }, buildingId: null },
+          ...(effectiveBuildingId ? [
+            { targetType: { in: ['ALL', 'all'] }, buildingId: effectiveBuildingId },
+            { targetType: { in: ['BUILDING', 'building'] }, buildingId: effectiveBuildingId }
+          ] : [])
         ]
       };
 
       if (tenantRoom) {
         whereCondition = {
           OR: [
-            { targetType: 'ALL' },
-            { targetType: 'all' },
-            { targetType: 'BUILDING', buildingId: tenantRoom.buildingId },
-            { targetType: 'building', buildingId: tenantRoom.buildingId },
-            { targetType: 'FLOOR', targetValue: String(tenantRoom.floor), buildingId: tenantRoom.buildingId },
-            { targetType: 'floor', targetValue: String(tenantRoom.floor), buildingId: tenantRoom.buildingId },
-            { targetType: 'ROOM', targetValue: tenantRoom.id },
-            { targetType: 'room', targetValue: tenantRoom.id }
+            { targetType: { in: ['ALL', 'all'] }, buildingId: null },
+            { targetType: { in: ['ALL', 'all'] }, buildingId: tenantRoom.buildingId },
+            { targetType: { in: ['BUILDING', 'building'] }, buildingId: tenantRoom.buildingId },
+            { targetType: { in: ['FLOOR', 'floor'] }, targetValue: String(tenantRoom.floor), buildingId: tenantRoom.buildingId },
+            { targetType: { in: ['ROOM', 'room'] }, targetValue: tenantRoom.id }
           ]
         };
       }

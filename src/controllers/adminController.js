@@ -1,18 +1,26 @@
+const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const billingService = require('../services/billingService');
 
-function hashPassword(password) {
-  const salt = crypto.randomBytes(16).toString('hex');
-  const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
-  return `${salt}:${hash}`;
+async function hashPassword(password) {
+  return await bcrypt.hash(password, 10);
 }
 
-function verifyPassword(password, storedPasswordHash) {
-  if (!storedPasswordHash || !storedPasswordHash.includes(':')) return false;
-  const [salt, originalHash] = storedPasswordHash.split(':');
-  const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
-  return hash === originalHash;
+async function verifyPassword(password, storedPasswordHash) {
+  if (!storedPasswordHash) return false;
+  if (storedPasswordHash.includes(':')) {
+    const [salt, originalHash] = storedPasswordHash.split(':');
+    const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
+    return hash === originalHash;
+  }
+  return await bcrypt.compare(password, storedPasswordHash);
 }
+
+// Role ที่กำหนดผ่าน API นี้ได้ (พิมพ์ผิดแล้วได้ Role ที่ไม่มีอยู่จริง = บัญชีที่เข้าอะไรไม่ได้เลยและตรวจย้อนยาก)
+const ASSIGNABLE_ROLES = ['SUPER_ADMIN', 'SUPERADMIN', 'OWNER', 'MANAGER', 'ADMIN', 'ROOM_OWNER', 'INVESTOR'];
+// Role ที่เข้าถึงได้เฉพาะตึกใน UserBuildingPermission (owner/super_admin เห็นทุกตึกไม่ต้องมีแถวสิทธิ์)
+const BUILDING_SCOPED_ROLES = ['MANAGER', 'ADMIN'];
+const MIN_PASSWORD_LENGTH = 6;
 
 class AdminController {
   /**
@@ -83,17 +91,26 @@ class AdminController {
         where: { id: userId }
       });
 
-      if (!user || !verifyPassword(currentPassword, user.passwordHash)) {
+      const isMatch = user ? await verifyPassword(currentPassword, user.passwordHash) : false;
+      if (!user || !isMatch) {
         return res.status(400).json({
           success: false,
           message: 'รหัสผ่านเดิมไม่ถูกต้อง'
         });
       }
 
-      const newPasswordHash = hashPassword(newPassword);
+      const newPasswordHash = await hashPassword(newPassword);
       await billingService.prisma.user.update({
         where: { id: userId },
         data: { passwordHash: newPasswordHash }
+      });
+
+      // เปลี่ยนรหัสผ่านแล้ว session อื่นของบัญชีนี้ (เช่น เครื่องที่ถูกขโมย Token) ต้องหลุด เก็บเฉพาะ session ที่กำลังใช้งานอยู่
+      const current = req.cookies?.refreshToken
+        ? await billingService.prisma.refreshToken.findUnique({ where: { token: req.cookies.refreshToken } })
+        : null;
+      await billingService.prisma.refreshToken.deleteMany({
+        where: { userId, ...(current && { familyId: { not: current.familyId } }) }
       });
 
       return res.status(200).json({
@@ -195,8 +212,14 @@ class AdminController {
         });
       }
 
-      const passwordHash = hashPassword(password);
       const userRole = (role || 'MANAGER').toUpperCase();
+      if (!ASSIGNABLE_ROLES.includes(userRole)) {
+        return res.status(400).json({ success: false, message: `role ต้องเป็นหนึ่งใน ${ASSIGNABLE_ROLES.join(', ')}` });
+      }
+      if (String(password).length < MIN_PASSWORD_LENGTH) {
+        return res.status(400).json({ success: false, message: `รหัสผ่านต้องมีความยาวอย่างน้อย ${MIN_PASSWORD_LENGTH} ตัวอักษร` });
+      }
+      const passwordHash = await hashPassword(password);
 
       const newUser = await billingService.prisma.user.create({
         data: {
@@ -208,8 +231,8 @@ class AdminController {
         }
       });
 
-      // Map building permissions if role is MANAGER and buildingIds provided
-      if (userRole === 'MANAGER' && Array.isArray(buildingIds) && buildingIds.length > 0) {
+      // Map building permissions if role is building-scoped (MANAGER/ADMIN) and buildingIds provided
+      if (BUILDING_SCOPED_ROLES.includes(userRole) && Array.isArray(buildingIds) && buildingIds.length > 0) {
         const permissionsData = buildingIds.map((bId) => ({
           userId: newUser.id,
           buildingId: bId
@@ -251,7 +274,7 @@ class AdminController {
   async updateUserPermissions(req, res, next) {
     try {
       const { id } = req.params;
-      const { role, name, phone, buildingIds } = req.body;
+      const { role, name, phone, buildingIds, password } = req.body;
 
       const user = await billingService.prisma.user.findUnique({
         where: { id }
@@ -262,32 +285,42 @@ class AdminController {
       }
 
       const newRole = (role || user.role).toUpperCase();
+      if (!ASSIGNABLE_ROLES.includes(newRole)) {
+        return res.status(400).json({ success: false, message: `role ต้องเป็นหนึ่งใน ${ASSIGNABLE_ROLES.join(', ')}` });
+      }
 
-      // 1. Update basic fields & role
-      await billingService.prisma.user.update({
-        where: { id },
-        data: {
-          role: newRole,
-          ...(name && { name: name.trim() }),
-          ...(phone !== undefined && { phone: phone ? phone.trim() : null })
+      // รหัสผ่านเป็น optional: ส่งมาก็ต่อเมื่อแอดมินต้องการเปลี่ยน (เว้นว่างไว้ = ไม่แตะรหัสผ่านเดิม)
+      let passwordHash;
+      if (password) {
+        if (String(password).length < MIN_PASSWORD_LENGTH) {
+          return res.status(400).json({ success: false, message: `รหัสผ่านต้องมีความยาวอย่างน้อย ${MIN_PASSWORD_LENGTH} ตัวอักษร` });
+        }
+        passwordHash = await hashPassword(password);
+      }
+
+      // Transaction เดียว: ลบสิทธิ์เก่าแล้วสร้างใหม่ล้มกลางคันต้องไม่ทิ้งผู้ใช้ไว้โดยไม่มีสิทธิ์ตึกเลย
+      await billingService.prisma.$transaction(async (tx) => {
+        // 1. Update basic fields & role
+        await tx.user.update({
+          where: { id },
+          data: {
+            role: newRole,
+            ...(name && { name: name.trim() }),
+            ...(phone !== undefined && { phone: phone ? phone.trim() : null }),
+            ...(passwordHash && { passwordHash })
+          }
+        });
+
+        // 2. Clear old building permissions
+        await tx.userBuildingPermission.deleteMany({ where: { userId: id } });
+
+        // 3. Re-create permissions if building-scoped role (MANAGER/ADMIN)
+        if (BUILDING_SCOPED_ROLES.includes(newRole) && Array.isArray(buildingIds) && buildingIds.length > 0) {
+          await tx.userBuildingPermission.createMany({
+            data: buildingIds.map((bId) => ({ userId: id, buildingId: bId }))
+          });
         }
       });
-
-      // 2. Clear old building permissions
-      await billingService.prisma.userBuildingPermission.deleteMany({
-        where: { userId: id }
-      });
-
-      // 3. Re-create permissions if MANAGER
-      if (newRole === 'MANAGER' && Array.isArray(buildingIds) && buildingIds.length > 0) {
-        const permissionsData = buildingIds.map((bId) => ({
-          userId: id,
-          buildingId: bId
-        }));
-        await billingService.prisma.userBuildingPermission.createMany({
-          data: permissionsData
-        });
-      }
 
       const updatedUser = await billingService.prisma.user.findUnique({
         where: { id },

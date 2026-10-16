@@ -22,6 +22,10 @@ const moveOutRoutes = require('./moveOutRoutes');
 const facilityRoutes = require('./facilityRoutes');
 const vehicleRoutes = require('./vehicleRoutes');
 const pollRoutes = require('./pollRoutes');
+const feedbackRoutes = require('./feedbackRoutes');
+const inspectionRoutes = require('./inspectionRoutes');
+const vendorRoutes = require('./vendorRoutes');
+const inviteRoutes = require('./inviteRoutes');
 const liffController = require('../controllers/liffController');
 
 // Root Health Check Route
@@ -39,10 +43,10 @@ router.use('/api/auth', authRoutes);
 router.use('/api/v1/auth', authRoutes);
 router.use('/api/v1/liff', liffRoutes);
 router.use('/api/liff', liffRoutes);
-router.get('/api/settings', (req, res, next) => liffController.getSettingsForTenant(req, res, next));
+router.use('/api', feedbackRoutes);
 
 // Feature Toggles (Public GET for initial app load, Protected PUT for admin)
-router.get('/api/features', (req, res, next) => featureRoutes.handle(req, res, next));
+router.use('/api/features', featureRoutes);
 router.use('/api/v1/features', featureRoutes);
 
 // Protected RESTful Modules (Plural & Kebab-case API Endpoints)
@@ -59,21 +63,19 @@ router.use('/api/admin', authenticateJWT, maintenanceRoutes);
 router.use('/api/v1/announcements', authenticateJWT, announcementRoutes);
 router.use('/api/admin/broadcasts', authenticateJWT, announcementRoutes);
 router.use('/api/admin', authenticateJWT, adminRoutes);
-router.use('/api/admin', authenticateJWT, parcelRoutes);
 router.use('/api/admin', authenticateJWT, meterImportRoutes);
 router.use('/api/admin', authenticateJWT, leaseRoutes);
 router.use('/api/admin', authenticateJWT, moveOutRoutes);
-router.use('/api/v1', authenticateJWT, leaseRoutes);
-router.use('/api/v1', authenticateJWT, moveOutRoutes);
 router.use('/api/v1', authenticateJWT, parcelRoutes);
 router.use('/api/admin', authenticateJWT, facilityRoutes);
-router.use('/api/v1', authenticateJWT, facilityRoutes);
 router.use('/api/admin', authenticateJWT, vehicleRoutes);
-router.use('/api/v1', authenticateJWT, vehicleRoutes);
-router.use('/api/admin', authenticateJWT, pollRoutes);
 router.use('/api/v1', authenticateJWT, pollRoutes);
+router.use('/api/admin', authenticateJWT, inspectionRoutes);
+router.use('/api/admin', authenticateJWT, vendorRoutes);
 router.use('/api/admin/audit-logs', authenticateJWT, auditLogRoutes);
 router.use('/api/admin/dashboard', authenticateJWT, dashboardRoutes);
 router.use('/api/v1/dashboard', authenticateJWT, dashboardRoutes);
+router.use('/api/v1/invites', authenticateJWT, inviteRoutes);
+router.use('/api/admin/invites', authenticateJWT, inviteRoutes);
 
 module.exports = router;

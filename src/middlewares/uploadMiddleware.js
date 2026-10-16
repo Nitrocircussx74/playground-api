@@ -9,14 +9,16 @@ if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 
+const EXT_BY_MIME = { 'image/jpeg': '.jpg', 'image/jpg': '.jpg', 'image/png': '.png', 'image/webp': '.webp' };
+
 // 1. ตั้งค่าการจัดเก็บไฟล์ (Disk Storage)
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    cb(null, `file-${crypto.randomUUID()}${ext}`);
+    // นามสกุลมาจากชนิดไฟล์ที่ผ่าน fileFilter เท่านั้น ห้ามใช้ชื่อไฟล์จาก Client (ส่ง .html แล้วถูกเสิร์ฟเป็น text/html = XSS บน origin ของ API)
+    cb(null, `file-${crypto.randomUUID()}${EXT_BY_MIME[file.mimetype]}`);
   }
 });
 

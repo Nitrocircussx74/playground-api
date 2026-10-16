@@ -59,14 +59,21 @@ describe('LINE Rich Menu & LIFF Smart Entry Router Integration Tests', () => {
     // ⚠️ Security Fix: เดิม endpoint นี้ยอมให้ LINE ID ใหม่ที่ไม่เกี่ยวข้องแย่งผูก (Rebind) กับ Tenant
     // ที่ผูก LINE คนอื่นไว้อยู่แล้วได้ทันที แค่รู้เบอร์โทรของเจ้าของบัญชี (Account Takeover) — ต้องปฏิเสธ 403 แทน
     test('กรณีเบอร์โทรศัพท์ตรงกับ Tenant ที่ผูก LINE คนอื่นไว้อยู่แล้ว ต้องปฏิเสธ 403 (ป้องกัน Account Takeover)', async () => {
-      if (!testTenant || !testTenant.phone) return;
+      const alreadyLinkedTenant = await billingService.prisma.tenant.create({
+        data: {
+          firstName: 'AlreadyLinked',
+          lastName: 'TakeoverGuard',
+          phone: `088${Math.floor(1000000 + Math.random() * 9000000)}`,
+          lineUserId: `U_existing_owner_${Date.now()}`
+        }
+      });
 
       const newUid = `U_verified_phone_${Date.now()}`;
       const response = await request(app)
         .post('/api/v1/liff/auth/verify-phone')
         .set('X-Line-Id-Token', newUid)
         .send({
-          phone: testTenant.phone,
+          phone: alreadyLinkedTenant.phone,
           lineDisplayName: 'Test Phone Verified Tenant',
           linePictureUrl: 'https://example.com/phone_avatar.png'
         });
@@ -76,8 +83,8 @@ describe('LINE Rich Menu & LIFF Smart Entry Router Integration Tests', () => {
       expect(response.body.code).toBe('ACCOUNT_ALREADY_LINKED');
 
       // ต้องไม่มีการเขียนทับ lineUserId เดิมของ Tenant
-      const unchangedTenant = await billingService.prisma.tenant.findUnique({ where: { id: testTenant.id } });
-      expect(unchangedTenant.lineUserId).toBe(testTenant.lineUserId);
+      const unchangedTenant = await billingService.prisma.tenant.findUnique({ where: { id: alreadyLinkedTenant.id } });
+      expect(unchangedTenant.lineUserId).toBe(alreadyLinkedTenant.lineUserId);
     });
 
     test('กรณีเบอร์โทรศัพท์ตรงกับ Tenant ที่ยังไม่เคยผูก LINE ควรจับคู่และบันทึก LINE Profile สำเร็จ (200 OK)', async () => {

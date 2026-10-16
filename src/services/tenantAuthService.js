@@ -3,14 +3,46 @@ const prisma = require('../config/prisma');
 const authService = require('./authService');
 const { verifyLineIdToken } = require('../middlewares/liffAuthMiddleware');
 const { getPhoneVariants } = require('../utils/normalizePhone');
+const attempts = require('../utils/attemptLimiter');
+const { findAdminUserByPhone, assertCanClaimByPhone } = require('../utils/phoneClaim');
+
+const LOCKED_RESPONSE = {
+  statusCode: 429,
+  body: { success: false, code: 'TOO_MANY_ATTEMPTS', message: 'กรอกรหัสผิดหลายครั้งเกินไป บัญชีนี้ถูกล็อกชั่วคราว กรุณาลองใหม่อีกครั้งใน 15 นาที' }
+};
+
+/**
+ * เทียบรหัสโดยนับความพยายามผิดต่อบัญชี: คืน true/false ตามผลเทียบ, คืน null เมื่อบัญชีถูกล็อก (ยังไม่เทียบรหัสเลย)
+ */
+async function verifyWithLimit(accountKey, compare) {
+  if (attempts.isLocked(accountKey)) return null;
+  const ok = await compare();
+  if (ok) attempts.clear(accountKey);
+  else attempts.recordFailure(accountKey);
+  return ok;
+}
 
 const TENANT_ROOM_INCLUDE = { rooms: { include: { building: true } } };
 
 /**
  * ประกอบ Payload ผู้ใช้งานฝั่งลูกบ้านสำหรับใช้ทั้งออก JWT และส่งกลับใน Response
- * (รวมจุดที่เคยก๊อปวางซ้ำกันเกือบทุกเมธอด Login/Link ของ Tenant)
+ * พร้อมตรวจหาสิทธิ์ Owner/Admin อัตโนมัติหากเบอร์โทรศัพท์ตรงกับบัญชีผู้ดูแลในตาราง users
  */
-function buildTenantUserPayload(tenant, overrides = {}) {
+async function buildTenantUserPayload(tenant, overrides = {}) {
+  const roles = ['tenant'];
+  let isOwner = false;
+
+  if (tenant.phone) {
+    try {
+      if (await findAdminUserByPhone(tenant.phone)) {
+        roles.push('owner');
+        isOwner = true;
+      }
+    } catch (err) {
+      console.warn('Could not resolve admin roles for tenant:', err?.message);
+    }
+  }
+
   return {
     id: tenant.id,
     tenantId: tenant.id,
@@ -18,7 +50,9 @@ function buildTenantUserPayload(tenant, overrides = {}) {
     email: tenant.email || `tenant_${tenant.id}@dorm.local`,
     name: tenant.name || `${tenant.firstName} ${tenant.lastName}`.trim(),
     displayName: tenant.lineDisplayName || tenant.firstName,
-    role: 'tenant',
+    role: isOwner ? 'owner' : 'tenant',
+    availableRoles: roles,
+    isOwner,
     lineUserId: tenant.lineUserId,
     roomId: tenant.rooms?.[0]?.id,
     buildingId: tenant.rooms?.[0]?.buildingId,
@@ -76,7 +110,7 @@ class TenantAuthService {
       }).catch(() => {});
     }
 
-    const tenantUser = buildTenantUserPayload(tenant);
+    const tenantUser = await buildTenantUserPayload(tenant);
     const { accessToken, refreshToken } = await issueTokens(tenantUser);
 
     return {
@@ -162,7 +196,8 @@ class TenantAuthService {
       };
     }
 
-    const isMatch = await bcrypt.compare(String(pin), tenant.pinHash);
+    const isMatch = await verifyWithLimit(tenant.id, () => bcrypt.compare(String(pin), tenant.pinHash));
+    if (isMatch === null) return LOCKED_RESPONSE;
     if (!isMatch) {
       return { statusCode: 401, body: { success: false, code: 'INVALID_PIN', message: 'รหัส PIN 6 หลักไม่ถูกต้อง' } };
     }
@@ -186,7 +221,7 @@ class TenantAuthService {
       }).catch((e) => console.warn('UserLineAccount sync warning in pinLogin:', e.message));
     }
 
-    const tenantUser = buildTenantUserPayload(tenant, {
+    const tenantUser = await buildTenantUserPayload(tenant, {
       lineUserId: tenant.lineUserId || lineUserId,
       buildingId: buildingId || tenant.rooms?.[0]?.buildingId
     });
@@ -273,17 +308,15 @@ class TenantAuthService {
       return { statusCode: 404, body: { success: false, message: 'ไม่พบข้อมูลลูกบ้านสำหรับตั้งค่าหรือรีเซ็ต PIN' } };
     }
 
-    // ป้องกัน Account Takeover: ถ้าบัญชีนี้ตั้ง PIN และผูก LINE ไว้แล้ว ห้ามให้ LINE คนอื่น
-    // (ที่แค่รู้เบอร์โทรของเจ้าของบัญชี) มารีเซ็ต PIN แทนเจ้าของตัวจริงได้
-    if (tenant.pinHash && tenant.lineUserId && lineUserId && tenant.lineUserId !== lineUserId) {
-      return {
-        statusCode: 403,
-        body: {
-          success: false,
-          code: 'ACCOUNT_ALREADY_LINKED',
-          message: 'บัญชีนี้ผูกกับ LINE อื่นและตั้งรหัส PIN ไว้แล้ว กรุณาติดต่อนิติบุคคลประจำหอพักเพื่อรีเซ็ต PIN'
-        }
-      };
+    // ป้องกัน Account Takeover: คนที่ไม่ใช่เจ้าของบัญชีเดิม ยึดด้วยเบอร์โทรได้เฉพาะบัญชีที่ยังไม่มีใครใช้ (ดู utils/phoneClaim.js)
+    // Session JWT ของบัญชีนี้เอง (tenantId ตรงกัน) ถือว่าเป็นเจ้าของบัญชี ข้ามกฎนี้ได้
+    if (!(tenantId && tenantId === tenant.id)) {
+      try {
+        await assertCanClaimByPhone(tenant, lineUserId);
+      } catch (error) {
+        if (!error.statusCode) throw error;
+        return { statusCode: error.statusCode, body: { success: false, code: error.code, message: error.message } };
+      }
     }
 
     const pinHash = await bcrypt.hash(String(targetPin), 10);
@@ -322,7 +355,7 @@ class TenantAuthService {
       }).catch((e) => console.warn('UserLineAccount upsert in setupPin:', e.message));
     }
 
-    const tenantUser = buildTenantUserPayload(updatedTenant, {
+    const tenantUser = await buildTenantUserPayload(updatedTenant, {
       lineUserId: lineUserId || updatedTenant.lineUserId,
       buildingId: targetBuildingId || updatedTenant.rooms?.[0]?.buildingId
     });
@@ -451,7 +484,7 @@ class TenantAuthService {
   }
 
   /**
-   * ตรวจสอบว่าเบอร์โทรศัพท์เป็นผู้ใช้เดิมในระบบ HorHub หรือเป็นลูกบ้านใหม่
+   * ตรวจสอบว่าเบอร์โทรศัพท์เป็นผู้ใช้เดิมในระบบ Horspace หรือเป็นลูกบ้านใหม่
    */
   async verifyPhoneStatus({ rawPhone }) {
     if (!rawPhone) {
@@ -474,7 +507,7 @@ class TenantAuthService {
           userName: fullName,
           tenantName: fullName,
           tenant: { id: tenant.id, firstName: tenant.firstName, lastName: tenant.lastName, phone: tenant.phone },
-          message: 'พบข้อมูลบัญชีของคุณในระบบ HorHub แล้ว กรุณากรอกรหัส PIN เดิมเพื่อยืนยันตัวตนและผูกเข้ากับตึกนี้'
+          message: 'พบข้อมูลบัญชีของคุณในระบบ Horspace แล้ว กรุณากรอกรหัส PIN เดิมเพื่อยืนยันตัวตนและผูกเข้ากับตึกนี้'
         }
       };
     }
@@ -535,7 +568,8 @@ class TenantAuthService {
 
     // หมายเหตุ: ไม่เช็คว่า tenant.lineUserId ตรงกับ lineUserId ปัจจุบันหรือไม่ เพราะ Endpoint นี้มีไว้รองรับ
     // Centralized User Identity (1 ผู้เช่า : หลาย LINE OA ID ต่อตึก) โดยตั้งใจ — ตัวพิสูจน์ตัวตนจริงคือ PIN ด้านล่าง
-    const isMatch = await bcrypt.compare(String(pin), tenant.pinHash);
+    const isMatch = await verifyWithLimit(tenant.id, () => bcrypt.compare(String(pin), tenant.pinHash));
+    if (isMatch === null) return LOCKED_RESPONSE;
     if (!isMatch) {
       return { statusCode: 401, body: { success: false, code: 'INVALID_PIN', message: 'รหัส PIN 6 หลักไม่ถูกต้อง' } };
     }
@@ -560,7 +594,7 @@ class TenantAuthService {
       }).catch((e) => console.warn('UserLineAccount upsert warning in linkAndLogin:', e.message));
     }
 
-    const tenantUser = buildTenantUserPayload(tenant, {
+    const tenantUser = await buildTenantUserPayload(tenant, {
       lineUserId: lineUserId || tenant.lineUserId,
       buildingId: buildingId || tenant.rooms?.[0]?.buildingId
     });
@@ -603,12 +637,13 @@ class TenantAuthService {
         };
       }
 
-      const isMatch = await bcrypt.compare(password, tenant.passwordHash);
+      const isMatch = await verifyWithLimit(tenant.id, () => bcrypt.compare(password, tenant.passwordHash));
+      if (isMatch === null) return LOCKED_RESPONSE;
       if (!isMatch) {
         return { statusCode: 401, body: { success: false, message: 'เบอร์โทรศัพท์หรือรหัสผ่านไม่ถูกต้อง' } };
       }
 
-      const tenantUser = buildTenantUserPayload(tenant);
+      const tenantUser = await buildTenantUserPayload(tenant);
       const { accessToken, refreshToken } = await issueTokens(tenantUser);
 
       return {
@@ -632,6 +667,9 @@ class TenantAuthService {
     });
 
     if (user && user.passwordHash) {
+      const accountKey = `user:${user.id}`;
+      if (attempts.isLocked(accountKey)) return LOCKED_RESPONSE;
+
       let isMatch = false;
       if (user.passwordHash.includes(':')) {
         const [salt, key] = user.passwordHash.split(':');
@@ -641,6 +679,9 @@ class TenantAuthService {
       } else {
         isMatch = await bcrypt.compare(password, user.passwordHash);
       }
+
+      if (isMatch) attempts.clear(accountKey);
+      else attempts.recordFailure(accountKey);
 
       if (isMatch) {
         const accessToken = authService.generateAccessToken(user);
@@ -687,8 +728,11 @@ class TenantAuthService {
       return { statusCode: 404, body: { success: false, message: 'ไม่พบข้อมูลลูกบ้านสำหรับตั้งรหัสผ่าน' } };
     }
 
-    // หากมีรหัสผ่านเดิมอยู่แล้ว และระบุ oldPassword มา ให้ตรวจก่อน
-    if (tenant.passwordHash && oldPassword) {
+    // หากมีรหัสผ่านเดิมอยู่แล้ว ต้องระบุ oldPassword และตรวจสอบความถูกต้องเสมอ
+    if (tenant.passwordHash) {
+      if (!oldPassword) {
+        return { statusCode: 400, body: { success: false, message: 'กรุณาระบุรหัสผ่านเดิมเพื่อยืนยันตัวตน' } };
+      }
       const isOldMatch = await bcrypt.compare(oldPassword, tenant.passwordHash);
       if (!isOldMatch) {
         return { statusCode: 400, body: { success: false, message: 'รหัสผ่านเดิมไม่ถูกต้อง' } };
@@ -732,15 +776,17 @@ class TenantAuthService {
     if (tenant) {
       const pinHash = tenant.pinHash || tenant.passwordHash;
       if (pinHash) {
-        isValidPin = await bcrypt.compare(String(pin).trim(), pinHash);
+        isValidPin = await verifyWithLimit(tenant.id, () => bcrypt.compare(String(pin).trim(), pinHash));
       }
     } else {
       // Fallback: ค้นหาในตาราง User
       userAccount = await prisma.user.findFirst({ where: { OR: phoneConditions } });
       if (userAccount && userAccount.passwordHash) {
-        isValidPin = await bcrypt.compare(String(pin).trim(), userAccount.passwordHash);
+        isValidPin = await verifyWithLimit(`user:${userAccount.id}`, () => bcrypt.compare(String(pin).trim(), userAccount.passwordHash));
       }
     }
+
+    if (isValidPin === null) return LOCKED_RESPONSE;
 
     if (!isValidPin) {
       return { statusCode: 401, body: { success: false, message: 'เบอร์โทรศัพท์หรือรหัส PIN ไม่ถูกต้อง' } };
@@ -789,7 +835,7 @@ class TenantAuthService {
   /**
    * Silent Re-Authentication สำหรับต่ออายุเซสชัน LIFF อัตโนมัติเบื้องหลัง
    */
-  async silentLogin({ lineIdToken, authHeader, lineDisplayName, linePictureUrl, lineUserIdFromRequest, devLineUserId, isDevOrMock, accessExpiresIn }) {
+  async silentLogin({ lineIdToken, authHeader, buildingId, lineDisplayName, linePictureUrl, lineUserIdFromRequest, devLineUserId, isDevOrMock, accessExpiresIn }) {
     let lineUserId = lineUserIdFromRequest;
 
     // 1. ถ้าส่ง LINE ID Token มา ให้ Verify ลายเซ็นกับ LINE API
@@ -823,8 +869,27 @@ class TenantAuthService {
       return { statusCode: 401, body: { success: false, code: 'UNAUTHORIZED', message: 'ไม่พบ LINE ID Token สำหรับยืนยันตัวตน' } };
     }
 
-    // 3. ค้นหาผู้เช่าในระบบ
-    const tenant = await prisma.tenant.findFirst({ where: { lineUserId }, include: TENANT_ROOM_INCLUDE });
+    // 3. ค้นหาผู้เช่าในระบบ — ตึกที่ผูกไว้ (UserLineAccount) ก่อนเสมอเหมือน checkAuthStatus() กัน Multi-Building
+    // Centralized Identity คืนตึกผิดตอน Token หมดอายุแล้ว Silent Re-Auth (ค่า Default เดิมคือ tenant.findFirst
+    // ตรงๆ ซึ่งได้ Record แรกที่เจอ ไม่ใช่ตึกที่ผู้ใช้กำลังใช้งานอยู่จริง)
+    let tenant = null;
+    if (buildingId) {
+      const linkedAccount = await prisma.userLineAccount.findUnique({
+        where: { buildingId_lineUserId: { buildingId, lineUserId } },
+        include: { tenant: { include: TENANT_ROOM_INCLUDE } }
+      });
+      tenant = linkedAccount?.tenant || null;
+    }
+    if (!tenant) {
+      const anyLinked = await prisma.userLineAccount.findFirst({
+        where: { lineUserId },
+        include: { tenant: { include: TENANT_ROOM_INCLUDE } }
+      });
+      tenant = anyLinked?.tenant || null;
+    }
+    if (!tenant) {
+      tenant = await prisma.tenant.findFirst({ where: { lineUserId }, include: TENANT_ROOM_INCLUDE });
+    }
 
     if (!tenant) {
       return { statusCode: 404, body: { success: false, isRegistered: false, code: 'TENANT_NOT_FOUND', message: 'ไม่พบข้อมูลลูกบ้านที่ผูกกับบัญชี LINE นี้' } };
@@ -839,17 +904,8 @@ class TenantAuthService {
     }
 
     // 4. ออก Backend JWT Access Token ใหม่สำหรับเซสชันลูกบ้าน (Silent Re-Auth ไม่ต้องหมุน Refresh Token)
-    const accessToken = authService.generateAccessToken({
-      id: tenant.id,
-      tenantId: tenant.id,
-      email: tenant.email || `tenant_${tenant.id}@dorm.local`,
-      name: tenant.name,
-      displayName: tenant.lineDisplayName || tenant.name,
-      role: 'tenant',
-      lineUserId: tenant.lineUserId,
-      roomId: tenant.rooms?.[0]?.id,
-      buildingId: tenant.rooms?.[0]?.buildingId
-    });
+    const tenantUser = await buildTenantUserPayload(tenant);
+    const accessToken = authService.generateAccessToken(tenantUser);
 
     return {
       statusCode: 200,

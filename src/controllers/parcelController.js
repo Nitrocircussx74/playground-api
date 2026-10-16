@@ -1,4 +1,5 @@
 const billingService = require('../services/billingService');
+const { roomScopedWhere, hasRoomScope } = require('../utils/roomScope');
 const lineService = require('../services/lineService');
 const auditService = require('../services/auditService');
 
@@ -167,27 +168,13 @@ class ParcelController {
    */
   async getParcelsForLiff(req, res, next) {
     try {
-      // ห้ามรับ roomId จาก Client ตรง ๆ (IDOR) ต้อง derive จาก req.lineUserId ที่ verify แล้วเท่านั้น
-      const lineUserId = req.lineUserId;
-
-      const tenant = await billingService.prisma.tenant.findUnique({
-        where: { lineUserId },
-        include: { rooms: true }
-      });
-
-      if (!tenant) {
-        // ไม่พบผู้เช่าที่ผูกกับ lineUserId นี้เลย -> ไม่ส่งข้อมูลของใครทั้งสิ้น
+      // เฉพาะพัสดุของห้องที่เลือกอยู่ (req.roomId ตรวจสิทธิ์แล้วใน scopeTenantRooms) รวมพัสดุที่นิติลงแค่เลขห้อง
+      if (!hasRoomScope(req)) {
         return res.status(200).json({ success: true, data: [] });
       }
 
-      const allRoomIds = (tenant.rooms || []).map((r) => r.id);
-      const orConditions = [{ tenantId: tenant.id }];
-      if (allRoomIds.length > 0) {
-        orConditions.push({ roomId: { in: allRoomIds } });
-      }
-
       const parcels = await billingService.prisma.parcel.findMany({
-        where: { OR: orConditions },
+        where: roomScopedWhere(req, { includeUnassigned: true }),
         orderBy: [
           { status: 'asc' }, // PENDING first
           { receivedAt: 'desc' }

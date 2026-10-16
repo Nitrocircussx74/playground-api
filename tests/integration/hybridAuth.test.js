@@ -430,6 +430,64 @@ describe('Hybrid Authentication (LINE SSO + Local Password) Integration Tests', 
       expect(response.body.isLinked).toBe(true);
       expect(response.body.hasPin).toBe(true);
     });
+
+    describe('POST /api/v1/liff/auth/silent-login - Multi-Building Centralized Identity', () => {
+      const sharedLineUserId = 'U_shared_across_two_buildings_777';
+      let buildingA;
+      let buildingB;
+      let tenantA;
+      let tenantB;
+      let userLineAccountB;
+
+      beforeAll(async () => {
+        buildingA = await billingService.prisma.building.create({ data: { name: 'ตึก A (Silent Login Test)' } });
+        buildingB = await billingService.prisma.building.create({ data: { name: 'ตึก B (Silent Login Test)' } });
+
+        // tenantA ผูก LINE ID ตรงๆ กับคอลัมน์ Tenant.lineUserId (เหมือนผู้เช่ายุคเก่าก่อนมี UserLineAccount)
+        tenantA = await billingService.prisma.tenant.create({
+          data: { firstName: 'เอ', lastName: 'ตึกเอ', phone: '0899990001', lineUserId: sharedLineUserId }
+        });
+
+        // tenantB เป็นคนละ Record กัน อยู่ตึก B แต่ผูก LINE Account เดียวกัน (คนเดียวกันจริง) ผ่าน UserLineAccount
+        // เท่านั้น (ไม่ได้ตั้ง Tenant.lineUserId ตรงๆ) — จำลองสถานการณ์ "1 คน เช่า 2 ตึก"
+        tenantB = await billingService.prisma.tenant.create({
+          data: { firstName: 'บี', lastName: 'ตึกบี', phone: '0899990002' }
+        });
+        userLineAccountB = await billingService.prisma.userLineAccount.create({
+          data: { buildingId: buildingB.id, lineUserId: sharedLineUserId, tenantId: tenantB.id }
+        });
+      });
+
+      afterAll(async () => {
+        if (userLineAccountB) await billingService.prisma.userLineAccount.delete({ where: { id: userLineAccountB.id } }).catch(() => {});
+        if (tenantA) await billingService.prisma.tenant.delete({ where: { id: tenantA.id } }).catch(() => {});
+        if (tenantB) await billingService.prisma.tenant.delete({ where: { id: tenantB.id } }).catch(() => {});
+        if (buildingA) await billingService.prisma.building.delete({ where: { id: buildingA.id } }).catch(() => {});
+        if (buildingB) await billingService.prisma.building.delete({ where: { id: buildingB.id } }).catch(() => {});
+      });
+
+      test('ระบุ buildingId ของตึก B มา ต้องได้ tenantB กลับมา ไม่ใช่ tenantA (กันคืนข้อมูลผิดตึกตอน Token หมดอายุ)', async () => {
+        const response = await request(app)
+          .post('/api/v1/liff/auth/silent-login')
+          .set('X-Line-Id-Token', sharedLineUserId)
+          .send({ buildingId: buildingB.id });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.body.success).toBe(true);
+        expect(response.body.data.tenant.id).toBe(tenantB.id);
+        expect(response.body.data.tenant.id).not.toBe(tenantA.id);
+      });
+
+      test('ไม่ระบุ buildingId มา ต้อง Fallback ไปหา UserLineAccount ก่อน Tenant.lineUserId ดิบๆ เสมอ (Pattern เดียวกับ checkAuthStatus)', async () => {
+        const response = await request(app)
+          .post('/api/v1/liff/auth/silent-login')
+          .set('X-Line-Id-Token', sharedLineUserId)
+          .send({});
+
+        expect(response.statusCode).toBe(200);
+        expect(response.body.data.tenant.id).toBe(tenantB.id);
+      });
+    });
   });
 
   describe('POST /api/liff/auth/link-and-login - กรณีบัญชียังไม่เคยตั้งรหัส PIN (Set PIN On Verify)', () => {

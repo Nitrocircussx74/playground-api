@@ -3,8 +3,7 @@ module.exports = {
   coverageDirectory: 'coverage',
   collectCoverageFrom: [
     'src/**/*.js',
-    '!src/server.js',
-    '!src/config/passport.js'
+    '!src/server.js'
   ],
   testMatch: [
     '**/tests/**/*.test.js'

@@ -140,7 +140,7 @@ class AuthController {
   }
 
   /**
-   * ตรวจสอบว่าเบอร์โทรศัพท์เป็นผู้ใช้เดิมในระบบ HorHub หรือเป็นลูกบ้านใหม่
+   * ตรวจสอบว่าเบอร์โทรศัพท์เป็นผู้ใช้เดิมในระบบ Horspace หรือเป็นลูกบ้านใหม่
    * POST /api/v1/liff/auth/verify-phone-status
    */
   async verifyPhoneStatus(req, res, next) {
@@ -212,10 +212,9 @@ class AuthController {
 
   async login(req, res, next) {
     try {
-      const { email } = req.body;
+      const { email, password } = req.body;
 
-      // ค้นหาหรือบันทึกข้อมูลผู้ใช้ลง PostgreSQL Database
-      const user = await userService.findOrCreateLocalUser(email);
+      const user = await userService.verifyLocalUser(email, password);
 
       const accessToken = authService.generateAccessToken(user);
       const refreshToken = authService.generateRefreshToken(user);
@@ -226,28 +225,6 @@ class AuthController {
       return res.status(200).json({
         success: true,
         message: 'เข้าสู่ระบบสำเร็จ (JWT Dual Tokens Issued)',
-        accessToken,
-        user
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  async googleCallback(req, res, next) {
-    try {
-      const user = req.user;
-      if (!user) return res.status(401).json({ success: false, message: 'ยืนยันตัวตนผ่าน Google ไม่สำเร็จ' });
-
-      const accessToken = authService.generateAccessToken(user);
-      const refreshToken = authService.generateRefreshToken(user);
-
-      await authService.saveRefreshToken(user.id, refreshToken);
-      setRefreshTokenCookie(res, refreshToken, req);
-
-      return res.status(200).json({
-        success: true,
-        message: 'เข้าสู่ระบบด้วย Google สำเร็จ',
         accessToken,
         user
       });
@@ -272,9 +249,11 @@ class AuthController {
         accessToken: result.accessToken
       });
     } catch (error) {
-      const cookieOpts = getCookieOptions(req);
-      delete cookieOpts.maxAge;
-      res.clearCookie('refreshToken', cookieOpts);
+      if (error.code !== 'REFRESH_RACE') {
+        const cookieOpts = getCookieOptions(req);
+        delete cookieOpts.maxAge;
+        res.clearCookie('refreshToken', cookieOpts);
+      }
       return res.status(401).json({ success: false, message: error.message || 'Refresh Token ไม่ถูกต้องหรือหมดอายุ' });
     }
   }

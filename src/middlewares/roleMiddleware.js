@@ -18,12 +18,11 @@ const requireRole = (...allowedRoles) => {
     const isStaffOrManager = ['admin', 'manager'].includes(userRole);
 
     // Block non-owners from strict owner-only endpoints (e.g. user management, full system audit log)
-    const requiresOwner =
-      normalizedAllowed.includes('owner') ||
-      normalizedAllowed.includes('super_admin') ||
-      normalizedAllowed.includes('superadmin');
+    const isStrictOwnerOnly = normalizedAllowed.every((r) =>
+      ['owner', 'super_admin', 'superadmin'].includes(r)
+    );
 
-    if (requiresOwner && !isHighAdmin) {
+    if (isStrictOwnerOnly && !isHighAdmin) {
       return res.status(403).json({
         success: false,
         message: `ปฏิเสธการเข้าถึง: คุณไม่มีสิทธิ์ใช้งานส่วนนี้ (Required role: [${allowedRoles.join(', ')}], Current role: [${userRole}])`
@@ -35,7 +34,7 @@ const requireRole = (...allowedRoles) => {
       return next();
     }
 
-    if (isHighAdmin || isStaffOrManager || normalizedAllowed.includes(userRole)) {
+    if (isHighAdmin || normalizedAllowed.includes(userRole)) {
       return next();
     }
 

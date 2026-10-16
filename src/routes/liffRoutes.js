@@ -16,6 +16,7 @@ const issueController = require('../controllers/issueController');
 const facilityController = require('../controllers/facilityController');
 const vehicleController = require('../controllers/vehicleController');
 const pollController = require('../controllers/pollController');
+const notificationController = require('../controllers/notificationController');
 const config = require('../config/env');
 
 // Public Invite Code Verification (อนุญาตให้ตรวจสอบความถูกต้องของรหัสเชิญได้ทั้งในและนอก LINE App)
@@ -23,13 +24,13 @@ router.get('/invites/verify/:code', (req, res, next) => liffController.verifyInv
 router.get('/building-info', (req, res, next) => liffController.getBuildingPublicInfo(req, res, next));
 
 // จำกัดจำนวนครั้งการลอง PIN/เบอร์โทรต่อ IP เพื่อป้องกัน Brute Force (ใช้ค่าเดียวกับ linkAccountLimiter ด้านล่าง)
-// ปิดใน Test Env เพื่อไม่ให้ Integration Test ที่ยิงซ้ำๆ ติด 429 เอง
+// ปิดใน Test/Development Env เพื่อไม่ให้ Integration Test หรือ dev ที่ยิงซ้ำๆ ติด 429 เอง — เปิดเฉพาะ production
 const pinAttemptLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 8,
   standardHeaders: true,
   legacyHeaders: false,
-  skip: () => config.nodeEnv === 'test',
+  skip: () => config.nodeEnv !== 'production',
   message: {
     success: false,
     message: 'พยายามเข้าสู่ระบบบ่อยเกินไป กรุณาลองใหม่อีกครั้งใน 15 นาที'
@@ -46,18 +47,20 @@ router.post('/auth/verify-phone-status', pinAttemptLimiter, (req, res, next) => 
 router.post('/auth/link-and-login', pinAttemptLimiter, (req, res, next) => authController.linkAndLogin(req, res, next));
 
 // ทุก Route ถัดจากนี้ต้องมี LINE ID Token หรือ Backend JWT Bearer Token ที่ตรวจสอบผ่านแล้วเสมอ (req.lineUserId)
-router.use(liffAuthMiddleware);
+router.use(liffAuthMiddleware, liffAuthMiddleware.scopeTenantRooms);
 
 // LIFF PIN & Password Management (Protected with Token)
 router.post('/profile/change-pin', (req, res, next) => authController.changePin(req, res, next));
 router.post('/change-pin', (req, res, next) => authController.changePin(req, res, next));
 
 // จำกัดจำนวนครั้งการลองผูกบัญชี เพื่อป้องกัน Brute Force เดา phoneLast4 (10,000 ค่า) เมื่อรู้ inviteCode แล้ว
+// ปิดใน Test/Development Env เช่นเดียวกับ pinAttemptLimiter ด้านบน — เปิดเฉพาะ production
 const linkAccountLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 8,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: () => config.nodeEnv !== 'production',
   message: {
     success: false,
     message: 'พยายามผูกบัญชีบ่อยเกินไป กรุณาลองใหม่อีกครั้งใน 15 นาที'
@@ -78,12 +81,12 @@ router.post('/invites/roommate', (req, res, next) => liffController.createRoomma
 
 // LIFF Invoices & Payment
 router.get('/invoices/history', (req, res, next) => invoiceController.getPaidInvoicesForLiff(req, res, next));
-router.get('/invoices/:id/receipt-pdf', (req, res, next) => invoiceController.exportReceiptPdf(req, res, next));
-router.get('/invoices/:id/invoice-pdf', (req, res, next) => invoiceController.exportInvoicePdf(req, res, next));
-router.get('/invoices/:id/pdf', (req, res, next) => invoiceController.exportInvoicePdf(req, res, next));
-router.get('/invoices/:id/qr-image', (req, res, next) => liffController.getInvoiceQrImage(req, res, next));
-router.get('/invoices/:id', (req, res, next) => liffController.getInvoiceForLiff(req, res, next));
-router.post('/invoices/:id/slip', upload.single('file'), verifyImageMagicBytes, (req, res, next) => liffController.uploadSlipFromLiff(req, res, next));
+router.get('/invoices/:id/receipt-pdf', liffAuthMiddleware.requireOwnInvoice, (req, res, next) => invoiceController.exportReceiptPdf(req, res, next));
+router.get('/invoices/:id/invoice-pdf', liffAuthMiddleware.requireOwnInvoice, (req, res, next) => invoiceController.exportInvoicePdf(req, res, next));
+router.get('/invoices/:id/pdf', liffAuthMiddleware.requireOwnInvoice, (req, res, next) => invoiceController.exportInvoicePdf(req, res, next));
+router.get('/invoices/:id/qr-image', liffAuthMiddleware.requireOwnInvoice, (req, res, next) => liffController.getInvoiceQrImage(req, res, next));
+router.get('/invoices/:id', liffAuthMiddleware.requireOwnInvoice, (req, res, next) => liffController.getInvoiceForLiff(req, res, next));
+router.post('/invoices/:id/slip', liffAuthMiddleware.requireOwnInvoice, upload.single('file'), verifyImageMagicBytes, (req, res, next) => liffController.uploadSlipFromLiff(req, res, next));
 
 // LIFF Tenant Registration & Account Linking
 router.post('/auth/verify-phone', pinAttemptLimiter, validate(verifyPhoneSchema), (req, res, next) => liffController.verifyPhoneAndLinkTenant(req, res, next));
@@ -111,6 +114,9 @@ router.post('/issues', upload.any(), verifyImageMagicBytes, (req, res, next) => 
 // LIFF Parcels
 router.get('/parcels', (req, res, next) => parcelController.getParcelsForLiff(req, res, next));
 
+// LIFF Meter History (chart data 6 months)
+router.get('/meter-history', (req, res, next) => liffController.getMeterHistory(req, res, next));
+
 // LIFF Facility Booking (จองพื้นที่ส่วนกลาง)
 router.get('/facilities', (req, res, next) => facilityController.getFacilitiesForLiff(req, res, next));
 router.get('/facilities/:id/bookings', (req, res, next) => facilityController.getFacilityBookingsForLiff(req, res, next));
@@ -129,5 +135,16 @@ router.delete('/visitors/:id', (req, res, next) => vehicleController.deleteMyVis
 // LIFF Voting/Polls (มติ/โหวต)
 router.get('/polls', (req, res, next) => pollController.getPollsForLiff(req, res, next));
 router.post('/polls/:id/vote', (req, res, next) => pollController.voteOnPoll(req, res, next));
+
+// LIFF In-App Notification Bell (ประวัติแจ้งเตือนที่ระบบเคยส่งหาลูกบ้านคนนี้)
+router.get('/notifications', (req, res, next) => notificationController.getTenantNotifications(req, res, next));
+router.post('/notifications/read-all', (req, res, next) => notificationController.markAllTenantNotificationsRead(req, res, next));
+router.patch('/notifications/:id/read', (req, res, next) => notificationController.markTenantNotificationRead(req, res, next));
+
+// LIFF Room Inspections (ตรวจสภาพห้องพัก)
+router.get('/inspections', (req, res, next) => liffController.getInspections(req, res, next));
+
+// LIFF E-Contract (สัญญาเช่าห้องพัก)
+router.get('/contract', (req, res, next) => liffController.getTenantContract(req, res, next));
 
 module.exports = router;

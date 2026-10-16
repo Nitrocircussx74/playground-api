@@ -271,7 +271,10 @@ class RoomController {
    */
   async createRoomInvite(req, res, next) {
     try {
-      const { id } = req.params; // roomId
+      const id = req.params.id || req.body?.roomId; // roomId
+      if (!id) {
+        return res.status(400).json({ success: false, message: 'กรุณาระบุรหัสห้องพัก (roomId)' });
+      }
 
       const room = await billingService.prisma.room.findUnique({ where: { id } });
       if (!room) {
@@ -287,7 +290,8 @@ class RoomController {
 
       // สุ่มรหัส 6 หลักตัวอักษรและตัวเลขพิมพ์ใหญ่ (เช่น X9K2P4)
       const code = crypto.randomBytes(3).toString('hex').toUpperCase();
-      const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 ชั่วโมง
+      const expiresInHours = Number(req.body?.expiresInHours) || 48;
+      const expiresAt = new Date(Date.now() + expiresInHours * 60 * 60 * 1000);
 
       const invite = await billingService.prisma.roomInvite.create({
         data: {
@@ -301,7 +305,7 @@ class RoomController {
 
       return res.status(201).json({
         success: true,
-        message: `สร้างรหัสเชิญ ${code} สำหรับห้อง ${room.roomNumber} เรียบร้อยแล้ว (หมดอายุใน 48 ชม.)`,
+        message: `สร้างรหัสเชิญ ${code} สำหรับห้อง ${room.roomNumber} เรียบร้อยแล้ว (หมดอายุใน ${expiresInHours} ชม.)`,
         data: invite
       });
     } catch (error) {
@@ -314,7 +318,11 @@ class RoomController {
    */
   async getRoomInvites(req, res, next) {
     try {
-      const { id } = req.params; // roomId
+      const id = req.params.id || req.params.roomId; // roomId
+      if (!id) {
+        return res.status(400).json({ success: false, message: 'กรุณาระบุรหัสห้องพัก (roomId)' });
+      }
+
       const invites = await billingService.prisma.roomInvite.findMany({
         where: { roomId: id },
         orderBy: { createdAt: 'desc' },
@@ -411,7 +419,11 @@ class RoomController {
    */
   async revokeRoomInvite(req, res, next) {
     try {
-      const { inviteId } = req.params;
+      const inviteId = req.params.inviteId || req.params.id;
+      if (!inviteId) {
+        return res.status(400).json({ success: false, message: 'กรุณาระบุรหัสอ้างอิงของรหัสเชิญ' });
+      }
+
       const invite = await billingService.prisma.roomInvite.findUnique({ where: { id: inviteId } });
 
       if (!invite) {

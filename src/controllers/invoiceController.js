@@ -1,7 +1,15 @@
 const billingService = require('../services/billingService');
+const { getAllowedBuildingIds, resolveListBuildings } = require('../middlewares/buildingAccessMiddleware');
+const { roomScopedWhere, hasRoomScope } = require('../utils/roomScope');
 const lineService = require('../services/lineService');
 const PDFDocument = require('pdfkit');
 const { setupThaiFonts } = require('../utils/pdfHelper');
+
+const INVOICE_STATUSES = ['draft', 'pending', 'reviewing', 'paid', 'overdue', 'unpaid'];
+
+// room_owner/investor ผ่าน entityParam ไปโดยไม่ถูกตรวจตึก (ถูกจำกัดด้วย ownerId ใน Controller) จึงต้องเช็คเจ้าของห้องเองทุก Endpoint ที่รับ :id
+const isForeignRoomOwner = (req, invoice) =>
+  ['room_owner', 'investor'].includes((req.user?.role || '').toLowerCase()) && invoice.room?.ownerId !== req.user.id;
 
 class InvoiceController {
   async getInvoices(req, res, next) {
@@ -23,6 +31,10 @@ class InvoiceController {
         };
       } else if (buildingId) {
         where.room = { buildingId };
+      } else {
+        // ไม่ระบุตึก: จำกัดเฉพาะตึกที่มีสิทธิ์ (owner/super_admin เห็นทุกตึก)
+        const allowedBuildingIds = await getAllowedBuildingIds(req.user);
+        if (allowedBuildingIds) where.room = { buildingId: { in: allowedBuildingIds } };
       }
 
       const invoices = await billingService.prisma.invoice.findMany({
@@ -50,87 +62,13 @@ class InvoiceController {
    */
   async getPaidInvoicesForLiff(req, res, next) {
     try {
-      const lineUserId = req.lineUserId || req.query?.lineUserId;
-      const { tenantId, room: queryRoomNumber, roomNumber: queryRoomNumberAlt } = req.query || {};
-      const targetRoomNumber = queryRoomNumber || queryRoomNumberAlt;
-
-      let tenant = null;
-
-      // 1. ค้นหาจาก lineUserId ที่ยืนยันตัวตนผ่าน LIFF Token
-      if (lineUserId) {
-        tenant = await billingService.prisma.tenant.findUnique({
-          where: { lineUserId },
-          include: {
-            rooms: true,
-            leaseContracts: {
-              where: { status: 'ACTIVE' },
-              include: { room: true }
-            }
-          }
-        });
-      }
-
-      // 2. ค้นหาจาก tenantId (หากส่งมา)
-      if (!tenant && tenantId) {
-        tenant = await billingService.prisma.tenant.findUnique({
-          where: { id: tenantId },
-          include: {
-            rooms: true,
-            leaseContracts: {
-              where: { status: 'ACTIVE' },
-              include: { room: true }
-            }
-          }
-        });
-      }
-
-      // 3. ค้นหาจากหมายเลขห้อง (กรณี dev / test mode)
-      if (!tenant && targetRoomNumber) {
-        const room = await billingService.prisma.room.findFirst({
-          where: { roomNumber: targetRoomNumber },
-          include: {
-            tenant: {
-              include: {
-                rooms: true,
-                leaseContracts: {
-                  where: { status: 'ACTIVE' },
-                  include: { room: true }
-                }
-              }
-            }
-          }
-        });
-        if (room?.tenant) {
-          tenant = room.tenant;
-        }
-      }
-
-      if (!tenant) {
+      // เฉพาะบิลของห้องที่เลือกอยู่ (req.roomId ตรวจสิทธิ์แล้วใน scopeTenantRooms) ไม่รับ tenantId/roomNumber จาก Client
+      if (!hasRoomScope(req)) {
         return res.status(200).json({ success: true, data: [] });
       }
 
-      // รวบรวม ID ห้องพักทั้งหมดที่ผู้เช่าผูกอยู่ (ทั้งจาก Room.tenantId และ Active Lease Contract)
-      const roomIds = [];
-      if (tenant.rooms && tenant.rooms.length > 0) {
-        tenant.rooms.forEach((r) => roomIds.push(r.id));
-      }
-      if (tenant.leaseContracts && tenant.leaseContracts.length > 0) {
-        tenant.leaseContracts.forEach((c) => {
-          if (c.roomId && !roomIds.includes(c.roomId)) {
-            roomIds.push(c.roomId);
-          }
-        });
-      }
-
-      const orConditions = [{ tenantId: tenant.id }];
-      if (roomIds.length > 0) {
-        orConditions.push({ roomId: { in: roomIds } });
-      }
-
       const invoices = await billingService.prisma.invoice.findMany({
-        where: {
-          OR: orConditions
-        },
+        where: roomScopedWhere(req),
         orderBy: { createdAt: 'desc' },
         include: {
           room: {
@@ -183,7 +121,10 @@ class InvoiceController {
       });
 
       if (invoice.tenant?.lineUserId) {
-        await lineService.pushInvoiceNotification(invoice.tenant.lineUserId, invoice);
+        // บิลสร้างสำเร็จแล้ว ส่ง LINE ไม่สำเร็จต้องไม่ทำให้ตอบ 400 (แอดมินจะกดสร้างซ้ำ)
+        await lineService.pushInvoiceNotification(invoice.tenant.lineUserId, invoice).catch((err) => {
+          console.warn('⚠️ ไม่สามารถส่ง LINE แจ้งบิลใหม่ได้:', err.message);
+        });
       }
 
       return res.status(201).json({
@@ -192,6 +133,8 @@ class InvoiceController {
         data: invoice
       });
     } catch (error) {
+      // Error ของ DB (Prisma) ไม่ใช่ความผิดของ Request และมีรายละเอียดภายใน ให้ Error Handler จัดการเป็น 500
+      if (error.name?.startsWith('PrismaClient')) return next(error);
       return res.status(400).json({
         success: false,
         message: error.message
@@ -235,6 +178,8 @@ class InvoiceController {
         data: invoice
       });
     } catch (error) {
+      // Error ของ DB (Prisma) ไม่ใช่ความผิดของ Request และมีรายละเอียดภายใน ให้ Error Handler จัดการเป็น 500
+      if (error.name?.startsWith('PrismaClient')) return next(error);
       return res.status(400).json({
         success: false,
         message: error.message
@@ -242,42 +187,14 @@ class InvoiceController {
     }
   }
 
-  async uploadPaymentSlip(req, res, next) {
-    try {
-      const { id } = req.params;
-      const { slipUrl } = req.body;
-
-      const invoice = await billingService.prisma.invoice.findUnique({ where: { id } });
-      if (!invoice) {
-        return res.status(404).json({ success: false, message: 'Invoice not found' });
-      }
-
-      if (invoice.status === 'paid') {
-        return res.status(400).json({ success: false, message: 'Invoice is already paid' });
-      }
-
-      const updatedInvoice = await billingService.prisma.invoice.update({
-        where: { id },
-        data: {
-          slipUrl: slipUrl || 'https://images.unsplash.com/photo-1559526324-4b87b5e36e44?auto=format&fit=crop&w=600&q=80',
-          status: 'reviewing'
-        }
-      });
-
-      return res.status(200).json({
-        success: true,
-        message: 'Payment slip uploaded successfully, awaiting admin verification',
-        data: updatedInvoice
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
-
   async updateInvoiceStatus(req, res, next) {
     try {
       const { id } = req.params;
-      const { status } = req.body;
+      const { status, rejectionReason, adminNote } = req.body;
+
+      if (!INVOICE_STATUSES.includes(status)) {
+        return res.status(400).json({ success: false, message: `status ต้องเป็นหนึ่งใน ${INVOICE_STATUSES.join(', ')}` });
+      }
 
       const invoice = await billingService.prisma.invoice.findUnique({
         where: { id },
@@ -287,19 +204,46 @@ class InvoiceController {
         return res.status(404).json({ success: false, message: 'Invoice not found' });
       }
 
+      const isRejection = (status === 'pending' || status === 'unpaid') && invoice.status === 'reviewing';
+
+      const updateData = {
+        status,
+        paidAt: status === 'paid' ? new Date() : null
+      };
+
+      if (isRejection) {
+        updateData.slipUrl = null;
+        if (rejectionReason || adminNote) {
+          updateData.adminNote = rejectionReason || adminNote;
+        }
+      }
+
       const updatedInvoice = await billingService.prisma.invoice.update({
         where: { id },
-        data: {
-          status,
-          paidAt: status === 'paid' ? new Date() : null
-        },
+        data: updateData,
         include: { room: true, tenant: true }
+      });
+
+      await require('../services/auditService').logAction({
+        adminId: req.user?.id,
+        action: 'UPDATE',
+        entity: 'INVOICE',
+        entityId: id,
+        oldValues: { status: invoice.status, paidAt: invoice.paidAt },
+        newValues: { status: updatedInvoice.status, paidAt: updatedInvoice.paidAt }
       });
 
       // ส่ง LINE Push Notification แจ้งเตือนลูกบ้านเมื่อบิลเปลี่ยนเป็นชำระแล้ว (paid)
       if (status === 'paid' && invoice.status !== 'paid' && updatedInvoice.tenant?.lineUserId) {
         lineService.sendPaymentSuccessNotification(updatedInvoice).catch((err) => {
           console.warn('⚠️ ไม่สามารถส่ง LINE Payment Success Push Message ได้:', err.message);
+        });
+      }
+
+      // ส่ง LINE Push Notification แจ้งเตือนลูกบ้านเมื่อสลิปถูกปฏิเสธ (reviewing -> pending)
+      if (isRejection && updatedInvoice.tenant?.lineUserId) {
+        lineService.sendSlipRejectionNotification(updatedInvoice, rejectionReason || adminNote).catch((err) => {
+          console.warn('⚠️ ไม่สามารถส่ง LINE Slip Rejection Push Message ได้:', err.message);
         });
       }
 
@@ -338,6 +282,10 @@ class InvoiceController {
         return res.status(404).json({ success: false, message: 'Invoice not found' });
       }
 
+      if (isForeignRoomOwner(req, invoice)) {
+        return res.status(403).json({ success: false, message: 'ปฏิเสธการเข้าถึง: ห้องนี้ไม่ได้อยู่ในความดูแลของคุณ' });
+      }
+
       // Check tenant access permission (IDOR protection)
       if (req.user?.role === 'tenant' || req.user?.role === 'TENANT' || (lineUserId && !req.user)) {
         let isAuthorized = false;
@@ -373,7 +321,7 @@ class InvoiceController {
 
       doc.fontSize(20).font(fonts.bold).fillColor('#4338ca').text(`ใบแจ้งหนี้ค่าเช่าพัก / INVOICE`, { align: 'center' });
       doc.moveDown(0.3);
-      doc.fontSize(11).font(fonts.regular).fillColor('#475569').text(`${buildingName} | โทร: 02-123-4567 | TAX ID: 0105558000123`, { align: 'center' });
+      doc.fontSize(11).font(fonts.regular).fillColor('#475569').text(buildingName, { align: 'center' });
       doc.moveDown(0.8);
 
       doc.moveTo(40, doc.y).lineTo(555, doc.y).strokeColor('#4338ca').lineWidth(1.5).stroke();
@@ -491,6 +439,10 @@ class InvoiceController {
         return res.status(404).json({ success: false, message: 'Invoice not found' });
       }
 
+      if (isForeignRoomOwner(req, invoice)) {
+        return res.status(403).json({ success: false, message: 'ปฏิเสธการเข้าถึง: ห้องนี้ไม่ได้อยู่ในความดูแลของคุณ' });
+      }
+
       // Check tenant access permission (IDOR protection)
       if (req.user?.role === 'tenant' || req.user?.role === 'TENANT' || (lineUserId && !req.user)) {
         let isAuthorized = false;
@@ -529,7 +481,7 @@ class InvoiceController {
       // Official E-Receipt Header
       doc.fontSize(22).font(fonts.bold).fillColor('#16a34a').text('ใบเสร็จรับเงิน / OFFICIAL RECEIPT', { align: 'center' });
       doc.moveDown(0.3);
-      doc.fontSize(10).font(fonts.regular).fillColor('#475569').text(`${buildingName} | โทร: 02-123-4567 | เลขประจำตัวผู้เสียภาษี: 0105558000123`, { align: 'center' });
+      doc.fontSize(10).font(fonts.regular).fillColor('#475569').text(buildingName, { align: 'center' });
       doc.moveDown(0.8);
 
       doc.moveTo(40, doc.y).lineTo(555, doc.y).strokeColor('#16a34a').lineWidth(2).stroke();
@@ -636,6 +588,11 @@ class InvoiceController {
 
       if (!invoice) {
         return res.status(404).json({ success: false, message: 'ไม่พบใบแจ้งหนี้ที่ต้องการลบ' });
+      }
+
+      // บิลที่ชำระแล้วเป็นหลักฐานทางการเงิน ห้ามลบ (ถ้าบันทึกผิดให้แก้สถานะ/ออกใบใหม่แทน)
+      if (invoice.status === 'paid') {
+        return res.status(409).json({ success: false, message: 'ไม่สามารถลบบิลที่ชำระเงินแล้ว' });
       }
 
       await billingService.prisma.invoice.delete({ where: { id } });
@@ -795,7 +752,11 @@ class InvoiceController {
         status: { in: ['pending', 'overdue'] }
       };
       if (billingCycle) where.billingCycle = billingCycle;
-      if (buildingId) where.room = { buildingId };
+      const scope = await resolveListBuildings(req.user, buildingId);
+      if (scope.forbidden) {
+        return res.status(403).json({ success: false, message: 'คุณไม่มีสิทธิ์เข้าถึงข้อมูลของอาคาร/ตึกนี้' });
+      }
+      if (scope.ids) where.room = { buildingId: { in: scope.ids } };
 
       const unpaidInvoices = await billingService.prisma.invoice.findMany({
         where,
@@ -845,9 +806,14 @@ class InvoiceController {
    */
   async processLateFees(req, res, next) {
     try {
-      const { buildingId, targetDate } = req.body || {};
+      // ไม่รับ targetDate จาก Client: ส่งวันที่อนาคตมาแล้วค่าปรับ/สถานะ overdue จะถูกเขียนลงบิลจริงถาวร
+      const { buildingId } = req.body || {};
+      const scope = await resolveListBuildings(req.user, buildingId);
+      if (scope.forbidden) {
+        return res.status(403).json({ success: false, message: 'คุณไม่มีสิทธิ์เข้าถึงข้อมูลของอาคาร/ตึกนี้' });
+      }
       const lateFeeService = require('../services/lateFeeService');
-      const result = await lateFeeService.processLateFees({ buildingId, targetDate });
+      const result = await lateFeeService.processLateFees({ buildingIds: scope.ids });
 
       return res.status(200).json({
         success: true,

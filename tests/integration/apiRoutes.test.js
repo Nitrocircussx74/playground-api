@@ -1,4 +1,5 @@
 const request = require('supertest');
+const bcrypt = require('bcryptjs');
 const app = require('../../src/app');
 const authService = require('../../src/services/authService');
 
@@ -17,6 +18,25 @@ describe('Full API Integration Tests (ทดสอบ Endpoints ทั้งห�
     };
     validAccessToken = authService.generateAccessToken(mockUser);
 
+    // Token ถูกยืนยันกับ DB ทุก Request จึงต้องมีบัญชีตาม id ใน Token จริง
+    await billingService.prisma.user.upsert({
+      where: { id: mockUser.id },
+      update: { role: 'admin' },
+      create: { id: mockUser.id, email: mockUser.email, name: mockUser.name, role: 'admin', passwordHash: 'x' }
+    });
+
+    // Login ต้องมีบัญชีอยู่ก่อนเท่านั้น (ห้ามสมัครอัตโนมัติ) จึงสร้างบัญชีทดสอบไว้ล่วงหน้า
+    await billingService.prisma.user.upsert({
+      where: { email: 'testuser@example.com' },
+      update: {},
+      create: {
+        email: 'testuser@example.com',
+        name: 'Test User',
+        role: 'tenant',
+        passwordHash: await bcrypt.hash('password123', 10)
+      }
+    });
+
     await billingService.prisma.tenant.upsert({
       where: { lineUserId: 'U_test_apiroutes_profile' },
       update: { phone: '0812345678' },
@@ -30,6 +50,7 @@ describe('Full API Integration Tests (ทดสอบ Endpoints ทั้งห�
   });
 
   afterAll(async () => {
+    await billingService.prisma.user.deleteMany({ where: { OR: [{ email: 'testuser@example.com' }, { id: '00000000-0000-0000-0000-000000000001' }] } });
     await billingService.prisma.tenant.deleteMany({
       where: { lineUserId: 'U_test_apiroutes_profile' }
     });
@@ -78,6 +99,14 @@ describe('Full API Integration Tests (ทดสอบ Endpoints ทั้งห�
       expect(cookies).toBeDefined();
       refreshTokenCookie = cookies.find((c) => c.startsWith('refreshToken='));
       expect(refreshTokenCookie).toBeDefined();
+    });
+
+    test('POST /auth/login - อีเมลที่ไม่มีในระบบ ต้องได้ 401 และห้ามสร้างบัญชีใหม่', async () => {
+      const email = 'nobody-registered@example.com';
+      const response = await request(app).post('/auth/login').send({ email, password: 'password123' });
+
+      expect(response.statusCode).toBe(401);
+      expect(await billingService.prisma.user.findUnique({ where: { email } })).toBeNull();
     });
 
     test('GET /auth/me - กรณีไม่แนบ Access Token ต้องตอบกลับ HTTP 401 Unauthorized', async () => {
@@ -151,6 +180,54 @@ describe('Full API Integration Tests (ทดสอบ Endpoints ทั้งห�
 
       expect(response.statusCode).toBe(200);
       expect(response.body.success).toBe(true);
+    });
+
+    test('GET /api/v1/features - ดึงรายการตาม buildingId และ override ค่าถูกต้อง', async () => {
+      let building = await billingService.prisma.building.findFirst();
+      if (!building) {
+        building = await billingService.prisma.building.create({
+          data: { name: 'Test Feature Building', totalFloors: 5 }
+        });
+      }
+
+      // 1. ตั้งค่าปิดฟีเจอร์เฉพาะตึก
+      await request(app)
+        .put('/api/v1/features/ENABLE_MAINTENANCE_REQUEST')
+        .set('Authorization', `Bearer ${validAccessToken}`)
+        .send({ isActive: false, buildingId: building.id });
+
+      // 2. ดึงด้วย query buildingId
+      const resWithBuilding = await request(app).get(`/api/v1/features?buildingId=${building.id}`);
+      expect(resWithBuilding.statusCode).toBe(200);
+      expect(resWithBuilding.body.data.featureMap['ENABLE_MAINTENANCE_REQUEST']).toBe(false);
+
+      // 3. ดึงแบบ global (ไม่ระบุตึก) ต้องได้ค่า default true
+      const resGlobal = await request(app).get('/api/v1/features');
+      expect(resGlobal.statusCode).toBe(200);
+      expect(resGlobal.body.data.featureMap['ENABLE_MAINTENANCE_REQUEST']).toBe(true);
+
+      // Cleanup
+      await billingService.prisma.featureToggle.deleteMany({
+        where: { buildingId: building.id }
+      });
+    });
+
+    test('GET /api/v1/features - ต้องไม่โชว์ Key เก่าที่เลิกใช้แล้วแต่ยังมี Row ค้างอยู่ในตาราง (Orphan/Renamed Key)', async () => {
+      // จำลองสถานการณ์จริงที่เจอ: มี Row ในตารางด้วย Key ที่ไม่มีอยู่ใน STANDARD_FEATURE_METADATA แล้ว
+      // (เช่น Rename Key ไปแล้วแต่ไม่ได้ลบ Row เก่า) — เดิมจะโผล่มาเป็นการ์ดที่ไม่มี Title จริง
+      // (โชว์ Raw Key แทน) ปนกับฟีเจอร์จริงในหน้า Feature Settings
+      const orphan = await billingService.prisma.featureToggle.create({
+        data: { key: 'ENABLE_THIS_KEY_NO_LONGER_EXISTS', isActive: false }
+      });
+
+      try {
+        const response = await request(app).get('/api/v1/features');
+        expect(response.statusCode).toBe(200);
+        expect(response.body.data.featureMap['ENABLE_THIS_KEY_NO_LONGER_EXISTS']).toBeUndefined();
+        expect(response.body.data.features.some((f) => f.key === 'ENABLE_THIS_KEY_NO_LONGER_EXISTS')).toBe(false);
+      } finally {
+        await billingService.prisma.featureToggle.delete({ where: { id: orphan.id } });
+      }
     });
   });
 

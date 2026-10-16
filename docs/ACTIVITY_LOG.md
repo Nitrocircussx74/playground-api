@@ -7,8 +7,8 @@
 ## 📅 ข้อมูลกิจกรรม (Activity Summary)
 
 - **วันที่ดำเนินการ**: 26 สิงหาคม 2026 (เริ่มโปรเจกต์) — อัปเดตล่าสุด 10 กันยายน 2026
-- **สถานะ**: ✅ สำเร็จเสร็จสมบูรณ์ 100% (Phase 1-11: โครงสร้างเริ่มต้น / Phase 12: PIN Verify + Maintenance Payer Billing + Android Download Fix / Phase 13: Account Takeover Security Fix + Room Owner + Notification Log / Phase 14: Full Audit ระบบ HorHub + errorMiddleware statusCode Fix + Service Layer Refactor / Phase 15: Mock Mode / Dev Fallback Decoupling Fix + Brand Theme Color Default)
-- **คำสั่งล่าสุด**: แก้ `liffAuthMiddleware.js`/`liffController.js` ไม่ให้ `LINE_AUTH_MOCK_MODE` ปนกับ Logic "ปล่อยผ่านแบบไม่มี Token" อีกต่อไป (เปิดค้างบนเครื่อง Dev ได้ถาวรโดยไม่ทำ Test Suite พัง), เปลี่ยน Default `themeColor` ทั้งระบบจาก Blue `#3B82F6` เป็น HorHub Teal `#0E7490` (ดู Phase 15)
+- **สถานะ**: ✅ สำเร็จเสร็จสมบูรณ์ 100% (Phase 1-11: โครงสร้างเริ่มต้น / Phase 12-15: Security + Billing + Mock Decoupling / Phase 16-17: Condo Modules + Notification Bell / Phase 18: LIFF Building Owner Dashboard (Phase 1+2+3))
+- **คำสั่งล่าสุด**: สร้าง LIFF Building Owner Dashboard (`LiffOwnerDashboardView.vue`) ครบ 3 Phase — Executive Snapshot, Slip/Maintenance Approvals, Multi-Building Switcher + Dual-Role Mode Switcher (Owner↔Tenant) พร้อม `dashboardController.js` รองรับ Multi-Building Permission (ดู Phase 18)
 - **Repository**: `https://github.com/Nitrocircussx74/playground-api`
 
 > ⚠️ หมายเหตุ: บันทึกนี้ (Phase 1-11) ครอบคลุมเฉพาะช่วงเริ่มต้นโปรเจกต์ (26 ส.ค. 2026) โค้ดเบสปัจจุบันมีระบบเพิ่มเติมอีกมาก (Prisma ORM, LINE LIFF Tenant Portal, Invoices, Maintenance, Parcels, Announcements ฯลฯ) ที่ยังไม่ได้บันทึกย้อนหลังไว้ที่นี่ทั้งหมด — Phase 12 เป็นการบันทึกงานเซสชันล่าสุดต่อจากสถานะปัจจุบันของโค้ดเบส ไม่ใช่ประวัติการสร้างระบบเหล่านั้นตั้งแต่ต้น
@@ -93,8 +93,8 @@
 - **Test Verification**: รัน `yarn test` เต็ม Suite ผ่าน 206/206 (เพิ่มขึ้นจาก 192/193 เดิม)
 - **รวม Commit งาน Room Owner / Notification Log ที่ค้างอยู่**: Commit งานที่พัฒนาไว้ก่อนหน้าแต่ยังไม่เคย Commit เข้า Git History — เพิ่มโมเดล `NotificationLog` (ติดตามการส่งแจ้งเตือน LINE/SMS ราย Building/Tenant/Room), โมเดล `RoomResident` (ผู้อยู่อาศัยร่วมห้อง/Co-Resident), และความสัมพันธ์ `Room.owner` (User เจ้าของห้อง) พร้อม Controller/Service ที่ขยายรองรับ (`dashboardController`, `buildingController`, `roomController`, `maintenanceController`, `invoiceController`, `lineService`, `tenantService`) — ทดสอบผ่านครบก่อน Commit
 
-### Phase 14 (2026-09-10): Full Audit ระบบ HorHub (หอฮับ) + errorMiddleware statusCode Fix + Service Layer Refactor
-- **Audit ทั้งระบบ HorHub (LIFF Onboarding, Auth, Invite, Billing)**: ไล่ตรวจ Flow ทั้งหมดตั้งแต่ `authController.js`, `liffController.js`, `liffAuthMiddleware.js` จนถึง `prisma/schema.prisma` พบ 6 ประเด็น:
+### Phase 14 (2026-09-10): Full Audit ระบบ Horspace (ฮอร์สเปซ) + errorMiddleware statusCode Fix + Service Layer Refactor
+- **Audit ทั้งระบบ Horspace (LIFF Onboarding, Auth, Invite, Billing)**: ไล่ตรวจ Flow ทั้งหมดตั้งแต่ `authController.js`, `liffController.js`, `liffAuthMiddleware.js` จนถึง `prisma/schema.prisma` พบ 6 ประเด็น:
   1. **🔴 Critical — Account Takeover ผ่าน `GET /api/v1/liff/check-status?tenantId=...`**: `checkTenantStatus` มี 3 ทางผูก `lineUserId` อัตโนมัติ (phone/roomNumber/tenantId) แต่ทาง `tenantId` ทางเดียวไม่เช็ค `!matched.lineUserId` ก่อนเขียนทับเหมือน 2 ทางที่เหลือ — ใครก็ตามที่ล็อกอิน LINE ของตัวเองแล้วรู้ `tenantId` (UUID) ของคนอื่น ยึดบัญชีได้ทันทีโดยไม่ต้องรู้เบอร์โทร/PIN เลย
   2. **🟠 Payment Fallback ข้ามตึก**: `getSettingsForTenant` เดิมถ้า resolve ตึกของลูกบ้านไม่เจอ จะ Fallback ไป "ดึงตึกแรกในระบบ" แล้วส่ง PromptPay Number ของตึกนั้นกลับไปแทน เสี่ยงลูกบ้านโอนเงินผิดบัญชีข้ามตึก
   3. **🟡 เงื่อนไขห้องว่างไม่ตรงกันระหว่าง `registerTenantWithInvite` กับ `verifyInviteCode`**: Endpoint แรกเช็ค `room.status !== 'available' && !room.tenantId` (ต้องทั้งคู่จริง) ส่วน Endpoint หลังเช็คแค่ `room.status !== 'available'` — ทำให้ verify ผ่านแต่ register จริงอาจไม่ผ่าน
@@ -123,7 +123,7 @@
   - `src/controllers/liffController.js` (`silentLogin`): 1 จุด (`isDevOrMock` ที่ส่งต่อไป `tenantAuthService.silentLogin`)
   - ผลคือเปิด `LINE_AUTH_MOCK_MODE=true` ค้างไว้บนเครื่อง Dev ได้ถาวรแล้ว ไม่ต้องคอยเปิด-ปิดสลับไปมาก่อน/หลังรัน `yarn test` อีกต่อไป
   - อัปเดต `tests/unit/middlewares/liffAuthMiddleware.test.js` ให้ปลอม `config.line.mockMode = false` คู่กับ `config.nodeEnv` เสมอ (เดิมปลอมแค่ nodeEnv พอ .env จริงมี mockMode=true ค้างอยู่ก็ Short-circuit เหมือนเดิมจนเทสต์พัง)
-- **เปลี่ยน Default Theme Color ทั้งระบบจาก Blue → HorHub Teal**: Sample สีจากโลโก้จริงด้วยสคริปต์อ่าน Pixel PNG ได้ Cluster สีหลัก `#1B6C7D`–`#239C93` เลือก `#0E7490` (ใกล้เคียง Tailwind `cyan-700` ที่สุด) เป็นค่า Default แทน `#3B82F6` (Blue-500) เดิมทุกจุดที่เป็น Fallback (ไม่แตะค่าที่เป็น Preset ตัวเลือกให้แอดมินเลือกเอง เช่น "น้ำเงิน (Blue)" ใน `BuildingSettingsView.vue`):
+- **เปลี่ยน Default Theme Color ทั้งระบบจาก Blue → Horspace Teal**: Sample สีจากโลโก้จริงด้วยสคริปต์อ่าน Pixel PNG ได้ Cluster สีหลัก `#1B6C7D`–`#239C93` เลือก `#0E7490` (ใกล้เคียง Tailwind `cyan-700` ที่สุด) เป็นค่า Default แทน `#3B82F6` (Blue-500) เดิมทุกจุดที่เป็น Fallback (ไม่แตะค่าที่เป็น Preset ตัวเลือกให้แอดมินเลือกเอง เช่น "น้ำเงิน (Blue)" ใน `BuildingSettingsView.vue`):
   - `src/controllers/buildingController.js` (Default ตอนสร้างตึกใหม่ไม่ระบุสี), `src/services/tenantService.js` (7 จุด Fallback ตอนส่งข้อมูลให้ LIFF)
 - **ขยาย NotificationLog ให้ครอบคลุม LINE API Failure ระดับ Auth (ไม่ใช่แค่ Push Message)**: ตอบคำถาม "ควรมี api_log ไหม" — พบว่ามี `NotificationLog` + `lineService.logDelivery()` อยู่แล้วสำหรับ Push Message แต่ `verifyLineIdToken` (Token Verify) กับ `getUserProfile` (Profile Fetch) ไม่เคย Log เลย ถ้า LINE API มีปัญหาจะไม่มีทางรู้ย้อนหลัง
   - `prisma/schema.prisma`: เปลี่ยน `NotificationLog.buildingId` เป็น Nullable (`onDelete: SetNull`) เพราะเหตุการณ์ระดับ Auth มักยังไม่รู้ตึก — Push ผ่าน `prisma db push` แล้ว
@@ -133,7 +133,7 @@
 - **Test Verification**: รัน `yarn jest --runInBand` ผ่าน 211/211 ทุกครั้งที่แก้ (เพิ่มจาก 206 เดิมด้วย Unit Test ใหม่ 5 เคสคุม Logic การตัดสินใจ Log ของ `verifyLineIdToken`)
 
 ### Phase 16 (2026-09-11): ขยาย Scope รองรับคอนโด/หมู่บ้าน (Facility Booking, Vehicle/Visitor, Voting/Polls) + แก้บั๊ก LINE Notification เดิม
-- **บริบท**: ผู้ใช้ขอวางแผนขยาย HorHub จากหอพักอย่างเดียวให้รองรับคอนโด/หมู่บ้านด้วย หลัง Audit เจอว่า `Room.unitType`/`ownerId`/`areaSqm` และ `FeatureToggle` ต่อตึกเอื้อให้ทำแบบ Opt-in Module ใหม่ได้โดยไม่ต้อง Migrate ของเดิมแบบ Breaking Change เลย — วางแผนผ่าน Plan Mode ก่อนแล้วค่อย Implement (อนุมัติแผนแล้วที่ `.claude/plans/mossy-sprouting-lecun.md`)
+- **บริบท**: ผู้ใช้ขอวางแผนขยาย Horspace จากหอพักอย่างเดียวให้รองรับคอนโด/หมู่บ้านด้วย หลัง Audit เจอว่า `Room.unitType`/`ownerId`/`areaSqm` และ `FeatureToggle` ต่อตึกเอื้อให้ทำแบบ Opt-in Module ใหม่ได้โดยไม่ต้อง Migrate ของเดิมแบบ Breaking Change เลย — วางแผนผ่าน Plan Mode ก่อนแล้วค่อย Implement (อนุมัติแผนแล้วที่ `.claude/plans/mossy-sprouting-lecun.md`)
 - **เพิ่ม 6 Models ใหม่** (`prisma/schema.prisma`, Push ผ่าน `npx prisma db push` แล้ว):
   - `Facility`/`FacilityBooking`: พื้นที่ส่วนกลางที่จองได้ + การจอง เช็คช่วงเวลาซ้อนทับ Inline ใน Controller ด้วย Interval Overlap Query (`startTime < B.endTime AND endTime > B.startTime`), Index `[facilityId, startTime, endTime]`
   - `Vehicle`/`Visitor`: แยก 2 Model เพราะ Lifecycle ต่างกัน — ทะเบียนรถถาวรต้องอนุมัติ (`PENDING`/`APPROVED`/`REJECTED`) ส่วนแขกมาเยือนครั้งเดียวไม่ต้องอนุมัติ (`EXPECTED`/`CANCELLED`)
@@ -152,6 +152,59 @@
 ### ⏭️ งานที่เหลือ (Follow-up Items):
 - หาสาเหตุจริงของ Jest Hang (ไม่ Exit เองถ้าไม่ใส่ `--forceExit`) — เดายังไม่ได้ทดสอบว่าเป็น Prisma Client หรือ Rate Limiter Timer
 - Facility Booking ยังไม่มี Workflow อนุมัติ (Auto-`CONFIRMED` เสมอ), Poll ยังไม่รองรับ AGM/Quorum/ถ่วงน้ำหนักตามกรรมสิทธิ์, Visitor ยังไม่มี Check-in/Check-out State Machine — ตัดออกตั้งแต่วางแผนตามคำขอผู้ใช้ (Ponytail/YAGNI) เพิ่มทีหลังเมื่อมี Requirement จริง
+
+---
+
+### Phase 17 (2026-09-11): In-App Notification Bell (Admin CMS + Tenant LIFF)
+
+- **บริบท**: ผู้ใช้ขอวางแผนระบบแจ้งเตือน — สำรวจโค้ดเจอว่า LINE Push ทางเดียว (Admin→Tenant) ครบเกือบทุกเหตุการณ์อยู่แล้วและมี `NotificationLog` เก็บประวัติให้แอดมินดูอยู่แล้ว (`DeliveryLogsTab.vue`) แต่ไม่มีฝั่งกลับ (Tenant→Admin) เลย เช่น แจ้งซ่อมใหม่/แนบสลิป/ขอจองพื้นที่/ขอจดทะเบียนรถ/ลูกบ้านลงทะเบียนใหม่ — แอดมินต้องเข้าไปไล่ดูเองไม่มีการเตือน
+- **Reuse `NotificationLog` เป็น Source เดียว ไม่สร้างตารางใหม่**: เพิ่มคอลัมน์ `readAt DateTime?` (`prisma/schema.prisma`, Push ผ่าน `npx prisma db push` แล้ว) + Index `[buildingId, notificationType, readAt]` และ `[tenantId, readAt]`
+- **แยก Audience ด้วยลิสต์ Type ไม่ใช่คอลัมน์ใหม่**: `ADMIN_ALERT_TYPES` ใน `lineService.js` (`MAINTENANCE_NEW`, `SLIP_UPLOADED`, `FACILITY_BOOKING_NEW`, `VEHICLE_NEW`, `TENANT_ONBOARDED`) — Query ฝั่ง Admin กรอง `IN` ลิสต์นี้, ฝั่ง Tenant กรอง `NOT IN` กันข้อความฝั่งแอดมินหลุดไปโผล่ในกระดิ่งลูกบ้าน (Row เดียวกันไม่มีทางถูก Query จากทั้งสองฝั่งพร้อมกัน จึงไม่มีปัญหา `readAt` ชนกันข้าม Audience)
+- **`src/services/lineService.js`**: เพิ่ม `getAdminAlerts`/`getTenantNotifications` (ใช้ `_listNotifications` กลางร่วมกัน คืน `unreadCount` แยกจาก `total` เสมอ), `markNotificationRead`/`markAllNotificationsRead` (สโคปด้วย `buildingId` หรือ `tenantId` กันอ่านข้ามของคนอื่น) — **หมายเหตุ**: `readAt` เป็น Shared State ต่อตึก/ต่อผู้เช่า ไม่ใช่ต่อแอดมินแต่ละคน (แอดมินหลายคนในตึกเดียวกันเห็นสถานะอ่านร่วมกันแบบ Shared Inbox) — ตัดสินใจไม่ทำ Per-Admin Read State เพราะเกินความจำเป็นสำหรับสเกลหอพัก (YAGNI)
+- **จุดยิงแจ้งเตือนใหม่ 5 จุด** (เรียก `lineService.logDelivery()` ตรงๆ ไม่ผ่าน LINE เพราะแอดมินไม่มี `lineUserId`):
+  - `maintenanceController.createMaintenanceRequest` → `MAINTENANCE_NEW`
+  - `liffController.uploadSlipFromLiff` → `SLIP_UPLOADED` (เฉพาะกรณีไม่ Auto-Approve เท่านั้น กัน Noise ตอนสลิปตรวจผ่านอัตโนมัติ)
+  - `facilityController.createBookingForLiff` → `FACILITY_BOOKING_NEW`
+  - `vehicleController.registerVehicle` → `VEHICLE_NEW`
+  - `tenantService.registerTenantWithInvite` → `TENANT_ONBOARDED`
+- **`src/controllers/notificationController.js` (ใหม่)** + Routes: `GET/POST/PATCH /api/admin/buildings/:id/notifications[...]` (ผูกใน `buildingRoutes.js` ตาม Pattern `notification-logs` เดิม), `GET/POST/PATCH /api/v1/liff/notifications[...]` (ผูกใน `liffRoutes.js` ตาม Pattern `announcements` เดิม)
+- **Test**: เพิ่ม `tests/integration/notificationBell.test.js` (4 เคส ครอบคลุม Type-Isolation ระหว่าง Audience โดยเฉพาะ — จุดที่มีโอกาสพังเงียบๆ ที่สุดถ้าแก้ `ADMIN_ALERT_TYPES` ผิด)
+- **Test Verification**: รัน `yarn jest --runInBand --forceExit` ผ่าน **247/247** ทุก Suite (38 Suites รวม 1 Test File ใหม่)
+
+### STATUS: 🟢 COMPLETE & VERIFIED (Frontend ส่วนที่เกี่ยวข้องดู `playground-frontend/docs/ACTIVITY_LOG.md` Phase เดียวกัน)
+
+### ⏭️ งานที่เหลือ (Follow-up Items):
+- `sendAnnouncementBroadcast` (`lineService.js`) ยังไม่เคย `logDelivery()` เลย (รับแค่ `lineUserId[]` แมปกลับเป็น Tenant ไม่ได้) — ประกาศข่าวสารจึงยังไม่ขึ้นในกระดิ่ง Tenant ต้องแก้ Signature ให้รับ Tenant List ด้วยถึงจะปิด Gap นี้ได้ (Phase ถัดไป)
+- Polling 45s ฝั่ง Frontend ไม่ใช่ Realtime แท้ — พอสำหรับสเกลหอพักตอนนี้ ถ้าจะทำ WebSocket/SSE ค่อยพิจารณาเมื่อ Poll เริ่มหน่วงจริง
+
+---
+
+### Phase 18 (2026-09-17): LIFF Building Owner Dashboard — Executive Snapshot, Approvals & Multi-Building
+
+- **บริบท**: วางแผนและพัฒนา Mobile Portal สำหรับเจ้าของตึก/ผู้บริหารอาคารบน LINE LIFF ตามแผน `docs/plans/2026-09-liff-building-owner-plan.md` ครบทั้ง Phase 1, 2, 3 ในเซสชันเดียว
+- **Phase 1 — Executive Snapshot (MVP)**:
+  - สร้าง `src/views/LiffOwnerDashboardView.vue` (หน้าแดชบอร์ดหลัก): Metric Cards ยอดรายรับ/ยอดรับชำระ/ยอดค้าง, Occupancy Rate, Counter Badges (สลิปรอตรวจ, แจ้งซ่อมรอดำเนินการ)
+  - สร้าง `src/components/owner/OwnerMetricCard.vue`: Reusable card แสดงตัวเลขสถิติแบบ trend-aware
+  - เพิ่ม route `/liff/owner-dashboard` ใน `router/index.js` พร้อม Guard ตรวจ `role ∈ {owner, admin, super_admin}`
+  - อัปเดต `authStore` ให้รองรับ `availableRoles`/`activeRole` สำหรับ Dual-Role Session
+  - Reuse `GET /api/admin/dashboard/summary` ที่มีอยู่แล้ว — ไม่สร้าง Endpoint ใหม่
+- **Phase 2 — Quick Operations (Approvals)**:
+  - Slip Verification Queue: ดึง `GET /api/admin/invoices?status=reviewing` แสดงรูปสลิป + ปุ่ม Approve/Reject (ปฏิเสธบันทึก Reason + แจ้ง Tenant ผ่าน LINE push)
+  - Urgent Maintenance List: แสดงงานซ่อม PENDING/IN_PROGRESS + ปุ่มเปลี่ยนสถานะ
+  - Expiring Leases Alert: รายชื่อห้องที่สัญญาจะหมดใน 30 วัน
+  - แก้ `invoiceController.js`: `updateInvoiceStatus` ส่ง LINE push แจ้ง Tenant เมื่อ Reject (เดิมไม่มี)
+- **Phase 3 — Multi-Building & Mode Switcher**:
+  - Building Switcher Dropdown: สำหรับ Owner ที่มีสิทธิ์หลายตึก (query `UserBuildingPermission`)
+  - Dual-Role Mode Switcher Pill: สลับ Owner Dashboard ↔ Tenant View (`activeRole` ใน `authStore`) โดยไม่ reload
+  - `dashboardController.js`: ตรวจ `UserBuildingPermission` ก่อนคืนข้อมูล — Manager/Staff เห็นเฉพาะตึกที่มีสิทธิ์, Owner/Admin เห็นทุกตึก
+  - `tenantAuthService.js`: `silentLogin`/`verifyLiffToken` คืน `availableRoles` และ `tenantId` (ถ้ามี) เพื่อให้ Frontend ตัดสิน Role Switcher ได้
+  - `tenantService.js`: เพิ่ม `getTenantByLineUserId` ใช้ใน Dual-Role resolution
+  - `lineService.js`: เพิ่ม Reject-Slip notification path ใน `sendSlipRejectedNotification`
+- **ไฟล์ที่แก้ไข (API)**: `dashboardController.js`, `invoiceController.js`, `server.js` (route mount), `lineService.js`, `tenantAuthService.js`, `tenantService.js`, `package.json`, `tests/setup.js`
+- **ไฟล์ที่แก้ไข/สร้าง (Frontend)**: `src/views/LiffOwnerDashboardView.vue` (NEW), `src/views/LiffOwnerDashboardView.test.js` (NEW), `src/components/owner/OwnerMetricCard.vue` (NEW), `src/components/owner/OwnerMetricCard.test.js` (NEW), `router/index.js`, `stores/auth.js`, `utils/api.js`, `utils/swal.js`, `views/AdminUserManagementView.vue`, `views/LiffProfileView.vue`, `vite.config.js`, `playwright.config.js`, `layouts/LiffLayout.test.js`
+- **Known Gap**: `sendAnnouncementBroadcast` (`lineService.js`) ยังไม่เคย `logDelivery()` — ปิด Gap นี้ Phase ถัดไป
+
+### STATUS: COMPLETE & VERIFIED (All 3 Phases)
 
 ---
 
@@ -196,3 +249,83 @@
 | 35 | `playground-api/README.md` | Markdown | เอกสารคู่มือการใช้งานโปรเจกต์ภาษาไทย (Yarn Supported) |
 | 36 | `playground-api/docs/ACTIVITY_LOG.md` | Markdown | เอกสารบันทึกกิจกรรมการพัฒนาโปรเจกต์ |
 | 37 | `playground-api/tests/integration/maintenanceBilling.test.js` | Test File | Integration Tests สำหรับ Maintenance Payer + Auto-Billing เข้าใบแจ้งหนี้รอบถัดไป (Passed 6/6) |
+
+### Phase 19 (2026-09-18): Finalize Rebranding & Announcement Notification Gap
+- **Logo Branding**: แทนที่ไฟล์โลโก้เก่า (horhub) ใน frontend ด้วยไฟล์ใหม่ (horspace)
+- **Announcement Notification**: แก้ไขให้ประกาศต่างๆ จากส่วนกลางแสดงในกระดิ่งแจ้งเตือน (Tenant Notification Bell) ของลูกบ้าน (เดิมส่งแค่ LINE API อย่างเดียว) โดยปรับให้ `_getTargetUserIds` ส่งกลับทั้ง `tenantId` และ `buildingId` ไปใช้สร้าง `NotificationLog`
+
+---
+
+### Phase 20 (2026-09-23): Full Flow & Bug Audit (API + CMS) — แก้ทุกจุดที่ยืนยันเป็นบั๊กจริง
+
+- **บริบท**: ผู้ใช้ขอให้ไล่ตรวจ Flow และบั๊กทั้งหมดของทั้ง `playground-api` และ `playground-frontend` แล้ววางแผน — ส่ง Sub-Agent 2 ตัวไล่อ่านโค้ดจริงคู่ขนานกัน (ไม่เชื่อแค่ Log เก่า) แล้วแก้ทุกข้อที่ยืนยันว่าเป็นบั๊กจริงตามคำขอ
+
+- **🐛 [IDOR] Broadcast ประกาศข้ามตึกได้**: `announcementController.js` เดิมไม่เช็คสิทธิ์ตึกของแอดมินเลย ถ้า `targetType:'ALL'` ไม่ส่ง `buildingId` มา จะยิงหาผู้เช่า**ทุกตึกในระบบ**, ถ้าเป็น `BUILDING`/`FLOOR` ไม่ส่ง `buildingId` จะ Fallback ไปเดา `building.findFirst()` (ตึกแรกในระบบ ไม่ใช่ตึกของแอดมินคนนั้น) — เพิ่ม `_resolveAllowedBuildingId()` เช็คสิทธิ์จริงจาก `UserBuildingPermission` (Pattern เดียวกับ `dashboardController.getSummary`) ทั้งใน `createAnnouncement` และ `getRecipientsCount`, ตัด Fallback เดาตึกทิ้งทั้งหมด — เพิ่มเทส 3 เคสใน `tests/integration/broadcast.test.js` (`Building-Scoped Admin Authorization (IDOR Fix)`)
+- **🐛 `silentLogin` คืนข้อมูลผิดตึกสำหรับผู้เช่า Multi-Building**: `tenantAuthService.silentLogin()` เดิมค้นหาด้วย `prisma.tenant.findFirst({ where: { lineUserId } })` ตรงๆ ไม่เช็ค `UserLineAccount` เหมือน `checkAuthStatus`/`pinLogin`/`linkAndLogin` — ผู้เช่าที่ผูกหลายตึกผ่าน LINE OA เดียว (Centralized Identity) พอ Access Token หมดอายุแล้ว Client เรียก Silent Re-Auth อาจได้ข้อมูลห้อง/บิลของตึกอื่นกลับมาแทนตึกที่กำลังใช้งานอยู่จริง — แก้ให้เช็ค `UserLineAccount` ตาม `buildingId` ก่อนเสมอ (Pattern เดียวกับ `checkAuthStatus`) รับ `buildingId` เพิ่มจาก `liffController.silentLogin` (`req.body.buildingId`) — ฝั่ง Frontend ส่ง `liff_target_building` ที่มีอยู่แล้วใน `localStorage` (`router/index.js` เก็บไว้ตอนเข้าผ่าน Query/Deep Link) ผ่าน `authService.silentLoginLiff()` — เพิ่มเทส 2 เคสใน `tests/integration/hybridAuth.test.js`
+- **🐛 Invite Code 2 ระบบซ้อนกัน**: `tenantService.verifyInviteCode()` เดิมเช็คแค่ `RoomInvite.code` (ระบบ `/liff/register` สำหรับผู้เช่าใหม่) ถ้าผู้เช่า**เดิม**พิมพ์รหัสแบบ `Tenant.inviteCode` (ระบบ `/liff/onboarding`) ผิดหน้าจะได้แค่ "ไม่พบรหัสเชิญ" เฉยๆ — เพิ่ม Fallback เช็ค `Tenant.inviteCode` เมื่อไม่เจอใน `RoomInvite` แล้วส่ง Error Code `TENANT_LINK_CODE` กลับแทน 404, ฝั่ง `LiffRegisterView.vue` เจอ Code นี้แล้ว Auto-Redirect ไป `/liff/onboarding?code=...` ให้เอง (ปิด Gap ที่ค้างมาตั้งแต่ 2026-09-10 โดยไม่ต้องรวม 2 ระบบเป็นหนึ่งเดียว)
+- **🐛 `jwt` ไม่ได้ `require`** ใน `liffAuthMiddleware.js` — Dev Fallback Path (`verifyLineIdToken` ล้มเหลว + `nodeEnv==='development'`) เรียก `jwt.decode()` โดยไม่เคย Require `jsonwebtoken` เลย โยน `ReferenceError` เงียบๆ ถูก Catch กลืนไป (เฉพาะ Dev เท่านั้น ไม่กระทบ Production) — เพิ่ม `require('jsonwebtoken')`
+- **🐛 Invoice Generation Race Condition**: `billingService.generateInvoice()` เช็ค `existingInvoice` แล้วค่อย Create ภายใน Transaction เดียวกัน ถ้า 2 Request สร้างบิลห้อง/รอบเดียวกันพร้อมกันจริงๆ ตัวที่แพ้จะชน Unique Constraint ของ `invoiceNumber` แล้วโยน 500 ดิบให้ผู้ใช้เห็น — เพิ่ม `catch (P2002)` คืนบิลที่ถูกสร้างไปแล้วแทน (Idempotent)
+- **✅ ตรวจแล้วพบว่า "ไม่ใช่บั๊กจริง"**: Audit รอบแรกเข้าใจผิดว่า Feature Toggle ไม่ครอบ Endpoint เขียนฝั่ง LIFF (`facility-bookings`/`vehicles`/`visitors`/`polls/:id/vote`) เพราะ Grep หาแค่ `requireFeature` Middleware — อ่านโค้ดจริงพบว่าทั้ง 4 Controller เช็ค `FeatureToggle` แบบ Inline อยู่แล้วทุกจุด (Comment บอกเหตุผลไว้ว่า "ต้อง Resolve tenant→room→building ก่อน") ไม่ต้องแก้อะไร — `vehicleRoutes.js` ฝั่งแอดมินไม่มี `requireFeature` ก็ตรงตามแพทเทิร์นเดียวกับ `facilityRoutes.js`/`pollRoutes.js` ที่ตั้งใจไม่ Gate การจัดการรายการเก่า (Approve/Reject/Update/Delete) หลังปิดฟีเจอร์ ให้แอดมินยังเคลียร์งานค้างได้
+
+#### Follow-up จากการทดสอบจริงของผู้ใช้หลัง Phase 20 (วันเดียวกัน): 3 บั๊กเพิ่มเติมที่เจอตอน Live Test
+
+- **🐛 `ENABLE_E_CONTRACT` ปิดใน CMS แล้ว แต่ `/liff/contract` ยังเข้าดูได้ตรงๆ**: `liffController.getTenantContract()` ไม่เคยเช็ค `FeatureToggle` เลยตั้งแต่สร้างฟีเจอร์นี้ (ต่างจาก Facility/Vehicle/Poll ที่เช็คแบบ Inline ครบ) — Toggle มีผลแค่ซ่อนปุ่ม Quick Action ในหน้าโปรไฟล์เท่านั้น ถ้าเคยเปิดหน้าค้างไว้หรือมีลิงก์เดิมยังเข้าดูสัญญาได้ปกติ — เพิ่มเช็ค Inline (Resolve buildingId จาก `activeLease.buildingId || activeLease.room.buildingId`) ตอบ 403 ถ้าปิดอยู่ — เพิ่มเทส 2 เคสใน `tests/integration/leaseContractPdf.test.js` (จำลอง Bug จริงก่อนแก้ ยืนยันว่า Reproduce ได้จริงก่อนค่อยแก้)
+- **🐛 Feature Card ผี โผล่ในหน้า Feature Settings**: `featureController.getFeatures()` เดิม Merge ทุก Row ในตาราง `FeatureToggle` มาโชว์เป็นการ์ด โดยไม่เช็คว่า Key นั้นยังอยู่ใน `STANDARD_FEATURE_METADATA` หรือไม่ — เจอ 2 Row ค้างจากการ Rename Key เก่า (`ENABLE_TENANT_POLLS`→`ENABLE_VOTING`, `ENABLE_VISITOR_PASS`→รวมเข้า `ENABLE_VEHICLE_MANAGEMENT` แล้ว) โผล่เป็นการ์ดไม่มี Title/คำอธิบายจริง (โชว์ Raw Key แทน) — แก้ `getFeatures()` ให้กรองเฉพาะ Key ที่ยังมี Metadata จริงเท่านั้นก่อน Merge (กัน Key เก่า/พิมพ์ผิดโผล่ซ้ำในอนาคตด้วย ไม่ใช่แค่ลบ 2 Row นี้) + ลบ 2 Row ขยะออกจากฐานข้อมูลจริงแล้ว (ยืนยันไม่มีโค้ดจุดไหนอ้างอิง Key เหล่านี้ก่อนลบ) — เพิ่มเทสกันการเกิดซ้ำใน `tests/integration/apiRoutes.test.js`
+- **🐛 [Frontend] Owner Preview Mode ไม่ผูกตึก ทำให้เห็นฟีเจอร์เปิดหมดทั้งที่ปิดไว้เฉพาะตึกแล้ว**: ผู้ใช้ Report "ปิดฟีเจอร์ใน CMS ครบแล้วแต่ LIFF ไม่ซ่อนตาม" — ตรวจ Backend ด้วยการจำลอง Fetch จากฐานข้อมูลจริงแล้วถูกต้อง 100% สรุปว่าเป็นบั๊กฝั่ง Frontend ที่ `LiffProfileView.vue`: ตอน Login ด้วยบัญชีแอดมิน/เจ้าของอาคาร (ไม่มี Tenant Record ผูกอยู่) จะเข้า "โหมดจำลอง (Preview Mode)" ซึ่งเดิมเรียก `featureStore.fetchFeatures(null)` (Global เสมอ) ทั้งที่การปิดฟีเจอร์ทุกครั้งเป็น Override เฉพาะตึกเท่านั้น ไม่เคยแตะ Global — ดูรายละเอียด Fix ฝั่ง Frontend ใน `playground-frontend/docs/ACTIVITY_LOG.md` (บั๊กนี้เป็น Frontend ล้วน ไม่ได้แก้ฝั่ง API)
+- **Test Verification**: รัน `yarn jest --runInBand --forceExit` ผ่าน **275/275** ทุก Suite (เพิ่มจาก 272 เดิมด้วยเทสใหม่ 3 เคส)
+
+### STATUS: 🟢 COMPLETE & VERIFIED (Frontend ส่วนที่เกี่ยวข้องดู `playground-frontend/docs/ACTIVITY_LOG.md` Phase 20 เดียวกัน)
+
+### ⏭️ งานที่เหลือ (Follow-up Items — Deferred ตาม YAGNI ไม่ใช่บั๊ก):
+- Facility Booking ยังไม่มี Workflow อนุมัติ (Auto-`CONFIRMED` เสมอ), Poll ยังไม่รองรับ AGM/Quorum/ถ่วงน้ำหนักตามกรรมสิทธิ์
+- ฟีเจอร์เก่าอื่นๆ (แจ้งซ่อม/บิล/พัสดุ/ข่าวสาร/ใบเสร็จ/Digital ID) ยัง**ไม่มี**การเช็ค `FeatureToggle` ฝั่ง Backend เหมือนกัน (Toggle ซ่อนแค่ UI ทางเข้าเท่านั้น) — เป็น Known Limitation ตั้งใจตั้งแต่ Phase 16 ไม่ใช่บั๊ก ถ้าต้องการให้บังคับจริงฝั่ง Backend ด้วยเหมือน `ENABLE_E_CONTRACT`/Facility/Vehicle/Poll ต้องแจ้งทำเพิ่ม (ไม่ใช่ Auto-fix ตาม YAGNI)
+- Jest Hang ถ้าไม่ใส่ `--forceExit` ยังไม่ได้ไล่หาสาเหตุจริง (สงสัย Prisma Connection Pool หรือ `express-rate-limit` Timer)
+
+---
+
+### Phase 21 (2026-09-23): Delete Building Feature (Backend API & RBAC)
+
+- **บริบท**: เพิ่มฟีเจอร์สำหรับการลบตึก/อาคารที่ไม่ใช้งานออกจากระบบ พร้อมมาตรการป้องกันความปลอดภัยของข้อมูล (Data Loss Prevention)
+- **DELETE /api/v1/buildings/:id**: เพิ่ม endpoint สำหรับลบอาคาร พร้อม middleware `requireRole('OWNER', 'super_admin')`
+- **Data Loss Prevention Guards**:
+  - ตรวจสอบตึกที่ต้องการลบ (404 หากไม่พบ)
+  - ห้ามลบหากเหลือตึกเดียวในระบบ (`totalBuildings <= 1` ตอบ 400)
+  - ห้ามลบหากตึกยังมีห้องพักผูกอยู่ (`roomsCount > 0` ตอบ 400 พร้อมแจ้งเตือนให้ย้ายหรือลบห้องพักทั้งหมดออกก่อน)
+- **Cascade & Cleanup**: ลบ Maintenance Requests และปลด `buildingId` ใน Notification Logs ที่เกี่ยวข้อง ก่อนลบตัวอาคารด้วย Prisma Transaction
+- **Audit Log**: บันทึกการกระทำลงในตาราง `AuditLog` (action: `DELETE`, entity: `BUILDING`)
+- **Test Verification**: สร้าง `tests/integration/buildingDelete.test.js` (Passed 5/5) และรันชุดทดสอบทั้งหมด `PORT=9090 yarn test` ผ่านครบ **280/280** (42 test suites)
+
+---
+
+### Phase 22 (2026-09-24): Fix Room Invite Code Endpoints & 404 on /api/v1/invites
+
+- **บริบท**: แก้ไขปัญหาที่ผู้ใช้กดสร้างรหัสเชิญห้องพักแล้วขึ้นข้อผิดพลาด `ไม่พบ Endpoint นี้ - /api/v1/invites` (404)
+- **Root Cause**:
+  - `RoomInviteModal.vue` ในฝั่ง Frontend เรียกใช้งาน API `/api/v1/invites` (POST), `/api/v1/invites/room/:roomId` (GET) และ `/api/v1/invites/:id` (DELETE)
+  - ใน Backend มีเพียง `/api/v1/rooms/:id/invites` แต่ยังไม่มี `inviteRoutes` เชื่อมต่อเส้นทาง `/api/v1/invites` และ `revokeRoomInvite` ใน Controller ยังไม่ได้ถูกผูก Route
+- **Implementation**:
+  - สร้าง `src/routes/inviteRoutes.js` รองรับ `POST /`, `GET /room/:roomId`, `DELETE /:id`
+  - ติดตั้ง `inviteRoutes` ใน `src/routes/index.js` ภายใต้ prefix `/api/v1/invites` และ `/api/admin/invites`
+  - เพิ่ม Route `DELETE /:id/invites/:inviteId` ใน `src/routes/roomRoutes.js`
+  - อัปเดต `src/controllers/roomController.js`: รองรับการรับ `id` จากทั้ง `req.params` และ `req.body.roomId`, รองรับ `expiresInHours` ที่ส่งมาจาก Frontend
+  - อัปเดต `tests/integration/invite.test.js` ครอบคลุมทั้ง 3 endpoint ใหม่
+- **Test Verification**:
+  - รัน `PORT=9090 yarn test` ผ่านครบ **282/282 tests** (42 test suites)
+  - ทดสอบสดผ่าน live API port 3000 สำเร็จทั้งสร้าง, เรียกดู, และยกเลิกรหัสเชิญ
+
+---
+
+### Phase 23 (2026-09-25): Security, Billing & Auth Audit ทั้งระบบ
+
+- **บริบท**: ตรวจ flow ทั้งระบบหา logic ที่ผิด/แปลก แล้วแก้เป็นเฟส (PR รวม `playground-api#5`, `playground-frontend#10`, branch `fix/auth-phase-3`) — เทสต์ backend 373/373 (57 suites), frontend 26/26
+- **เฟส 0-1 (สิทธิ์/ความลับ)**: DB เทสต์แยก (`TEST_DATABASE_URL`), ตรวจสิทธิ์รายตึกทุก endpoint, ซ่อน hash/ความลับของตึกจาก `res.json`
+- **เฟส 2 (ยอดเงิน)**: อัตราน้ำไฟจาก `BuildingSetting` เป็นต้นทางเดียว (ไม่มีขั้นต่ำน้ำ hardcode), `dueDate` ตามรอบบิล (`dueDateForCycle`: ถ้าบิลย้อนหลังพ้นกำหนดแล้วให้ครบกำหนดวันนี้)
+- **เฟส 3 (ยืนยันตัวตน)**: Refresh Token Rotation + Reuse Detection (`familyId`/`usedAt`, grace 10 วินาที, race ไม่ลบ cookie), ยึดบัญชีด้วยเบอร์ต้องไม่เปลี่ยน UX ผู้เช่าทั่วไป, production boot guard, ตัด Google login, เปลี่ยนรหัสผ่านแอดมินแล้ว session อื่นหลุด
+- **เฟส 4 (ops)**: lockout รายบัญชี, `TRUST_PROXY` ตั้งค่าได้, startup ปลอดภัยขึ้น
+- **Audit ความเสี่ยงสูง**: อัปโหลด `.html` ถูกเสิร์ฟเป็น `text/html` (แก้: นามสกุลจาก MIME), `room_owner` โหลด PDF บิลห้องอื่นได้, MANAGER เขียนมิเตอร์/ย้ายห้องข้ามตึกได้ (เพิ่ม `requireBuildingInRequest`), ลูกบ้านสร้างใบแจ้งซ่อมในห้องอื่นได้ (LIFF ใช้ตัวตน/ห้องที่ตรวจแล้ว, `POST /maintenance-requests` เหลือเฉพาะแอดมิน), จบสัญญาไม่ตัดสิทธิ์ผู้อยู่ร่วม/LINE (`services/tenancyService.js`)
+- **ย้ายออก**: อัตราน้ำไฟจาก `BuildingSetting`, ตรวจ input, บิลค้างถูกตัดจ่ายด้วยมัดจำเมื่อมัดจำพอ, กดซ้ำพร้อมกันได้ 409/400, เลขมิเตอร์ตอนย้ายออกเป็น `MeterRecord` ชุดเดิมรอบ `MM-YYYY`, ผู้เช่าใหม่เริ่มนับจาก `LeaseContract.initialWaterReading/initialElectricReading` (ฟอร์มเช็กอินมีช่องกรอก)
+- **ระดับกลาง**: error 5xx ไม่ส่งข้อความภายใน, URL ไฟล์ใช้ `PUBLIC_BASE_URL`, whitelist สถานะบิล + audit log, `process-late-fees` ไม่รับ `targetDate`, PDF เอาเบอร์/TAX ID ปลอมออก, CSV กัน formula injection, whitelist role แอดมิน, ออกบิลทั้งตึกรองรับ `isReset`/`waiveCommonFee`, ถอด `/api/settings` แบบไม่ล็อกอิน, แก้ path API หน้าโพล/พัสดุ/ทะเบียนรถใน frontend และเอาปุ่มอัปโหลดสลิปฝั่งแอดมินออก
+- **Dependencies**: อัปเดต multer/morgan/qs/express, เอา passport ออก, `xlsx` ย้ายไป 0.20.3 จาก SheetJS CDN (`npm audit --omit=dev` = 0)
+- **ก่อน deploy**: `prisma db push` กับ `playground_db` (คอลัมน์ `RefreshToken.familyId/usedAt`, `LeaseContract.initialWaterReading/initialElectricReading`), ตั้ง `PUBLIC_BASE_URL`, แก้ `docker-compose.yml` (JWT secret จริง, `TRUST_PROXY`, พอร์ต/รหัสผ่าน DB)
+- **การตัดสินใจหลัง audit**: (1) สถานะห้องหลังจบสัญญาแยกตามวัตถุประสงค์เดิม — `process-move-out` (ย้ายออกจริง มีคิดมิเตอร์/มัดจำ) → `maintenance` เพื่อรอตรวจสภาพ/ทำความสะอาด ส่วน `terminate` (ยกเลิกสัญญา เช่น สร้างผิด/ไม่ได้เข้าพักจริง) → `available` ไม่ปรับโค้ด (2) สัญญาที่ไม่ได้จดเลขมิเตอร์วันเข้าพักตอนสร้าง (เช่น ผู้เช่าลงทะเบียนเองผ่าน Invite Code) ให้แอดมินจดทีหลังผ่านหน้าสัญญาเช่า: `PATCH /api/admin/leases/:leaseId/initial-readings` (เฉพาะสัญญา ACTIVE, มี audit log) และหน้า `LeasesView` แสดงเตือนสัญญาที่ยังไม่มีเลข
+
