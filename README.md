@@ -159,3 +159,9 @@ yarn dev
 # 5. รันเซิร์ฟเวอร์พร้อมเปิด Cloudflare Tunnel สำหรับทดสอบ LINE LIFF
 yarn dev:tunnel
 ```
+
+## 🌐 Production Deployment
+
+Live ที่ `https://api.horspace.com` — รันบน DigitalOcean Droplet เดี่ยว (Docker Compose 3 services + Caddy reverse proxy, ไม่ใช้ K8s/Managed DB) ไฟล์ deploy (`docker-compose.yml`, `Caddyfile`, `backup-db.sh`, `.env.*.example`) อยู่ที่ root ของโปรเจกต์คู่ (`../docker-compose.yml`) ไม่ใช่ใน repo นี้ เพราะ compose ไฟล์เดียว build ทั้ง `playground-api` และ `playground-frontend` พร้อมกัน
+
+รายละเอียดเต็ม ดู `docs/ACTIVITY_LOG.md` Phase 24
