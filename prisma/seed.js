@@ -4,17 +4,64 @@ const generatePayload = require('promptpay-qr');
 const QRCode = require('qrcode');
 
 const prisma = new PrismaClient();
+const isProd = process.env.NODE_ENV === 'production';
 
 async function hashPassword(password) {
   return await bcrypt.hash(password, 10);
 }
 
-async function main() {
-  console.log('🌱 Starting comprehensive database seeding for all 31 tables...');
+const featureList = [
+  { key: 'ENABLE_VEHICLE_MANAGEMENT', description: 'ระบบจัดการป้ายทะเบียนและยานพาหนะลูกบ้าน' },
+  { key: 'ENABLE_PARCEL_NOTIFY', description: 'ระบบแจ้งเตือนพัสดุมาถึงผ่าน LINE' },
+  { key: 'ENABLE_MAINTENANCE_REQUEST', description: 'ระบบแจ้งซ่อมแซมและติดตามสถานะ' },
+  { key: 'ENABLE_LINE_PAYMENT', description: 'ระบบชำระเงินและแนบสลิปผ่าน LIFF' },
+  { key: 'ENABLE_FACILITY_BOOKING', description: 'ระบบจองพื้นที่ส่วนกลาง (ฟิตเนส/สระว่ายน้ำ)' },
+  { key: 'ENABLE_TENANT_POLLS', description: 'ระบบโหวตและสำรวจความคิดเห็นลูกบ้าน' },
+  { key: 'ENABLE_VISITOR_PASS', description: 'ระบบบันทึกและลงทะเบียนผู้มาติดต่อ' }
+];
 
-  // =========================================================================
+// =========================================================================
+// Defaults: รันทุก environment รวม production — ต้องมีเพื่อให้ bootstrap เข้าระบบได้
+// (ไม่มี /auth/register และ POST /admin/users ต้อง login เป็น owner/super_admin ก่อนถึงจะเรียกได้
+// ดังนั้น seed นี้คือทางเดียวที่ทำให้มี admin คนแรกในระบบ)
+// =========================================================================
+async function seedDefaults() {
+  const superAdminEmail = process.env.SEED_SUPERADMIN_EMAIL || 'superadmin@dorm.com';
+  const superAdminPassword = process.env.SEED_SUPERADMIN_PASSWORD || (isProd ? null : 'password123');
+
+  if (!superAdminPassword) {
+    throw new Error('ตั้ง SEED_SUPERADMIN_PASSWORD ก่อน seed บน production ห้าม hardcode รหัสผ่าน prod ไว้ในโค้ด');
+  }
+
+  const superAdmin = await prisma.user.upsert({
+    where: { email: superAdminEmail },
+    update: { role: 'super_admin', passwordHash: await hashPassword(superAdminPassword) },
+    create: {
+      email: superAdminEmail,
+      passwordHash: await hashPassword(superAdminPassword),
+      name: 'Super Admin',
+      role: 'super_admin',
+      phone: '0899999999'
+    }
+  });
+  console.log(`👤 Superadmin seeded: ${superAdmin.email}`);
+
+  // Feature toggles ระดับ global (buildingId: null) — middleware fallback เป็น true อยู่แล้วถ้าไม่มี row
+  // แต่ seed ไว้ให้เห็น/แก้ใน CMS ได้ทันทีตั้งแต่วันแรก
+  for (const f of featureList) {
+    const exist = await prisma.featureToggle.findFirst({ where: { key: f.key, buildingId: null } });
+    if (!exist) await prisma.featureToggle.create({ data: { key: f.key, description: f.description, isActive: true } });
+  }
+  console.log('🎛️ Default feature toggles seeded (global)');
+
+  return superAdmin;
+}
+
+// =========================================================================
+// Demo data: ข้อมูลตัวอย่างสำหรับ dev/staging เท่านั้น ข้ามตอน NODE_ENV=production
+// =========================================================================
+async function seedDemoData(superAdmin) {
   // 1. Buildings (อาคาร A & B)
-  // =========================================================================
   let buildingA = await prisma.building.findFirst({
     where: { name: { contains: 'อาคาร A' } }
   });
@@ -53,9 +100,7 @@ async function main() {
 
   console.log(`🏢 1. Buildings seeded: [A: ${buildingA.name}] [B: ${buildingB.name}]`);
 
-  // =========================================================================
   // 2. Building Settings (พร้อม PromptPay QR และเงื่อนไขสัญญา)
-  // =========================================================================
   const qrA = await QRCode.toDataURL(generatePayload('0812345678', { amount: 0 }), { width: 400, margin: 2 });
   const qrB = await QRCode.toDataURL(generatePayload('0899998888', { amount: 0 }), { width: 400, margin: 2 });
 
@@ -149,22 +194,8 @@ async function main() {
 
   console.log('⚙️ 2. Building Settings seeded');
 
-  // =========================================================================
-  // 3. Admin & User Accounts (OWNER, SUPER_ADMIN, MANAGER, ADMIN, ROOM_OWNER)
-  // =========================================================================
+  // 3. Demo Admin & User Accounts (OWNER, MANAGER, ADMIN, ROOM_OWNER) — superadmin มาจาก seedDefaults() แล้ว
   const defaultPassword = await hashPassword('password123');
-
-  const superAdmin = await prisma.user.upsert({
-    where: { email: 'superadmin@dorm.com' },
-    update: { role: 'super_admin', passwordHash: defaultPassword },
-    create: {
-      email: 'superadmin@dorm.com',
-      passwordHash: defaultPassword,
-      name: 'Super Admin',
-      role: 'super_admin',
-      phone: '0899999999'
-    }
-  });
 
   const ownerUser = await prisma.user.upsert({
     where: { email: 'owner@dorm.com' },
@@ -248,39 +279,22 @@ async function main() {
     create: { userId: adminB.id, buildingId: buildingB.id }
   });
 
-  console.log('👤 3. Users & Building Permissions seeded');
+  console.log('👤 3. Demo Users & Building Permissions seeded');
 
-  // =========================================================================
-  // 4. Feature Toggles
-  // =========================================================================
-  const featureList = [
-    { key: 'ENABLE_VEHICLE_MANAGEMENT', description: 'ระบบจัดการป้ายทะเบียนและยานพาหนะลูกบ้าน' },
-    { key: 'ENABLE_PARCEL_NOTIFY', description: 'ระบบแจ้งเตือนพัสดุมาถึงผ่าน LINE' },
-    { key: 'ENABLE_MAINTENANCE_REQUEST', description: 'ระบบแจ้งซ่อมแซมและติดตามสถานะ' },
-    { key: 'ENABLE_LINE_PAYMENT', description: 'ระบบชำระเงินและแนบสลิปผ่าน LIFF' },
-    { key: 'ENABLE_FACILITY_BOOKING', description: 'ระบบจองพื้นที่ส่วนกลาง (ฟิตเนส/สระว่ายน้ำ)' },
-    { key: 'ENABLE_TENANT_POLLS', description: 'ระบบโหวตและสำรวจความคิดเห็นลูกบ้าน' },
-    { key: 'ENABLE_VISITOR_PASS', description: 'ระบบบันทึกและลงทะเบียนผู้มาติดต่อ' }
-  ];
-
+  // 4. Feature Toggles (per-building override) — global default มาจาก seedDefaults() แล้ว
   for (const f of featureList) {
     for (const b of [buildingA, buildingB]) {
       await prisma.featureToggle.upsert({
         where: { key_buildingId: { key: f.key, buildingId: b.id } },
         update: { isActive: true },
         create: { key: f.key, description: f.description, isActive: true, buildingId: b.id }
-      }).catch(async () => {
-        const exist = await prisma.featureToggle.findFirst({ where: { key: f.key, buildingId: null } });
-        if (!exist) await prisma.featureToggle.create({ data: { key: f.key, description: f.description, isActive: true } });
       });
     }
   }
 
-  console.log('🎛️ 4. Feature Toggles seeded');
+  console.log('🎛️ 4. Per-building Feature Toggles seeded');
 
-  // =========================================================================
   // 5. Tenants (ผู้เช่าหลากหลายโปรไฟล์)
-  // =========================================================================
   const activeLiffLineUserId = 'Uef737f8486c9f1e560364799ef60018e';
 
   let tenantSomkiat = await prisma.tenant.upsert({
@@ -399,9 +413,7 @@ async function main() {
 
   console.log('👥 5. Tenants seeded');
 
-  // =========================================================================
   // 6. UserLineAccount (บัญชี LINE หลายตึก / Multi-Building binding)
-  // =========================================================================
   if (tenantSomkiat.lineUserId) {
     await prisma.userLineAccount.upsert({
       where: { buildingId_lineUserId: { buildingId: buildingB.id, lineUserId: tenantSomkiat.lineUserId } },
@@ -420,9 +432,7 @@ async function main() {
     });
   }
 
-  // =========================================================================
   // 7. Rooms (ที่พัก, ร้านค้าพาณิชย์, ตู้เต่าบิน, ที่จอดรถ)
-  // =========================================================================
   async function upsertRoom(data) {
     const existing = await prisma.room.findFirst({
       where: { buildingId: data.buildingId, roomNumber: data.roomNumber }
@@ -456,9 +466,7 @@ async function main() {
 
   console.log('🏠 7. Rooms seeded across Building A and B');
 
-  // =========================================================================
   // 8. Room Residents (รูมเมท / สมาชิกร่วมห้อง)
-  // =========================================================================
   await prisma.roomResident.upsert({
     where: { roomId_tenantId: { roomId: roomB201.id, tenantId: tenantSomkiat.id } },
     update: { role: 'PRIMARY', isPayer: true },
@@ -483,9 +491,7 @@ async function main() {
     }
   });
 
-  // =========================================================================
   // 9. Lease Contracts & Move Out History
-  // =========================================================================
   const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000);
   const oneYearLater = new Date(Date.now() + 185 * 24 * 60 * 60 * 1000);
 
@@ -569,9 +575,7 @@ async function main() {
 
   console.log('📜 9. Lease Contracts & Move-out Records seeded');
 
-  // =========================================================================
   // 10. Meter Records (มิเตอร์น้ำ-ไฟย้อนหลัง)
-  // =========================================================================
   const meterData = [
     { roomId: roomB201.id, meterType: 'water', previousReading: 120, currentReading: 129, unitsUsed: 9, billingCycle: '08-2026', recordedAt: new Date('2026-08-25') },
     { roomId: roomB201.id, meterType: 'electric', previousReading: 2150, currentReading: 2255, unitsUsed: 105, billingCycle: '08-2026', recordedAt: new Date('2026-08-25') },
@@ -592,9 +596,7 @@ async function main() {
 
   console.log('⚡ 10. Meter Records seeded');
 
-  // =========================================================================
   // 11. Invoices (ใบแจ้งหนี้ Pending, Paid, Overdue)
-  // =========================================================================
   async function upsertInvoice(data) {
     const existing = await prisma.invoice.findUnique({
       where: { invoiceNumber: data.invoiceNumber }
@@ -648,9 +650,7 @@ async function main() {
 
   console.log('🧾 11. Invoices seeded');
 
-  // =========================================================================
   // 12. Maintenance Requests (แจ้งซ่อมแซม Admin Backoffice)
-  // =========================================================================
   const maintenanceList = [
     {
       roomId: roomB201.id,
@@ -703,9 +703,7 @@ async function main() {
 
   console.log('🔧 12. Maintenance Requests seeded');
 
-  // =========================================================================
   // 13. Smart Parcels (พัสดุ)
-  // =========================================================================
   const sampleParcels = [
     {
       roomId: roomB201.id,
@@ -737,9 +735,7 @@ async function main() {
 
   console.log('📦 13. Smart Parcels seeded');
 
-  // =========================================================================
   // 14. Announcements & AnnouncementRead (ข่าวสาร & สถานะการอ่าน)
-  // =========================================================================
   const sampleAnnouncements = [
     {
       title: 'แจ้งกำหนดการล้างถังพักน้ำส่วนกลางประจำปี',
@@ -776,9 +772,7 @@ async function main() {
 
   console.log('📢 14. Announcements & Read Status seeded');
 
-  // =========================================================================
   // 15. Facilities & FacilityBookings (พื้นที่ส่วนกลางและการจอง)
-  // =========================================================================
   const facilityFitness = await prisma.facility.upsert({
     where: { id: '00000000-0000-0000-0000-0000000000f1' },
     update: {},
@@ -823,9 +817,7 @@ async function main() {
 
   console.log('🏋️ 15. Facilities & Bookings seeded');
 
-  // =========================================================================
   // 16. Vehicles & Visitors (ทะเบียนรถและผู้มาติดต่อ)
-  // =========================================================================
   await prisma.vehicle.upsert({
     where: { id: '00000000-0000-0000-0000-0000000000c1' },
     update: {},
@@ -855,9 +847,7 @@ async function main() {
 
   console.log('🚗 16. Vehicles & Visitors seeded');
 
-  // =========================================================================
   // 17. Polls & PollVotes (การโหวตและมติลูกบ้าน)
-  // =========================================================================
   let samplePoll = await prisma.poll.findFirst({ where: { buildingId: buildingB.id } });
   if (!samplePoll) {
     samplePoll = await prisma.poll.create({
@@ -884,9 +874,7 @@ async function main() {
 
   console.log('🗳️ 17. Polls & Votes seeded');
 
-  // =========================================================================
   // 18. IssueTickets (แจ้งเหตุ & ร้องเรียน LIFF)
-  // =========================================================================
   await prisma.issueTicket.create({
     data: {
       userId: tenantSomkiat.id,
@@ -902,9 +890,7 @@ async function main() {
 
   console.log('🎫 18. Issue Tickets seeded');
 
-  // =========================================================================
   // 19. Vendors & Room Inspections (รายชื่อช่าง & การตรวจสภาพห้อง)
-  // =========================================================================
   await prisma.vendor.create({
     data: {
       buildingId: buildingB.id,
@@ -933,9 +919,7 @@ async function main() {
 
   console.log('👷 19. Vendors & Room Inspections seeded');
 
-  // =========================================================================
   // 20. NotificationLog & DeveloperFeedback (แจ้งเตือน & ข้อเสนอแนะ)
-  // =========================================================================
   await prisma.notificationLog.create({
     data: {
       buildingId: buildingB.id,
@@ -962,9 +946,7 @@ async function main() {
     }
   }).catch(() => {});
 
-  // =========================================================================
   // 21. AuditLog (ประวัติการใช้งานระบบ)
-  // =========================================================================
   await prisma.auditLog.create({
     data: {
       adminId: ownerUser.id,
@@ -977,9 +959,7 @@ async function main() {
 
   console.log('📋 20-21. Notification Logs, Feedback & Audit Logs seeded');
 
-  // =========================================================================
   // 22. Room Invites
-  // =========================================================================
   const sampleInvites = [
     { roomId: roomA103.id, code: 'INV103', expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), isUsed: false },
     { roomId: roomB102.id, code: 'INV102', expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), isUsed: false },
@@ -995,16 +975,20 @@ async function main() {
   }
 
   console.log('🎟️ 22. Room Invites seeded (INV103, INV102, INV203)');
+}
 
+async function main() {
+  const superAdmin = await seedDefaults();
+
+  if (isProd) {
+    console.log('⏭  NODE_ENV=production: ข้าม demo data (buildings/tenants/invoices/ฯลฯ)');
+    return;
+  }
+
+  console.log('🌱 Seeding full demo dataset...');
+  await seedDemoData(superAdmin);
   console.log('\n=============================================================');
-  console.log('  COMPLETE DATABASE MOCKUP SEEDING COMPLETED (ALL TABLES)!');
-  console.log('  - Buildings: อาคาร A, อาคาร B พร้อม PromptPay QR');
-  console.log('  - Users: Super Admin, Owner, Manager, Admins, Room Investor');
-  console.log('  - Rooms & Types: Residential, Commercial Shop, Vending, Parking');
-  console.log(`  - LIFF Tenant Linked: ${activeLiffLineUserId} -> สมเกียรติ (ห้อง 201 อาคาร B)`);
-  console.log('  - Features: Facilities, Bookings, Vehicles, Visitors, Polls, Vendors');
-  console.log('  - Records: Leases, MoveOuts, Invoices, Meters, Maintenance, Parcels');
-  console.log('  - System: Audit Logs, Feedback, Inspections, Notifications');
+  console.log('  DEMO DATASET SEEDING COMPLETED');
   console.log('=============================================================\n');
 }
 
