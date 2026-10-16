@@ -274,7 +274,7 @@ class AdminController {
   async updateUserPermissions(req, res, next) {
     try {
       const { id } = req.params;
-      const { role, name, phone, buildingIds } = req.body;
+      const { role, name, phone, buildingIds, password } = req.body;
 
       const user = await billingService.prisma.user.findUnique({
         where: { id }
@@ -289,6 +289,15 @@ class AdminController {
         return res.status(400).json({ success: false, message: `role ต้องเป็นหนึ่งใน ${ASSIGNABLE_ROLES.join(', ')}` });
       }
 
+      // รหัสผ่านเป็น optional: ส่งมาก็ต่อเมื่อแอดมินต้องการเปลี่ยน (เว้นว่างไว้ = ไม่แตะรหัสผ่านเดิม)
+      let passwordHash;
+      if (password) {
+        if (String(password).length < MIN_PASSWORD_LENGTH) {
+          return res.status(400).json({ success: false, message: `รหัสผ่านต้องมีความยาวอย่างน้อย ${MIN_PASSWORD_LENGTH} ตัวอักษร` });
+        }
+        passwordHash = await hashPassword(password);
+      }
+
       // Transaction เดียว: ลบสิทธิ์เก่าแล้วสร้างใหม่ล้มกลางคันต้องไม่ทิ้งผู้ใช้ไว้โดยไม่มีสิทธิ์ตึกเลย
       await billingService.prisma.$transaction(async (tx) => {
         // 1. Update basic fields & role
@@ -297,7 +306,8 @@ class AdminController {
           data: {
             role: newRole,
             ...(name && { name: name.trim() }),
-            ...(phone !== undefined && { phone: phone ? phone.trim() : null })
+            ...(phone !== undefined && { phone: phone ? phone.trim() : null }),
+            ...(passwordHash && { passwordHash })
           }
         });
 
